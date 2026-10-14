@@ -35,6 +35,8 @@
 
 - I1에 `list_ids`를 제공한다(D42). `ref.version == str(question_bank.version)`, `reviewed_only`는 가장 최근 검수 기준이다.
 
+- 문항 자료에서 선택지를 읽을 때 **동의어를 `choice_catalog`(code, label, synonyms)로 만들어** 미리보기에서 저자가 확인하게 한다. turn-engine의 정규화는 평문 선택지의 불규칙 활용·단독 "네" 같은 말을 잇지 못하고(골든 어휘 차이 24건), 동의어가 등록된 `choice_catalog`로 푼다. 동의어를 조용히 추정해 채우지 않고 저자가 확인한 것만 등록한다.
+
 ## 4. 상위 수용 기준
 
 - 문항 버전은 불변이다. 수정은 새 버전을 만든다.
