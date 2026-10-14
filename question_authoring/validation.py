@@ -10,30 +10,24 @@ from pathlib import Path
 from typing import Any, Optional
 
 import jsonschema
-from referencing import Registry, Resource
-from referencing.jsonschema import DRAFT202012
+
+import boundary_contracts
 
 from boundary_contracts.errors import BoundaryError
 
-_BASE = "https://boundary-contracts.local/"
 SUPPORTED_RUNTIME_CONTRACT_VERSION = 1
-PIPELINE_SCHEMA_VERSION = "1.0"
-
-
-def default_boundary_schema_dir() -> Path:
-    import boundary_contracts
-    return Path(boundary_contracts.__file__).resolve().parent.parent / "schemas"
+PIPELINE_SCHEMA_VERSION = boundary_contracts.PIPELINE_SCHEMA_VERSION
 
 
 def default_survey_schema_dir() -> Path:
-    """개발 환경 기본값(워크스페이스 안의 읽기 전용 스키마). 이미지에서는 인자로 넘긴다."""
-    import boundary_contracts
+    """개발 환경 기본값(워크스페이스 안의 읽기 전용 문진 스키마). 이미지에서는 인자로 넘긴다."""
     return Path(boundary_contracts.__file__).resolve().parent.parent.parent / "survey-service" / "schema"
 
 
 class Validators:
-    def __init__(self, boundary_schema_dir: Optional[Path] = None, survey_schema_dir: Optional[Path] = None):
-        bdir = Path(boundary_schema_dir) if boundary_schema_dir else default_boundary_schema_dir()
+    """경계 계약 스키마는 boundary_contracts.validator, QuestionBank는 문진 스키마 디렉터리에서 읽는다."""
+
+    def __init__(self, survey_schema_dir: Optional[Path] = None):
         sdir = Path(survey_schema_dir) if survey_schema_dir else default_survey_schema_dir()
         version_file = sdir / "CONTRACT_VERSION"
         try:
@@ -44,26 +38,18 @@ class Validators:
             raise BoundaryError("UNSUPPORTED_VERSION",
                                 f"문진 스키마 버전 {self.runtime_contract_version}은 지원하지 않는다"
                                 f"(지원: {SUPPORTED_RUNTIME_CONTRACT_VERSION})")
-        self._schemas: dict[str, dict] = {}
-        registry = Registry()
-        for p in sorted(bdir.glob("*.schema.json")):
-            s = json.loads(p.read_text(encoding="utf-8"))
-            s["$id"] = _BASE + p.name
-            registry = registry.with_resource(s["$id"], Resource.from_contents(s, DRAFT202012))
-            self._schemas[p.name[:-len(".schema.json")]] = s
-        qb = json.loads((sdir / "schemas" / "QuestionBank.json").read_text(encoding="utf-8"))
-        qb["$id"] = _BASE + "QuestionBank.json"
-        registry = registry.with_resource(qb["$id"], Resource.from_contents(qb, DRAFT202012))
-        self._schemas["QuestionBank"] = qb
-        self._registry = registry
-        self._cache: dict[str, jsonschema.Draft202012Validator] = {}
+        self._qb = json.loads((sdir / "schemas" / "QuestionBank.json").read_text(encoding="utf-8"))
+        self._cache: dict = {}
 
-    def _v(self, name: str) -> jsonschema.Draft202012Validator:
+    def _v(self, name: str):
         if name not in self._cache:
-            if name not in self._schemas:
-                raise BoundaryError("UNSUPPORTED_VERSION", f"알 수 없는 스키마: {name}")
-            self._cache[name] = jsonschema.Draft202012Validator(
-                self._schemas[name], registry=self._registry, format_checker=jsonschema.FormatChecker())
+            if name == "QuestionBank":
+                self._cache[name] = jsonschema.Draft202012Validator(self._qb, format_checker=jsonschema.FormatChecker())
+            else:
+                try:
+                    self._cache[name] = boundary_contracts.validator(name)
+                except KeyError:
+                    raise BoundaryError("UNSUPPORTED_VERSION", f"알 수 없는 스키마: {name}")
         return self._cache[name]
 
     def errors(self, name: str, record: Any) -> list[str]:
@@ -79,7 +65,7 @@ class Validators:
             raise BoundaryError("INVALID_RECORD", f"{name} 스키마 위반: {errs[0]}", {"errors": errs[:20]})
 
     def question_bank_schema(self) -> dict:
-        return copy.deepcopy(self._schemas["QuestionBank"])
+        return copy.deepcopy(self._qb)
 
 
 def semantic_errors(bank: dict) -> list[str]:

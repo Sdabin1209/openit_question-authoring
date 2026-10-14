@@ -10,7 +10,7 @@
 
 | 이름 | 내용 | 확인 |
 | --- | --- | --- |
-| I1 QuestionReader (`boundary_contracts.sdk.QuestionReader`) | `get_question_bank`, `latest(reviewed_only)`, `list_versions`, `get_reviews`, `get_change`. 구현: `question_authoring.store.SqliteQuestionStore`, 메모리 구현 `MemoryQuestionStore`. 둘 다 `.reader()`로 읽기 전용 뷰를 낸다. | 같은 적합성 시험을 통과 |
+| I1 QuestionReader (`boundary_contracts.sdk.QuestionReader`) | `get_question_bank`, `latest(reviewed_only)`, `list_ids`, `list_versions`, `get_reviews`, `get_change`. 구현: `question_authoring.store.SqliteQuestionStore`, 메모리 구현 `MemoryQuestionStore`. 둘 다 `.reader()`로 읽기 전용 뷰를 낸다. | 같은 적합성 시험을 통과 |
 | 저작 API (HTTP) | design.md 8절 | `tests/test_http_api.py`, `scripts/smoke.sh` |
 | 생산하는 계약 | `QuestionBank`(기존), `ReviewRecord`, `ChangeClassification` | 쓰기 전에 스키마 검증 |
 
@@ -19,7 +19,7 @@
 ## 소비하는 것과 지원 버전
 
 - 문진 스키마 `QuestionBank`: 정수 버전 1(`CONTRACT_VERSION`)에 정확히 일치해야 시작한다. 다르면 `UNSUPPORTED_VERSION`.
-- 경계 계약: `ReviewRecord`, `ChangeClassification`, `ArtifactRef`, `BoundaryError`를 `pipeline_schema_version` `1.0`으로 쓴다. 해시는 `boundary_contracts.canonical`로만 계산한다.
+- 경계 계약: `ReviewRecord`, `ChangeClassification`, `ArtifactRef`, `BoundaryError`를 `pipeline_schema_version` `1.0`(boundary-contracts v1.0.0)으로 쓴다. 해시는 `boundary_contracts.canonical`로만 계산한다.
 - 이번 구간에서 소비하지 않는 것: I7(개선 신호), I4(판정 조회), I8(규칙 미리보기). 미구현이며 해당 계약이 필요한 시점에 이 문서에 추가한다.
 
 ## 이 영역이 지키는 것
@@ -41,4 +41,4 @@
 
 ## 변경 요청
 
-`docs/change-requests/` 참고: CR-0001 출처 위치, CR-0002 QuestionBank.version 의미, CR-0003 SlotRef 문자열, CR-0004 의미 해석(reviewed_only, 후속 작업 매핑), CR-0005 계약 패키지 배포(스키마 포함, 태그).
+`docs/change-requests/` 참고: CR-0001 출처 위치, CR-0002 QuestionBank.version 의미, CR-0003 SlotRef 문자열, CR-0004 의미 해석(reviewed_only, 후속 작업 매핑), CR-0005 계약 패키지 배포(스키마 포함, 태그). 헤드가 모두 승인했다(CR 파일 상단 참고).

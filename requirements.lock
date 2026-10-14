@@ -1,4 +1,6 @@
-# 런타임 의존 잠금(pip freeze 기준). boundary-contracts는 vendor-contracts로 들어오며 아래에서 빠진다.
+# 런타임 의존 잠금. 개발: pip install -e ../boundary-contracts (태그 v1.0.0과 같은 내용이어야 한다).
+# 이미지: boundary-contracts는 태그 시점 소스로 만든 wheel을 설치한다(scripts/build_contract_wheel.sh).
+boundary-contracts @ git+ssh://git@github.com/Sdabin1209/openit_boundary-contracts.git@v1.0.0
 attrs==26.1.0
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1

@@ -25,6 +25,10 @@ class MemoryQuestionStore(AuthoringStore):
         with self._lock:
             return sorted((n, h) for (q, n), h in self._hashes.items() if q == qsid)
 
+    def _ids(self):
+        with self._lock:
+            return sorted({q for q, _ in self._hashes})
+
     def _bank_json(self, qsid, n):
         with self._lock:
             b = self._banks.get((qsid, n))

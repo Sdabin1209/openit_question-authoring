@@ -2,6 +2,7 @@
 .git
 tests
 docs
-vendor-contracts/*.rev
+build/contracts-src
+build/contracts.rev
 __pycache__
 *.sqlite3

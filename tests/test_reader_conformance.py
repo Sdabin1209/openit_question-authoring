@@ -153,3 +153,20 @@ def test_commit_idempotent_and_conflict(store, svc):
     gref = {"id": "qs-main", "version": "3", "content_hash": canonical.sha256_hash(gap)}
     err("CONFLICT", store.commit_version, gap, gref, {**rv, "review_id": "rv-y", "question_set": gref}, None, None)
     err("INTEGRITY_ERROR", store.commit_version, bank, {**ref, "content_hash": "sha256:" + "1" * 64}, rv, None, None)
+
+
+def test_list_ids(store, svc):
+    r = store.reader()
+    assert r.list_ids() == ([], None)
+    for q in ("qs-c", "qs-a", "qs-b"):
+        publish(svc, q)
+    publish(svc, "qs-a", edits=edit_text(2))          # 버전이 여러 개여도 ID는 한 번
+    assert r.list_ids() == (["qs-a", "qs-b", "qs-c"], None)
+    got, cur = [], None
+    while True:
+        page, cur = r.list_ids(cursor=cur, limit=2)
+        got += page
+        if cur is None:
+            break
+    assert got == ["qs-a", "qs-b", "qs-c"]
+    err("INVALID_RECORD", r.list_ids, limit=0)

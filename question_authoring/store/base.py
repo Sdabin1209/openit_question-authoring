@@ -34,6 +34,7 @@ class QuestionReaderView:
 
     def get_question_bank(self, ref): return self._s.get_question_bank(ref)
     def latest(self, question_set_id, *, reviewed_only=False): return self._s.latest(question_set_id, reviewed_only=reviewed_only)
+    def list_ids(self, *, cursor=None, limit=100): return self._s.list_ids(cursor=cursor, limit=limit)
     def list_versions(self, question_set_id, *, cursor=None, limit=100): return self._s.list_versions(question_set_id, cursor=cursor, limit=limit)
     def get_reviews(self, ref): return self._s.get_reviews(ref)
     def get_change(self, ref): return self._s.get_change(ref)
@@ -44,6 +45,9 @@ class AuthoringStore(abc.ABC):
     @abc.abstractmethod
     def _version_rows(self, qsid: str) -> list[tuple[int, str]]:
         """[(version_no, content_hash)] 오름차순."""
+    @abc.abstractmethod
+    def _ids(self) -> list[str]:
+        """문항 세트 ID 오름차순."""
     @abc.abstractmethod
     def _bank_json(self, qsid: str, version_no: int) -> Optional[dict]: ...
     @abc.abstractmethod
@@ -121,6 +125,16 @@ class AuthoringStore(abc.ABC):
                 return self._ref(question_set_id, n, h)
         raise BoundaryError("NOT_FOUND", f"문항 세트에 해당하는 버전이 없다: {question_set_id}"
                             + (" (검수 완료 기준)" if reviewed_only else ""))
+
+    def list_ids(self, *, cursor: Optional[str] = None, limit: int = 100):
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+            raise BoundaryError("INVALID_RECORD", "limit은 1 이상의 정수여야 한다")
+        limit = min(limit, MAX_LIMIT)
+        if cursor is not None and not isinstance(cursor, str):
+            raise BoundaryError("INVALID_RECORD", "cursor 형식이 아니다")
+        ids = [i for i in self._ids() if cursor is None or i > cursor]
+        page = ids[:limit]
+        return page, (page[-1] if len(ids) > limit else None)
 
     def list_versions(self, question_set_id: str, *, cursor: Optional[str] = None, limit: int = 100):
         if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:

@@ -156,7 +156,7 @@ bytes + filename
 
 - `AuthoringStore` 기반 클래스가 `QuestionReader` 다섯 메서드를 구현하고(읽기 논리 한 곳), `MemoryQuestionStore`와 `SqliteQuestionStore`가 원시 연산만 구현한다. `store.reader()`는 읽기만 있는 뷰다. `isinstance(x, QuestionReader)`를 통과한다(`runtime_checkable`).
 - 적합성 시험(`tests/test_reader_conformance.py`)은 메모리, SQLite 메모리 DB, SQLite 파일 세 구현에 같은 시험을 돌린다: 해시 검증, NOT_FOUND/INTEGRITY_ERROR/INVALID_RECORD, 페이지 순서와 커서, `reviewed_only` 의미, 복사본 반환, 변조 감지, 멱등과 CONFLICT.
-- 페이지: `cursor`는 마지막 버전 번호, `limit` 상한 1000.
+- 페이지: `list_versions`의 `cursor`는 마지막 버전 번호, `list_ids`의 `cursor`는 마지막 문항 세트 ID(ID 오름차순), `limit` 상한 1000.
 
 ## 10. 오류와 멱등 요약
 

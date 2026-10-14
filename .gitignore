@@ -3,5 +3,5 @@ __pycache__/
 *.pyc
 .pytest_cache/
 *.egg-info/
-vendor-contracts/
+build/
 *.sqlite3

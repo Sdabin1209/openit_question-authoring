@@ -5,16 +5,17 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 DOCKER="${DOCKER:-docker}"
 IMG=question-authoring:smoke
-NAME=qa-smoke-$$
+NAME=question-authoring-smoke-$$
 TOKEN=smoke-token
-PORT="${SMOKE_PORT:-18080}"
-"$here/scripts/vendor_contracts.sh"
+"$here/scripts/build_contract_wheel.sh"
 "$DOCKER" build -q -t "$IMG" \
   --build-arg COMMIT="$(git -C "$here" rev-parse --short HEAD)" \
-  --build-arg CONTRACT_VERSION="$(cat "$here/vendor-contracts/survey-schema/CONTRACT_VERSION")" \
-  --build-arg BOUNDARY_CONTRACTS_REV="$(cat "$here/vendor-contracts/boundary-contracts.rev")" "$here" >/dev/null
+  --build-arg CONTRACT_VERSION="$(cat "$here/build/survey-schema/CONTRACT_VERSION")" \
+  --build-arg BOUNDARY_CONTRACTS_REV="$(cat "$here/build/contracts.rev")" "$here" >/dev/null
 trap '"$DOCKER" rm -fv "$NAME" >/dev/null 2>&1 || true' EXIT
-"$DOCKER" run -d --name "$NAME" -p "$PORT:8080" -e QA_AUTHOR_TOKENS="$TOKEN:smoke-author:question-author" "$IMG" >/dev/null
+"$DOCKER" run -d --name "$NAME" -p 127.0.0.1::8080 -e QA_AUTHOR_TOKENS="$TOKEN:smoke-author:question-author" "$IMG" >/dev/null
+PORT=$("$DOCKER" port "$NAME" 8080/tcp | head -1 | sed 's/.*://' | tr -d '\r')
+echo "호스트 포트(Docker 배정): $PORT"
 for i in $(seq 1 30); do
   curl -fsS "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1 && break
   sleep 1

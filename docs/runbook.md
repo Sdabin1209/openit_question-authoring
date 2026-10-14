@@ -8,7 +8,7 @@ pip install -e ../boundary-contracts jsonschema pytest && pip install -e . --no-
 python -m pytest -q
 ```
 
-스키마 위치는 기본으로 워크스페이스의 읽기 전용 폴더(`../boundary-contracts/schemas`, `../survey-service/schema`)를 쓴다. 다른 곳은 `Validators(boundary_schema_dir, survey_schema_dir)` 인자로 넘긴다.
+경계 계약 스키마는 `boundary_contracts`(v1.0.0) 패키지 안의 것을 쓴다. 문진 스키마는 기본으로 `../survey-service/schema`(읽기 전용)이고 다른 곳은 `Validators(survey_schema_dir)` 인자로 넘긴다.
 
 ## 이미지 스모크 시험 (D22)
 
@@ -17,7 +17,7 @@ scripts/smoke.sh                 # docker가 있을 때
 DOCKER=docker.exe scripts/smoke.sh   # WSL에서 docker.exe만 있을 때
 ```
 
-`vendor-contracts/`를 만들고(`scripts/vendor_contracts.sh`, 커밋하지 않음) 이미지를 빌드해 컨테이너를 띄운 뒤 `/healthz`, `/readyz`, 자료 등록 -> 미리보기 -> 확인, 인증 없는 요청 거부, 비root 실행, 라벨을 확인한다. 변경을 완료했다고 말하기 전에 돌린다.
+`build/`에 계약 wheel을 만들고(`scripts/build_contract_wheel.sh`: 태그 시점 소스로 만든 wheel, 커밋하지 않음) 이미지를 빌드해 컨테이너를 띄운 뒤 `/healthz`, `/readyz`, 자료 등록 -> 미리보기 -> 확인, 인증 없는 요청 거부, 비root 실행, 라벨을 확인한다. 변경을 완료했다고 말하기 전에 돌린다.
 
 ## 설정(환경 변수. 진입점 `python -m question_authoring`만 읽는다)
 
@@ -25,7 +25,6 @@ DOCKER=docker.exe scripts/smoke.sh   # WSL에서 docker.exe만 있을 때
 | --- | --- | --- |
 | QA_DB_PATH | SQLite 파일 | /data/questions.sqlite3 |
 | QA_AUTHOR_TOKENS | `토큰:actor-id:역할` 쉼표 목록. 비밀 값 | 없음(모든 요청 403) |
-| QA_BOUNDARY_SCHEMAS | boundary-contracts schemas 디렉터리 | 이미지: /opt/boundary-contracts/schemas |
 | QA_SURVEY_SCHEMA | 문진 스키마 디렉터리 | 이미지: /opt/survey-schema |
 | QA_HOST, QA_PORT | 바인드 | 0.0.0.0, 8080 |
 

@@ -80,6 +80,9 @@ class SqliteQuestionStore(AuthoringStore):
         return [(r[0], r[1]) for r in self._q(
             "SELECT version_no, content_hash FROM versions WHERE qsid=? ORDER BY version_no", (qsid,))]
 
+    def _ids(self):
+        return [r[0] for r in self._q("SELECT DISTINCT qsid FROM versions ORDER BY qsid")]
+
     def _bank_json(self, qsid, n):
         r = self._q("SELECT bank FROM versions WHERE qsid=? AND version_no=?", (qsid, n))
         return json.loads(r[0][0]) if r else None
