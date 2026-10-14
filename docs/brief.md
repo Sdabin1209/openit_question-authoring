@@ -33,6 +33,8 @@
 - 받는 것: **I7**(개선 신호), **I4**(판정 조회), **I8**(규칙 미리보기).
 - 해야 하는 것: 버전을 올릴 때마다 `ChangeClassification`을 만든다. 검수는 `ReviewRecord`로 남긴다. `QuestionBank` 스키마를 통과한 것만 저장한다. `reviewed_only` 조회에는 APPROVED이면서 `clinical_basis_approved`가 true인 버전만 나온다.
 
+- I1에 `list_ids`를 제공한다(D42). `ref.version == str(question_bank.version)`, `reviewed_only`는 가장 최근 검수 기준이다.
+
 ## 4. 상위 수용 기준
 
 - 문항 버전은 불변이다. 수정은 새 버전을 만든다.
