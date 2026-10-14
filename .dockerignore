@@ -1,0 +1,7 @@
+.venv
+.git
+tests
+docs
+vendor-contracts/*.rev
+__pycache__
+*.sqlite3
