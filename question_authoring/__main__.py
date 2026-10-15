@@ -2,12 +2,11 @@
 
 QA_DB_PATH            SQLite 파일 경로(기본 /data/questions.sqlite3)
 QA_AUTHOR_TOKENS      '토큰:actor-id:역할' 쉼표 목록. 비밀 값이므로 이미지에 넣지 않는다
-QA_SURVEY_SCHEMA      문진 스키마 디렉터리(CONTRACT_VERSION과 schemas/가 있는 곳)
+QA_READ_TOKENS        '역할=토큰' 쉼표 목록. I1 읽기 전용 토큰(저작 경로는 403). 비밀 값
 QA_HOST, QA_PORT      기본 0.0.0.0, 8080
 """
 import os
 import sys
-from pathlib import Path
 
 from .http_api import Api, make_server
 from .service import Actor, AuthoringService
@@ -22,9 +21,13 @@ def build() -> tuple[Api, SqliteQuestionStore]:
         tok, aid, role = item.split(":")
         tokens[tok] = Actor(aid, role)
     store = SqliteQuestionStore(env.get("QA_DB_PATH", "/data/questions.sqlite3"))
-    v = Validators(Path(env["QA_SURVEY_SCHEMA"]) if env.get("QA_SURVEY_SCHEMA") else None)
+    v = Validators()
+    read_tokens = {}
+    for item in filter(None, (env.get("QA_READ_TOKENS") or "").split(",")):
+        role, tok = item.split("=", 1)
+        read_tokens[tok] = role
     svc = AuthoringService(store, v, author_roles={a.role for a in tokens.values()} or {"question-author"})
-    return Api(svc, tokens, ready=store.is_ready), store
+    return Api(svc, tokens, read_tokens=read_tokens, ready=store.is_ready), store
 
 
 def main() -> int:

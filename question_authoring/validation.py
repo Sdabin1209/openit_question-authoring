@@ -6,12 +6,12 @@ from __future__ import annotations
 
 import copy
 import json
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import jsonschema
 
 import boundary_contracts
+import survey_schema
 
 from boundary_contracts.errors import BoundaryError
 
@@ -19,26 +19,18 @@ SUPPORTED_RUNTIME_CONTRACT_VERSION = 1
 PIPELINE_SCHEMA_VERSION = boundary_contracts.PIPELINE_SCHEMA_VERSION
 
 
-def default_survey_schema_dir() -> Path:
-    """개발 환경 기본값(워크스페이스 안의 읽기 전용 문진 스키마). 이미지에서는 인자로 넘긴다."""
-    return Path(boundary_contracts.__file__).resolve().parent.parent.parent / "survey-service" / "schema"
-
-
 class Validators:
-    """경계 계약 스키마는 boundary_contracts.validator, QuestionBank는 문진 스키마 디렉터리에서 읽는다."""
+    """경계 계약 스키마는 boundary_contracts.validator, QuestionBank는 openit-survey-schema 패키지에서 읽는다."""
 
-    def __init__(self, survey_schema_dir: Optional[Path] = None):
-        sdir = Path(survey_schema_dir) if survey_schema_dir else default_survey_schema_dir()
-        version_file = sdir / "CONTRACT_VERSION"
-        try:
-            self.runtime_contract_version = int(version_file.read_text().strip())
-        except (OSError, ValueError) as e:
-            raise BoundaryError("UNAVAILABLE", f"문진 스키마 버전을 읽지 못했다: {version_file}") from e
-        if self.runtime_contract_version != SUPPORTED_RUNTIME_CONTRACT_VERSION:
-            raise BoundaryError("UNSUPPORTED_VERSION",
-                                f"문진 스키마 버전 {self.runtime_contract_version}은 지원하지 않는다"
+    def __init__(self, survey_version: int = SUPPORTED_RUNTIME_CONTRACT_VERSION):
+        if survey_version != SUPPORTED_RUNTIME_CONTRACT_VERSION:
+            raise BoundaryError("UNSUPPORTED_VERSION", f"문진 스키마 버전 {survey_version}은 지원하지 않는다"
                                 f"(지원: {SUPPORTED_RUNTIME_CONTRACT_VERSION})")
-        self._qb = json.loads((sdir / "schemas" / "QuestionBank.json").read_text(encoding="utf-8"))
+        try:
+            self._qb = survey_schema.load_schema("QuestionBank", survey_version)
+        except KeyError as e:
+            raise BoundaryError("UNSUPPORTED_VERSION", f"문진 스키마 정수 버전 {survey_version}이 설치되어 있지 않다") from e
+        self.runtime_contract_version = survey_version
         self._cache: dict = {}
 
     def _v(self, name: str):

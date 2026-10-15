@@ -15,8 +15,8 @@ from boundary_contracts.errors import BoundaryError
 
 from .service import Actor, AuthoringService
 
-STATUS = {"NOT_FOUND": 404, "INVALID_RECORD": 400, "UNSUPPORTED_VERSION": 400, "CONFLICT": 409,
-          "INTEGRITY_ERROR": 500, "FAILED_PRECONDITION": 412, "PERMISSION_DENIED": 403, "UNAVAILABLE": 503}
+STATUS = {"NOT_FOUND": 404, "INVALID_RECORD": 400, "UNSUPPORTED_VERSION": 422, "CONFLICT": 409,
+          "INTEGRITY_ERROR": 422, "FAILED_PRECONDITION": 412, "PERMISSION_DENIED": 403, "UNAVAILABLE": 503}
 MAX_BODY = 8 * 1024 * 1024
 
 
@@ -37,9 +37,11 @@ def _need(d: dict, key: str):
 
 
 class Api:
-    def __init__(self, service: AuthoringService, tokens: Mapping[str, Actor], *, ready: Callable[[], bool] = lambda: True):
+    def __init__(self, service: AuthoringService, tokens: Mapping[str, Actor], *,
+                 read_tokens: Optional[Mapping[str, str]] = None, ready: Callable[[], bool] = lambda: True):
         self.svc = service
         self.tokens = dict(tokens)
+        self.read_tokens = dict(read_tokens or {})    # 토큰 -> 역할(읽기 전용)
         self.ready = ready
 
     def handle(self, method: str, url: str, headers: Mapping[str, str], body: bytes = b"") -> tuple[int, dict]:
@@ -51,10 +53,72 @@ class Api:
             if method == "GET" and path == "/readyz":
                 ok = self.ready()
                 return (200 if ok else 503), {"status": "ready" if ok else "not-ready"}
-            actor = self._actor(headers)
+            if path == "/v1/question-sets" or path.startswith("/v1/question-sets/"):
+                self._reader_auth(headers)          # 읽기 토큰 또는 저작 토큰
+                if method != "GET":
+                    raise BoundaryError("NOT_FOUND", f"없는 경로: {method} {path}")
+                return 200, self._read(path, q)
+            actor = self._actor(headers)            # 저작 경로: 읽기 토큰은 여기서 403
             return 200, self._route(method, path, q, headers, body, actor)
         except BoundaryError as e:
             return STATUS[e.code], e.to_record()
+
+    def _bearer(self, headers) -> Optional[str]:
+        auth = {k.lower(): v for k, v in headers.items()}.get("authorization", "")
+        m = re.match(r"^Bearer (\S+)$", auth)
+        return m.group(1) if m else None
+
+    def _reader_auth(self, headers) -> None:
+        tok = self._bearer(headers)
+        if tok is None or (tok not in self.read_tokens and tok not in self.tokens):
+            raise BoundaryError("PERMISSION_DENIED", "인증이 필요하다")
+
+    def _page(self, q) -> tuple[Optional[str], int]:
+        try:
+            limit = int(q.get("limit", 100))
+        except ValueError:
+            raise BoundaryError("INVALID_RECORD", "limit은 정수여야 한다")
+        if not 1 <= limit <= 500:
+            raise BoundaryError("INVALID_RECORD", "limit은 1~500이어야 한다")
+        return q.get("cursor"), limit
+
+    def _read(self, path: str, q: dict):
+        """I1 QuestionReader의 HTTP 읽기 면(boundary-contracts/HTTP.md). 응답은 스키마 검증을 거친다."""
+        r = self.svc.store.reader()
+        v = self.svc.v
+        if path == "/v1/question-sets":
+            cur, lim = self._page(q)
+            items, nxt = r.list_ids(cursor=cur, limit=lim)
+            return {"items": items, "next_cursor": nxt}
+        m = re.match(r"^/v1/question-sets/([^/]+)/(versions|latest)$", path)
+        if m:
+            qsid, what = m.groups()
+            if what == "latest":
+                flag = q.get("reviewed_only", "false")
+                if flag not in ("true", "false"):
+                    raise BoundaryError("INVALID_RECORD", "reviewed_only는 true 또는 false")
+                return r.latest(qsid, reviewed_only=flag == "true")
+            cur, lim = self._page(q)
+            items, nxt = r.list_versions(qsid, cursor=cur, limit=lim)
+            return {"items": items, "next_cursor": nxt}
+        m = re.match(r"^/v1/question-sets/([^/]+)/versions/([^/]+)(?:/(reviews|change))?$", path)
+        if m:
+            qsid, ver, sub = m.groups()
+            ref = self.svc.store.ref_of(qsid, ver)
+            if sub is None:
+                bank = r.get_question_bank(ref)      # 해시 재계산 포함
+                v.check("QuestionBank", bank)
+                return bank
+            if sub == "reviews":
+                revs = r.get_reviews(ref)
+                for x in revs:
+                    v.check("ReviewRecord", x)
+                return {"items": revs, "next_cursor": None}
+            ch = r.get_change(ref)
+            if ch is not None:
+                v.check("ChangeClassification", ch)
+            return {"item": ch}
+        raise BoundaryError("NOT_FOUND", f"없는 경로: GET {path}")
 
     def _actor(self, headers) -> Actor:
         auth = {k.lower(): v for k, v in headers.items()}.get("authorization", "")

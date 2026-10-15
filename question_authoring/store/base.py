@@ -32,6 +32,7 @@ class QuestionReaderView:
     def __init__(self, store: "AuthoringStore"):
         self._s = store
 
+    def ref_of(self, question_set_id, version): return self._s.ref_of(question_set_id, version)
     def get_question_bank(self, ref): return self._s.get_question_bank(ref)
     def latest(self, question_set_id, *, reviewed_only=False): return self._s.latest(question_set_id, reviewed_only=reviewed_only)
     def list_ids(self, *, cursor=None, limit=100): return self._s.list_ids(cursor=cursor, limit=limit)
@@ -96,6 +97,14 @@ class AuthoringStore(abc.ABC):
         if bank is None:
             raise BoundaryError("NOT_FOUND", f"문항 세트 버전이 없다: {qsid}@{version}")
         return qsid, n, want_hash, bank
+
+    def ref_of(self, question_set_id: str, version: str) -> dict:
+        """버전 번호로 ArtifactRef를 얻는다. 없으면 NOT_FOUND. (HTTP 읽기 면이 경로의 버전을 ref로 바꿀 때 쓴다.)"""
+        n = self._vno(version)
+        h = dict(self._version_rows(question_set_id)).get(n)
+        if h is None:
+            raise BoundaryError("NOT_FOUND", f"문항 세트 버전이 없다: {question_set_id}@{version}")
+        return self._ref(question_set_id, n, h)
 
     def get_question_bank(self, ref) -> dict:
         qsid, n, want_hash, bank = self._locate(ref)
