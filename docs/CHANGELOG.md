@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 0.3.1 (2026-10-15)
+
+- boundary-contracts v1.2.0. `HttpQuestionReader`로 우리 서버를 읽는 I1 서버 적합성 시험 추가(여러 쪽 목록, reviewed_only, 해시 재계산, NOT_FOUND, PERMISSION_DENIED, INTEGRITY_ERROR, 서버 중단 UNAVAILABLE). 서버 수정은 필요 없었다.
+
 ## 0.3.0 (2026-10-15) HTTP 읽기 면 (D49, D50)
 
 - I1 HTTP 읽기 면(HTTP.md 표): 읽기 전용 토큰 `QA_READ_TOKENS`, 응답 스키마·해시 검증, 오류 코드 422 정정(UNSUPPORTED_VERSION, INTEGRITY_ERROR).

@@ -10,7 +10,7 @@
 
 | 이름 | 내용 | 확인 |
 | --- | --- | --- |
-| I1 QuestionReader HTTP 읽기 면 | `../boundary-contracts/HTTP.md` 표 그대로: `GET /v1/question-sets`, `/{id}/versions`, `/{id}/latest?reviewed_only=`, `/{id}/versions/{n}`, `.../reviews`, `.../change`. 목록 `{items, next_cursor}`(limit 기본 100, 최대 500), 없을 수 있는 것은 `{item: null}`. 응답 레코드는 스키마 검증과 해시 재계산을 거친다. 읽기 토큰(`QA_READ_TOKENS=역할=토큰`)은 읽기 면만 호출할 수 있고 저작 경로는 403. 오류 상태 코드는 CONVENTIONS 9절(UNSUPPORTED_VERSION, INTEGRITY_ERROR는 422). | `tests/test_http_read.py`(실제 서버), 스모크 |
+| I1 QuestionReader HTTP 읽기 면 | `../boundary-contracts/HTTP.md` 표 그대로: `GET /v1/question-sets`, `/{id}/versions`, `/{id}/latest?reviewed_only=`, `/{id}/versions/{n}`, `.../reviews`, `.../change`. 목록 `{items, next_cursor}`(limit 기본 100, 최대 500), 없을 수 있는 것은 `{item: null}`. 응답 레코드는 스키마 검증과 해시 재계산을 거친다. 읽기 토큰(`QA_READ_TOKENS=역할=토큰`)은 읽기 면만 호출할 수 있고 저작 경로는 403. 오류 상태 코드는 CONVENTIONS 9절(UNSUPPORTED_VERSION, INTEGRITY_ERROR는 422). | `tests/test_http_read.py`, `tests/test_http_client_conformance.py`(HttpQuestionReader, 서버 적합성), 스모크 |
 | I1 QuestionReader (`boundary_contracts.sdk.QuestionReader`) | `get_question_bank`, `latest(reviewed_only)`, `list_ids`, `list_versions`, `get_reviews`, `get_change`. 구현: `question_authoring.store.SqliteQuestionStore`, 메모리 구현 `MemoryQuestionStore`. 둘 다 `.reader()`로 읽기 전용 뷰를 낸다. | 같은 적합성 시험을 통과 |
 | 저작 API (HTTP) | design.md 8절 | `tests/test_http_api.py`, `scripts/smoke.sh` |
 | 생산하는 계약 | `QuestionBank`(기존), `ReviewRecord`, `ChangeClassification` | 쓰기 전에 스키마 검증 |
@@ -20,7 +20,7 @@
 ## 소비하는 것과 지원 버전
 
 - 문진 스키마 `QuestionBank`: `openit-survey-schema`(태그 survey-schema-v1.0.0)의 정수 버전 1만 지원한다. 설치되어 있지 않거나 다르면 `UNSUPPORTED_VERSION`.
-- 경계 계약: `ReviewRecord`, `ChangeClassification`, `ArtifactRef`, `BoundaryError`를 `pipeline_schema_version` `1.0`(boundary-contracts v1.1.0)으로 쓴다. 해시는 `boundary_contracts.canonical`로만 계산한다.
+- 경계 계약: `ReviewRecord`, `ChangeClassification`, `ArtifactRef`, `BoundaryError`를 `pipeline_schema_version` `1.0`(boundary-contracts v1.2.0)으로 쓴다. 해시는 `boundary_contracts.canonical`로만 계산한다.
 - 이번 구간에서 소비하지 않는 것: I7(개선 신호), I4(판정 조회), I8(규칙 미리보기). 미구현이며 해당 계약이 필요한 시점에 이 문서에 추가한다.
 
 ## 이 영역이 지키는 것
