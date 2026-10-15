@@ -2,7 +2,8 @@
 .git
 tests
 docs
-build/contracts-src
-build/contracts.rev
+build/*-src
+build/*.rev
+build/*.tag
 __pycache__
 *.sqlite3

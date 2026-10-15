@@ -1,5 +1,13 @@
 # 변경 이력
 
+## 0.3.0 (2026-10-15) HTTP 읽기 면 (D49, D50)
+
+- I1 HTTP 읽기 면(HTTP.md 표): 읽기 전용 토큰 `QA_READ_TOKENS`, 응답 스키마·해시 검증, 오류 코드 422 정정(UNSUPPORTED_VERSION, INTEGRITY_ERROR).
+- 문진 스키마는 `openit-survey-schema`(survey-schema-v1.0.0) wheel로 설치. `QA_SURVEY_SCHEMA` 삭제, `build/survey-schema` 복사 방식 삭제.
+- boundary-contracts v1.1.0. 이미지 빌드 스크립트 `scripts/build_wheels.sh`(두 태그를 git archive).
+- 이미지: HEALTHCHECK, 라벨 `io.openit.*` 6개로 통일.
+- 스모크에 읽기 호출과 헬스 확인 추가(포트는 Docker 배정).
+
 ## 0.2.0 (2026-10-15) 헤드 결정 반영
 
 - boundary-contracts v1.0.0 사용: 자체 스키마 위치 코드를 지우고 `boundary_contracts.validator`를 쓴다. `QA_BOUNDARY_SCHEMAS` 삭제.

@@ -7,13 +7,13 @@ DOCKER="${DOCKER:-docker}"
 IMG=question-authoring:smoke
 NAME=question-authoring-smoke-$$
 TOKEN=smoke-token
-"$here/scripts/build_contract_wheel.sh"
+"$here/scripts/build_wheels.sh"
 "$DOCKER" build -q -t "$IMG" \
   --build-arg COMMIT="$(git -C "$here" rev-parse --short HEAD)" \
-  --build-arg CONTRACT_VERSION="$(cat "$here/build/survey-schema/CONTRACT_VERSION")" \
-  --build-arg BOUNDARY_CONTRACTS_REV="$(cat "$here/build/contracts.rev")" "$here" >/dev/null
+  --build-arg BOUNDARY_TAG="$(cat "$here/build/contracts.tag")" \
+  --build-arg SURVEY_SCHEMA_TAG="$(cat "$here/build/survey-schema.tag")" "$here" >/dev/null
 trap '"$DOCKER" rm -fv "$NAME" >/dev/null 2>&1 || true' EXIT
-"$DOCKER" run -d --name "$NAME" -p 127.0.0.1::8080 -e QA_AUTHOR_TOKENS="$TOKEN:smoke-author:question-author" "$IMG" >/dev/null
+"$DOCKER" run -d --name "$NAME" -p 127.0.0.1::8080 -e QA_AUTHOR_TOKENS="$TOKEN:smoke-author:question-author" -e QA_READ_TOKENS="smoke=read-token" "$IMG" >/dev/null
 PORT=$("$DOCKER" port "$NAME" 8080/tcp | head -1 | sed 's/.*://' | tr -d '\r')
 echo "호스트 포트(Docker 배정): $PORT"
 for i in $(seq 1 30); do
@@ -30,5 +30,15 @@ ph=$(curl -fsS -H "$AUTH" "http://127.0.0.1:$PORT/v1/drafts/$did/preview" | pyth
 curl -fsS -X POST -H "$AUTH" -d "{\"preview_hash\":\"$ph\"}" "http://127.0.0.1:$PORT/v1/drafts/$did/confirm"; echo
 code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/v1/drafts")
 [ "$code" = "403" ] || { echo "인증 없는 요청이 거부되지 않음: $code"; exit 1; }
+RT="Authorization: Bearer read-token"
+curl -fsS -H "$RT" "http://127.0.0.1:$PORT/v1/question-sets" | grep -q '"qs-smoke"' || { echo "list_ids 실패"; exit 1; }
+curl -fsS -H "$RT" "http://127.0.0.1:$PORT/v1/question-sets/qs-smoke/latest?reviewed_only=true" | grep -q '"version": "1"' || { echo "latest 실패"; exit 1; }
+curl -fsS -H "$RT" "http://127.0.0.1:$PORT/v1/question-sets/qs-smoke/versions/1" | python3 -c 'import sys,json;assert json.load(sys.stdin)["version"]==1'
+code=$(curl -s -o /dev/null -w '%{http_code}' -H "$RT" "http://127.0.0.1:$PORT/v1/drafts")
+[ "$code" = "403" ] || { echo "읽기 토큰이 저작 경로에서 거부되지 않음: $code"; exit 1; }
+for i in $(seq 1 20); do
+  st=$("$DOCKER" inspect -f '{{.State.Health.Status}}' "$NAME" | tr -d '\r'); [ "$st" = healthy ] && break; sleep 2
+done
+echo "HEALTHCHECK: $st"; [ "$st" = healthy ] || exit 1
 "$DOCKER" image inspect "$IMG" --format '{{json .Config.Labels}}'
 echo "SMOKE OK"

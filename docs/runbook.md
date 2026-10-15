@@ -4,11 +4,11 @@
 
 ```
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e ../boundary-contracts jsonschema pytest && pip install -e . --no-deps
+pip install -e ../boundary-contracts -e ../survey-service/schema jsonschema pytest && pip install -e . --no-deps
 python -m pytest -q
 ```
 
-경계 계약 스키마는 `boundary_contracts`(v1.0.0) 패키지 안의 것을 쓴다. 문진 스키마는 기본으로 `../survey-service/schema`(읽기 전용)이고 다른 곳은 `Validators(survey_schema_dir)` 인자로 넘긴다.
+경계 계약 스키마는 `boundary_contracts`(v1.1.0), 문진 스키마는 `openit-survey-schema`(태그 survey-schema-v1.0.0) 패키지의 것을 쓴다. 복사본은 없다.
 
 ## 이미지 스모크 시험 (D22)
 
@@ -17,15 +17,15 @@ scripts/smoke.sh                 # docker가 있을 때
 DOCKER=docker.exe scripts/smoke.sh   # WSL에서 docker.exe만 있을 때
 ```
 
-`build/`에 계약 wheel을 만들고(`scripts/build_contract_wheel.sh`: 태그 시점 소스로 만든 wheel, 커밋하지 않음) 이미지를 빌드해 컨테이너를 띄운 뒤 `/healthz`, `/readyz`, 자료 등록 -> 미리보기 -> 확인, 인증 없는 요청 거부, 비root 실행, 라벨을 확인한다. 변경을 완료했다고 말하기 전에 돌린다.
+`build/`에 계약 wheel을 만들고(`scripts/build_wheels.sh`: 두 태그 시점 소스(git archive)로 만든 wheel, 커밋하지 않음) 이미지를 빌드해 컨테이너를 띄운 뒤 `/healthz`, `/readyz`, 자료 등록 -> 미리보기 -> 확인, 인증 없는 요청 거부, 비root 실행, 라벨을 확인한다. 변경을 완료했다고 말하기 전에 돌린다.
 
 ## 설정(환경 변수. 진입점 `python -m question_authoring`만 읽는다)
 
 | 이름 | 뜻 | 기본 |
 | --- | --- | --- |
 | QA_DB_PATH | SQLite 파일 | /data/questions.sqlite3 |
+| QA_READ_TOKENS | `역할=토큰` 쉼표 목록. I1 읽기 전용 토큰(저작 경로는 403). 비밀 값 | 없음(읽기 면 모두 403) |
 | QA_AUTHOR_TOKENS | `토큰:actor-id:역할` 쉼표 목록. 비밀 값 | 없음(모든 요청 403) |
-| QA_SURVEY_SCHEMA | 문진 스키마 디렉터리 | 이미지: /opt/survey-schema |
 | QA_HOST, QA_PORT | 바인드 | 0.0.0.0, 8080 |
 
 로그는 표준 출력. 데이터는 `/data` 볼륨 하나.
@@ -38,3 +38,7 @@ DOCKER=docker.exe scripts/smoke.sh   # WSL에서 docker.exe만 있을 때
 - 승인 철회: `POST /v1/reviews`로 REJECTED 또는 CHANGES_REQUESTED(사유 필수)를 덧붙인다. 그 버전은 `reviewed_only`에서 빠진다. 다시 승인하려면 APPROVED + clinical_basis_approved를 덧붙인다.
 - 백업: 서비스를 멈추거나 `sqlite3 questions.sqlite3 ".backup out.sqlite3"`로 복사한다. 복원 후 `SqliteQuestionStore`로 열어 각 버전을 `get_question_bank`로 읽어 해시를 확인한다.
 - 새 추출기 추가: `extractors/base.py`의 `Extractor` 인터페이스를 구현하고 `default_registry()`에 등록한다. 시험은 `tests/test_extractor.py`를 본뜬다. 새 추출기는 추정하지 않는다는 규칙(UNSURE/MISSING/UNPARSED)을 지켜야 한다.
+
+## 이미지 점검
+
+라벨: `io.openit.service`, `io.openit.revision`, `io.openit.contracts.boundary`, `io.openit.contracts.survey-schema`, `io.openit.turn-engine`, `io.openit.model-runtime`(D50). HEALTHCHECK는 `/healthz`를 15초마다 부른다(`docker inspect -f '{{.State.Health.Status}}'`). 스모크는 읽기 토큰으로 I1 읽기 호출과 저작 경로 403도 확인한다.
