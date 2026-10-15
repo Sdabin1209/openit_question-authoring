@@ -25,6 +25,8 @@ DOCKER=docker.exe scripts/smoke.sh   # WSL에서 docker.exe만 있을 때
 | --- | --- | --- |
 | QA_DB_PATH | SQLite 파일 | /data/questions.sqlite3 |
 | QA_READ_TOKENS | `역할=토큰` 쉼표 목록. I1 읽기 전용 토큰(저작 경로는 403). 비밀 값 | 없음(읽기 면 모두 403) |
+| QA_FAILURES_URL | ops-feedback(I7) URL. 비우면 `/v1/signals`는 DISABLED | 없음 |
+| QA_FAILURES_TOKEN_ENV | I7 토큰이 든 환경 변수의 이름 | QA_FAILURES_TOKEN |
 | QA_AUTHOR_TOKENS | `토큰:actor-id:역할` 쉼표 목록. 비밀 값 | 없음(모든 요청 403) |
 | QA_HOST, QA_PORT | 바인드 | 0.0.0.0, 8080 |
 

@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 0.4.0 (2026-10-15) 개선 신호 수신함 (D52)
+
+- `GET /v1/signals`: I7 실패 사례로 문항 세트·문항별 건수, 유형 분포, 혼동, CONFIRMED 수를 낸다(읽기 전용, 저자 인증, 미설정 시 DISABLED). 서버 대역 시험 추가.
+
 ## 0.3.1 (2026-10-15)
 
 - boundary-contracts v1.2.0. `HttpQuestionReader`로 우리 서버를 읽는 I1 서버 적합성 시험 추가(여러 쪽 목록, reviewed_only, 해시 재계산, NOT_FOUND, PERMISSION_DENIED, INTEGRITY_ERROR, 서버 중단 UNAVAILABLE). 서버 수정은 필요 없었다.

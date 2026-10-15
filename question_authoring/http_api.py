@@ -38,10 +38,11 @@ def _need(d: dict, key: str):
 
 class Api:
     def __init__(self, service: AuthoringService, tokens: Mapping[str, Actor], *,
-                 read_tokens: Optional[Mapping[str, str]] = None, ready: Callable[[], bool] = lambda: True):
+                 read_tokens: Optional[Mapping[str, str]] = None, signals=None, ready: Callable[[], bool] = lambda: True):
         self.svc = service
         self.tokens = dict(tokens)
         self.read_tokens = dict(read_tokens or {})    # 토큰 -> 역할(읽기 전용)
+        self.signals = signals                         # FailureSource | None (I7 미설정이면 None)
         self.ready = ready
 
     def handle(self, method: str, url: str, headers: Mapping[str, str], body: bytes = b"") -> tuple[int, dict]:
@@ -130,6 +131,19 @@ class Api:
 
     def _route(self, method, path, q, headers, body, actor):
         s = self.svc
+        if method == "GET" and path == "/v1/signals":
+            s.require_author(actor)                    # 저자 인증. 읽기 토큰은 여기 오기 전에 403
+            if self.signals is None:
+                return {"status": "DISABLED", "reason": "I7(ops-feedback)가 설정되지 않았다(QA_FAILURES_URL)"}
+            try:
+                mx = int(q.get("max_cases", 2000))
+            except ValueError:
+                raise BoundaryError("INVALID_RECORD", "max_cases는 정수여야 한다")
+            if not 1 <= mx <= 20000:
+                raise BoundaryError("INVALID_RECORD", "max_cases는 1~20000이어야 한다")
+            from .signals import build_signals
+            return build_signals(self.signals, question_set_id=q.get("question_set_id"),
+                                 review_status=q.get("review_status"), max_cases=mx)
         if method == "POST" and path == "/v1/drafts":
             b = _json(body)
             return s.create_draft(actor, _need(b, "question_set_id"), base_version=b.get("base_version", "latest"))

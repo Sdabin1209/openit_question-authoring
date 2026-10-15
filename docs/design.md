@@ -168,10 +168,17 @@ bytes + filename
 - 업로드 자료에 환자 정보는 없다고 가정하되 저장 전에 경고한다(7절).
 - 읽기 전용 SQLite 연결(`read_only=True`)로 이웃 영역에 읽기 계정을 줄 수 있다.
 
+## 11-1. 개선 신호 수신함 (구현, 읽기 전용)
+
+- 입력: ops-feedback의 I7(`HttpFailureStore`). `list_cases(latest_only=True)`로 실패 사례를 쪽별로 읽고(상한 `max_cases`, 기본 2000, 넘으면 `truncated`) `get_trace`로 비식별 trace를 읽는다. I7 클라이언트는 서비스 진입점이 `QA_FAILURES_URL`과 `QA_FAILURES_TOKEN_ENV`(토큰이 든 환경 변수의 이름)로 만든다. 미설정이면 `GET /v1/signals`는 `{"status": "DISABLED", "reason": ...}`를 낸다.
+- 출력(`signals.py`, `GET /v1/signals?question_set_id=&review_status=&max_cases=`, 저자 인증): 문항 세트별 (a) 사례 수, 유형 분포, 버전별 수, (c) CONFIRMED 수. 문항별로 같은 수와 분포, (b) 혼동(같은 문항에서 같은 유형이 `confusion_min`=2회 이상). 문항 세트는 `FailureCase.question_set.id`, 문항은 비식별 trace의 `planner_output.directive.targets`(와 `awaiting.targets`)의 `question_id`에서 읽는다(제안: trace에서 문항을 가리키는 가장 직접적인 구조 필드로 판단했다).
+- 건너뛰기: 사례에 `question_set`이 없으면 `NO_QUESTION_SET`, trace를 읽지 못하면 `TRACE_UNREADABLE`, trace에 문항 ID가 없으면 `NO_QUESTION_ID`(문항 세트 수준에는 계속 센다). 추정하지 않고 건수를 `skipped`에 낸다.
+- 하지 않는 것: 자동 수정, 발화·trace 본문 저장이나 반환(O19 미정). 건수와 ID만 낸다. 신호는 읽을 때마다 계산하며 저장하지 않는다. I7 실패는 `BoundaryError`(PERMISSION_DENIED, UNAVAILABLE 등)로 그대로 전해진다.
+
 ## 12. 범위 밖 또는 미구현
 
 - 관리자 콘솔 UI(저작 API의 클라이언트로 나중에).
-- 소비하는 계약: I7 개선 신호 수신함, I4 판정 조회, I8 규칙 미리보기. 첫 구간에서 구현하지 않았다. 미리보기의 변경 요약은 규칙 실행이 아니라 구조 비교다.
+- 소비하는 계약: I7 개선 신호 수신함은 11-1절에 구현했다. I4 판정 조회, I8 규칙 미리보기는 미구현. 미리보기의 변경 요약은 규칙 실행이 아니라 구조 비교다.
 - 템플릿과 코드·단위 사전: 화면 입력용 필드 목록과 사전은 콘솔을 만들 때 설계한다. 사전의 내용(코드 목록)은 저자가 정한다.
 - PDF·Word 추출기.
 - 저자 인증의 실제 방식, 저자별 권한 구분.

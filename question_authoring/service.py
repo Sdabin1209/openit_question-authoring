@@ -118,6 +118,9 @@ class AuthoringService:
         self._clock = clock
         self._new_id = new_id
 
+    def require_author(self, actor: Optional[Actor]) -> Actor:
+        return self._auth(actor)
+
     # ---------- 공통 ----------
     def _auth(self, actor: Optional[Actor]) -> Actor:
         if actor is None or actor.role not in self.author_roles:

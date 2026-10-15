@@ -21,7 +21,8 @@
 
 - 문진 스키마 `QuestionBank`: `openit-survey-schema`(태그 survey-schema-v1.0.0)의 정수 버전 1만 지원한다. 설치되어 있지 않거나 다르면 `UNSUPPORTED_VERSION`.
 - 경계 계약: `ReviewRecord`, `ChangeClassification`, `ArtifactRef`, `BoundaryError`를 `pipeline_schema_version` `1.0`(boundary-contracts v1.2.0)으로 쓴다. 해시는 `boundary_contracts.canonical`로만 계산한다.
-- 이번 구간에서 소비하지 않는 것: I7(개선 신호), I4(판정 조회), I8(규칙 미리보기). 미구현이며 해당 계약이 필요한 시점에 이 문서에 추가한다.
+- I7 FailureStore(ops-feedback): HTTP로 읽기만 한다(`list_cases`, `get_trace`). 설정 시에만 켜진다. 장애 시 개선 신호 조회만 실패하고 저작·I1 읽기는 영향이 없다. 비식별 trace의 구조 정보만 쓰며 발화는 저장·반환하지 않는다.
+- 아직 소비하지 않는 것: I4(판정 조회), I8(규칙 미리보기). 미구현이며 해당 계약이 필요한 시점에 이 문서에 추가한다.
 
 ## 이 영역이 지키는 것
 
@@ -37,7 +38,8 @@
 | 저작 서비스 중단 | 새 문항 등록·수정이 멈춘다. 이미 만든 버전을 읽는 것은 읽기 전용 SQLite 연결로 계속 된다. 서비스(survey-service)는 영향 없음 | 서비스는 게이트가 묶은 릴리스 사본만 쓴다 |
 | 저장소(SQLite 파일) 읽기 실패 | I1 호출이 `UNAVAILABLE`(재시도 가능). 게이트 제출·합성 데이터 생성이 지연된다 | `/readyz`가 503 |
 | 저장소 내용 변조 | 해당 버전 읽기가 `INTEGRITY_ERROR`. 다른 버전은 영향 없음 | 백업 복원은 runbook |
-| 이웃 영역(ops-feedback, release-gate, turn-engine) 중단 | 영향 없음. 이번 구간에서는 이들을 호출하지 않는다 | 이후 구간에서 이 표를 갱신 |
+| ops-feedback 중단 | `GET /v1/signals`만 UNAVAILABLE. 나머지 영향 없음 |
+| 이웃 영역(release-gate, turn-engine) 중단 | 영향 없음. 호출하지 않는다 | 이후 구간에서 이 표를 갱신 |
 | 계약 버전 불일치 | 시작하지 않는다(`UNSUPPORTED_VERSION`) | |
 
 ## 변경 요청
