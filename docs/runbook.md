@@ -14,7 +14,7 @@ python -m pytest -q
 
 ```
 scripts/smoke.sh                 # docker가 있을 때
-DOCKER=docker.exe scripts/smoke.sh   # WSL에서 docker.exe만 있을 때
+DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. 데몬에 못 닿으면 오류로 중단한다
 ```
 
 `build/`에 계약 wheel을 만들고(`scripts/build_wheels.sh`: 두 태그 시점 소스(git archive)로 만든 wheel, 커밋하지 않음) 이미지를 빌드해 컨테이너를 띄운 뒤 `/healthz`, `/readyz`, 자료 등록 -> 미리보기 -> 확인, 인증 없는 요청 거부, 비root 실행, 라벨을 확인한다. 변경을 완료했다고 말하기 전에 돌린다.

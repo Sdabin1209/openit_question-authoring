@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # 스모크 시험: 이미지를 빌드하고, 컨테이너를 띄워 /healthz, /readyz, 등록-확인 흐름을 확인한다.
-# WSL에서 docker가 없으면 DOCKER=docker.exe 로 실행한다.
+# 실행 파일 이름은 DOCKER 환경 변수로만 바꿀 수 있다(기본 docker).
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 DOCKER="${DOCKER:-docker}"
+"$DOCKER" info >/dev/null 2>&1 || { echo "오류: $DOCKER 데몬에 연결할 수 없다. 데몬이 실행 중이고 이 사용자가 접근할 수 있는지 확인하라." >&2; exit 1; }
 IMG=question-authoring:smoke
 NAME=question-authoring-smoke-$$
 TOKEN=smoke-token
@@ -14,7 +15,7 @@ TOKEN=smoke-token
   --build-arg SURVEY_SCHEMA_TAG="$(cat "$here/build/survey-schema.tag")" "$here" >/dev/null
 trap '"$DOCKER" rm -fv "$NAME" >/dev/null 2>&1 || true' EXIT
 "$DOCKER" run -d --name "$NAME" -p 127.0.0.1::8080 -e QA_AUTHOR_TOKENS="$TOKEN:smoke-author:question-author" -e QA_READ_TOKENS="smoke=read-token" "$IMG" >/dev/null
-PORT=$("$DOCKER" port "$NAME" 8080/tcp | head -1 | sed 's/.*://' | tr -d '\r')
+PORT=$("$DOCKER" port "$NAME" 8080/tcp | head -1 | sed 's/.*://')
 echo "호스트 포트(Docker 배정): $PORT"
 for i in $(seq 1 30); do
   curl -fsS "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1 && break
@@ -38,7 +39,7 @@ curl -fsS -H "$RT" "http://127.0.0.1:$PORT/v1/question-sets/qs-smoke/versions/1"
 code=$(curl -s -o /dev/null -w '%{http_code}' -H "$RT" "http://127.0.0.1:$PORT/v1/drafts")
 [ "$code" = "403" ] || { echo "읽기 토큰이 저작 경로에서 거부되지 않음: $code"; exit 1; }
 for i in $(seq 1 20); do
-  st=$("$DOCKER" inspect -f '{{.State.Health.Status}}' "$NAME" | tr -d '\r'); [ "$st" = healthy ] && break; sleep 2
+  st=$("$DOCKER" inspect -f '{{.State.Health.Status}}' "$NAME"); [ "$st" = healthy ] && break; sleep 2
 done
 echo "HEALTHCHECK: $st"; [ "$st" = healthy ] || exit 1
 "$DOCKER" image inspect "$IMG" --format '{{json .Config.Labels}}'
