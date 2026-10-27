@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 0.5.0 (2026-10-27) 비밀은 파일로 (D84)
+
+- boundary-contracts v2.0.2로 올림(`pipeline_schema_version` 2.0). 토큰 3종을 `boundary_contracts.read_secret`으로 읽는다(`NAME_FILE` 우선, 없으면 `NAME`). 스모크는 비밀을 파일로 주입하고 `inspect`/`exec env`에 평문이 없음을 확인한다. `tests/test_secrets.py` 추가(로그·/readyz·오류 본문·예외 메시지에 값 없음). 개선 신호 시험 데이터를 v2.0으로 갱신.
+
 ## 0.4.0 (2026-10-15) 개선 신호 수신함 (D52)
 
 - `GET /v1/signals`: I7 실패 사례로 문항 세트·문항별 건수, 유형 분포, 혼동, CONFIRMED 수를 낸다(읽기 전용, 저자 인증, 미설정 시 DISABLED). 서버 대역 시험 추가.

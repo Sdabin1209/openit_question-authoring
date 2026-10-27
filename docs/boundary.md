@@ -20,7 +20,7 @@
 ## 소비하는 것과 지원 버전
 
 - 문진 스키마 `QuestionBank`: `openit-survey-schema`(태그 survey-schema-v1.0.0)의 정수 버전 1만 지원한다. 설치되어 있지 않거나 다르면 `UNSUPPORTED_VERSION`.
-- 경계 계약: `ReviewRecord`, `ChangeClassification`, `ArtifactRef`, `BoundaryError`를 `pipeline_schema_version` `1.0`(boundary-contracts v1.2.0)으로 쓴다. 해시는 `boundary_contracts.canonical`로만 계산한다.
+- 경계 계약: `ReviewRecord`, `ChangeClassification`, `ArtifactRef`, `BoundaryError`를 `pipeline_schema_version` `2.0`(boundary-contracts v2.0.2)으로 쓴다. 해시는 `boundary_contracts.canonical`로만 계산한다.
 - I7 FailureStore(ops-feedback): HTTP로 읽기만 한다(`list_cases`, `get_trace`). 설정 시에만 켜진다. 장애 시 개선 신호 조회만 실패하고 저작·I1 읽기는 영향이 없다. 비식별 trace의 구조 정보만 쓰며 발화는 저장·반환하지 않는다.
 - 아직 소비하지 않는 것: I4(판정 조회), I8(규칙 미리보기). 미구현이며 해당 계약이 필요한 시점에 이 문서에 추가한다.
 

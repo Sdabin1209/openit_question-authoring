@@ -13,8 +13,13 @@ TOKEN=smoke-token
   --build-arg COMMIT="$(git -C "$here" rev-parse --short HEAD)" \
   --build-arg BOUNDARY_TAG="$(cat "$here/build/contracts.tag")" \
   --build-arg SURVEY_SCHEMA_TAG="$(cat "$here/build/survey-schema.tag")" "$here" >/dev/null
-trap '"$DOCKER" rm -fv "$NAME" >/dev/null 2>&1 || true' EXIT
-"$DOCKER" run -d --name "$NAME" -p 127.0.0.1::8080 -e QA_AUTHOR_TOKENS="$TOKEN:smoke-author:question-author" -e QA_READ_TOKENS="smoke=read-token" "$IMG" >/dev/null
+SECDIR="$(mktemp -d)"
+trap '"$DOCKER" rm -fv "$NAME" >/dev/null 2>&1 || true; rm -rf "$SECDIR"' EXIT
+# 비밀은 파일로 주입한다(D84): NAME_FILE. 환경 변수에는 경로만 있다.
+printf '%s' "$TOKEN:smoke-author:question-author" > "$SECDIR/author_tokens"
+printf '%s' "smoke=read-token" > "$SECDIR/read_tokens"
+chmod 755 "$SECDIR"; chmod 644 "$SECDIR"/*
+"$DOCKER" run -d --name "$NAME" -p 127.0.0.1::8080 -v "$SECDIR:/run/secrets:ro" -e QA_AUTHOR_TOKENS_FILE=/run/secrets/author_tokens -e QA_READ_TOKENS_FILE=/run/secrets/read_tokens "$IMG" >/dev/null
 PORT=$("$DOCKER" port "$NAME" 8080/tcp | head -1 | sed 's/.*://')
 echo "호스트 포트(Docker 배정): $PORT"
 for i in $(seq 1 30); do
@@ -24,6 +29,8 @@ done
 curl -fsS "http://127.0.0.1:$PORT/healthz"; echo
 curl -fsS "http://127.0.0.1:$PORT/readyz"; echo
 [ "$("$DOCKER" exec "$NAME" id -u)" != "0" ] || { echo "root로 실행 중"; exit 1; }
+if "$DOCKER" inspect "$NAME" | grep -q -e "$TOKEN" -e read-token || "$DOCKER" exec "$NAME" env | grep -q -e "$TOKEN" -e read-token; then echo "비밀이 env/inspect에 노출됨"; exit 1; fi
+echo "비밀 비노출 확인(inspect, exec env)"
 AUTH="Authorization: Bearer $TOKEN"
 did=$(curl -fsS -X POST -H "$AUTH" --data-binary @"$here/examples/question_form.txt" \
   "http://127.0.0.1:$PORT/v1/materials?question_set_id=qs-smoke&filename=form.txt" | python3 -c 'import sys,json;print(json.load(sys.stdin)["draft_id"])')

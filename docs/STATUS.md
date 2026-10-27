@@ -5,8 +5,8 @@
 - I1 QuestionReader: SQLite 구현과 메모리 구현, 같은 적합성 시험 통과.
 - 저작 서비스 핵심 로직, ChangeClassification 생성, 추출기 인터페이스와 텍스트 양식 추출기, 얇은 HTTP 계층.
 - Dockerfile, 스모크 시험(`scripts/smoke.sh`, `docker`로 실행해 SMOKE OK 확인).
-- 후속 2: I1 HTTP 읽기 면, 읽기 토큰, survey-schema wheel, HEALTHCHECK, 라벨 통일. boundary-contracts는 v1.2.0(clients 포함).
-- `python -m pytest -q`: 126개 통과. 후속 구간: list_ids, boundary-contracts v1.0.0 사용, 이미지 wheel 설치, 스모크 동적 포트.
+- 후속 2: I1 HTTP 읽기 면, 읽기 토큰, survey-schema wheel, HEALTHCHECK, 라벨 통일. boundary-contracts는 v2.0.2(clients 포함).
+- `python -m pytest -q`: 153개 통과(0.5.0, D84). 후속 구간: list_ids, boundary-contracts v1.0.0 사용, 이미지 wheel 설치, 스모크 동적 포트.
 
 ## 남은 일
 - 관리자 콘솔 UI, 화면 입력용 템플릿(필드 목록)과 코드·단위 사전(내용은 저자가 정한다).

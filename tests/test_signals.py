@@ -17,7 +17,7 @@ HASH = "sha256:" + "0" * 64
 
 
 def case(i, ftype, qs="qs-main", status="PENDING", trace=None, with_set=True):
-    c = {"pipeline_schema_version": "1.1", "case_id": f"fc-{i}", "version": 1, "created_at": "2026-10-15T00:00:00Z",
+    c = {"pipeline_schema_version": "2.0", "case_id": f"fc-{i}", "version": 1, "created_at": "2026-10-15T00:00:00Z",
          "source_release_id": "rel-1", "runtime_contract_version": 1, "deidentified": True,
          "deidentified_trace_ref": trace or f"tr-{i}", "failure_type": ftype, "detection_method": "RULE",
          "review_status": status}
