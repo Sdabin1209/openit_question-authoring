@@ -34,6 +34,9 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 | QA_FAILURES_TOKEN_ENV | I7 토큰의 비밀 이름. 이 이름의 `_FILE`(또는 개발용 환경 변수)을 읽는다 | QA_FAILURES_TOKEN |
 | QA_AUTHOR_TOKENS(`_FILE` 가능) | `토큰:actor-id:역할` 쉼표 목록. 비밀 값 | 없음(모든 요청 403) |
 | QA_HOST, QA_PORT | 바인드 | 0.0.0.0, 8080 |
+| QA_DB_CONNECT_TIMEOUT_SECONDS | PostgreSQL 접속 상한(초). 근거와 의미는 docs/boundary.md "DB 대기 상한" | 3 |
+| QA_DB_STATEMENT_TIMEOUT_SECONDS | 문장 하나의 상한(초). 호출 하나는 이 값 + 1초 안에 끝난다 | 3 |
+| QA_READYZ_DB_TIMEOUT_SECONDS | `/readyz`의 DB 확인 상한(초) | 2 |
 
 로그는 표준 출력. 운영 데이터는 PostgreSQL 서버에 있다(서비스별 데이터베이스·계정, 이 서비스 계정에는 이 데이터베이스만 준다). SQLite 경로를 쓸 때만 `/data` 볼륨이 필요하다. `/readyz`는 DB 종류(`"db": "sqlite"|"postgres"`)만 보여주고 접속 정보는 절대 쓰지 않는다. 시작 시 스키마를 멱등하게 만든다(`CREATE TABLE IF NOT EXISTS`, advisory lock 아래). 버전·검수·변경 분류는 DB 트리거가 UPDATE/DELETE를 막는다.
 

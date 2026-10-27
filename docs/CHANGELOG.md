@@ -1,5 +1,11 @@
 # 변경 이력
 
+## 0.6.2 (2026-10-28) PostgreSQL 대기 상한과 /readyz 상한 (FAULT_MATRIX P0-3 / E1)
+
+- 원인(측정): `docker pause`로 얼린 PostgreSQL에서 이전 코드는 120초 넘게 돌아오지 않았다. 문장 상한이 없었고 `/readyz`(`is_ready`)가 주 연결과 락을 써서 무응답 DB에 같이 묶였다. 접속 상한은 고정 5초였다.
+- 접속 3초, 문장 3초(서버 `statement_timeout`; 얼어붙은 서버는 +1초 뒤 클라이언트가 소켓을 닫음), `/readyz`는 주 연결·락을 쓰지 않는 별도 연결로 2초. 설정: `QA_DB_CONNECT_TIMEOUT_SECONDS`, `QA_DB_STATEMENT_TIMEOUT_SECONDS`, `QA_READYZ_DB_TIMEOUT_SECONDS`. 소켓을 닫아 끝낸 호출은 바로 재시도하지 않는다. SQLite 불변.
+- 시험: pause/연결 불가 주소/락 대기/설정 검증 추가(PostgreSQL 없으면 SKIP). 컨테이너 조합에서의 재측정은 deploy E2E 5p에서 헤드가 한다.
+
 ## 0.6.1 (2026-10-27) PostgreSQL 연결 끊김 복구
 
 - 끊김 오류(클라이언트 쪽, 08류, 57P01~03)만 연결을 다시 열고 같은 호출을 한 번 재시도. 쓰기 재시도는 advisory lock 트랜잭션을 처음부터 다시 열며, 모든 쓰기가 멱등이라 커밋 응답을 잃은 경우에도 중복이 없다. 복구 불가면 `UNAVAILABLE`, 접속 정보 비노출 유지.
