@@ -12,6 +12,10 @@ QA_HOST, QA_PORT      기본 0.0.0.0, 8080
 QA_DB_CONNECT_TIMEOUT_SECONDS    PostgreSQL 접속 상한(초, 기본 3)
 QA_DB_STATEMENT_TIMEOUT_SECONDS  PostgreSQL 문장 하나의 상한(초, 기본 3). 호출 하나는 이 값 + 1초 안에 끝난다
 QA_READYZ_DB_TIMEOUT_SECONDS     /readyz의 DB 확인 상한(초, 기본 2)
+QA_DB_LARGE_STATEMENT_TIMEOUT_SECONDS  큰 자료(원본 자료, 초안, 문항 세트 버전) 쓰기의 문장 상한(초, 기본 30)
+QA_REQUEST_TIMEOUT_SECONDS       HTTP 요청 소켓의 무응답 상한(초, 기본 30). 업로드가 이 시간 동안 멈추면 끊는다
+QA_FAILURES_TIMEOUT_SECONDS      I7(ops-feedback) 호출 하나의 읽기 상한(초, 기본 5)
+QA_SIGNALS_DEADLINE_SECONDS      GET /v1/signals 한 번의 총 마감(초, 기본 20)
 """
 import os
 import sys
@@ -43,7 +47,8 @@ def open_store() -> AuthoringStore:
         return PostgresQuestionStore(
             url, connect_timeout=_seconds("QA_DB_CONNECT_TIMEOUT_SECONDS", 3.0),
             statement_timeout=_seconds("QA_DB_STATEMENT_TIMEOUT_SECONDS", 3.0),
-            probe_timeout=_seconds("QA_READYZ_DB_TIMEOUT_SECONDS", 2.0))
+            probe_timeout=_seconds("QA_READYZ_DB_TIMEOUT_SECONDS", 2.0),
+            large_statement_timeout=_seconds("QA_DB_LARGE_STATEMENT_TIMEOUT_SECONDS", 30.0))
     return SqliteQuestionStore(os.environ.get("QA_DB_PATH", "/data/questions.sqlite3"))
 
 
@@ -63,13 +68,16 @@ def build() -> tuple[Api, AuthoringStore]:
     signals = None
     if env.get("QA_FAILURES_URL"):
         from boundary_contracts.clients import HttpFailureStore
-        signals = HttpFailureStore(env["QA_FAILURES_URL"], read_secret(env.get("QA_FAILURES_TOKEN_ENV", "QA_FAILURES_TOKEN")) or "")
-    return Api(svc, tokens, read_tokens=read_tokens, signals=signals, ready=store.is_ready, db_kind=getattr(store, "kind", None)), store
+        signals = HttpFailureStore(env["QA_FAILURES_URL"], read_secret(env.get("QA_FAILURES_TOKEN_ENV", "QA_FAILURES_TOKEN")) or "",
+                                   timeout=_seconds("QA_FAILURES_TIMEOUT_SECONDS", 5.0))
+    return Api(svc, tokens, read_tokens=read_tokens, signals=signals, ready=store.is_ready, db_kind=getattr(store, "kind", None),
+               signals_deadline=_seconds("QA_SIGNALS_DEADLINE_SECONDS", 20.0)), store
 
 
 def main() -> int:
     api, _ = build()
-    srv = make_server(api, os.environ.get("QA_HOST", "0.0.0.0"), int(os.environ.get("QA_PORT", "8080")))
+    srv = make_server(api, os.environ.get("QA_HOST", "0.0.0.0"), int(os.environ.get("QA_PORT", "8080")),
+                      request_timeout=_seconds("QA_REQUEST_TIMEOUT_SECONDS", 30.0))
     print("question-authoring 시작", flush=True)
     srv.serve_forever()
     return 0

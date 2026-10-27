@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import time
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from typing import Any, Optional, Protocol
@@ -51,9 +52,17 @@ def _dist(c: Counter) -> dict:
 
 def build_signals(source: FailureSource, *, question_set_id: Optional[str] = None,
                   review_status: Optional[str] = None, max_cases: int = DEFAULT_MAX_CASES,
-                  confusion_min: int = CONFUSION_MIN, now: Optional[datetime] = None) -> dict:
+                  confusion_min: int = CONFUSION_MIN, now: Optional[datetime] = None,
+                  deadline_seconds: Optional[float] = None) -> dict:
+    """deadline_seconds: 이 호출 전체의 상한(호출 하나의 timeout은 클라이언트가 가진다). 넘으면 부분 결과를 내지 않고 UNAVAILABLE."""
+    t_end = None if deadline_seconds is None else time.monotonic() + deadline_seconds
+
+    def check_deadline():
+        if t_end is not None and time.monotonic() > t_end:
+            raise BoundaryError("UNAVAILABLE", "개선 신호 읽기가 마감 시간을 넘었다(ops-feedback이 느리다)")
     cases, cur, truncated = [], None, False
     while True:
+        check_deadline()
         items, cur = source.list_cases(review_status=review_status, latest_only=True, cursor=cur, limit=min(500, max_cases))
         cases += items
         if len(cases) >= max_cases:
@@ -82,9 +91,12 @@ def build_signals(source: FailureSource, *, question_set_id: Optional[str] = Non
         s["versions"][str(ref.get("version"))] += 1
         tref = c.get("deidentified_trace_ref")
         if tref not in trace_cache:
+            check_deadline()
             try:
                 trace_cache[tref] = question_ids_from_trace(source.get_trace(tref))
-            except BoundaryError:
+            except BoundaryError as e:
+                if e.code in ("UNAVAILABLE", "PERMISSION_DENIED"):
+                    raise                            # 상류 장애·인증 실패를 "trace 없음"으로 조용히 세지 않는다(FAULT_POLICY 9·10)
                 trace_cache[tref] = None            # type: ignore[assignment]
         qids = trace_cache[tref]
         if qids is None:

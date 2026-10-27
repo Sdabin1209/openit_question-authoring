@@ -48,6 +48,7 @@ SCHEMA_VERSION = "1"
 DEFAULT_CONNECT_TIMEOUT = 3.0
 DEFAULT_STATEMENT_TIMEOUT = 3.0
 DEFAULT_PROBE_TIMEOUT = 2.0
+DEFAULT_LARGE_STATEMENT_TIMEOUT = 30.0   # 큰 자료(원본 자료, 초안, 문항 세트 버전)를 쓰는 쓰기 전용 문장 상한
 _INIT_STATEMENT_MS = 30000   # 시작 때 스키마 생성은 다른 인스턴스의 advisory lock을 기다릴 수 있어 더 길게 준다(그래도 무한은 아니다)
 _LOCK_KEY = 0x71A07E5  # 이 서비스의 쓰기 직렬화 키(데이터베이스 안에서만 의미가 있다)
 
@@ -69,13 +70,16 @@ class PostgresQuestionStore(AuthoringStore):
 
     def __init__(self, url: str, *, read_only: bool = False, schema: Optional[str] = None,
                  connect_timeout: float = DEFAULT_CONNECT_TIMEOUT, statement_timeout: float = DEFAULT_STATEMENT_TIMEOUT,
-                 probe_timeout: float = DEFAULT_PROBE_TIMEOUT):
-        for name, v in (("connect_timeout", connect_timeout), ("statement_timeout", statement_timeout), ("probe_timeout", probe_timeout)):
+                 probe_timeout: float = DEFAULT_PROBE_TIMEOUT,
+                 large_statement_timeout: float = DEFAULT_LARGE_STATEMENT_TIMEOUT):
+        for name, v in (("connect_timeout", connect_timeout), ("statement_timeout", statement_timeout), ("probe_timeout", probe_timeout),
+                          ("large_statement_timeout", large_statement_timeout)):
             if not (isinstance(v, (int, float)) and 0 < v <= 600):
                 raise ValueError(f"{name}은 0보다 크고 600 이하인 초 단위 숫자여야 한다")
         self.connect_timeout = float(connect_timeout)        # 접속 시도 상한(초). libpq는 정수 초이고 2초 미만은 2초로 본다
         self.statement_timeout = float(statement_timeout)    # 문장 하나의 상한(초). 호출 하나의 클라이언트 쪽 상한은 이 값 + 1초
         self.probe_timeout = float(probe_timeout)            # /readyz의 DB 확인 상한(초)
+        self.large_statement_timeout = float(large_statement_timeout)  # 큰 자료 쓰기의 문장 상한(초). 락 대기는 이 값을 받지 않는다
         if schema is not None and not re.fullmatch(r"[a-z_][a-z0-9_]{0,40}", schema):
             raise ValueError("스키마 이름 형식이 아니다")
         self._lock = threading.RLock()
@@ -173,7 +177,7 @@ class PostgresQuestionStore(AuthoringStore):
                 pass
             self._db = None
 
-    def _run(self, op, what: str):
+    def _run(self, op, what: str, budget: Optional[float] = None):
         """op(conn)을 실행한다. 연결이 끊겼으면 연결을 버리고 다시 열어 한 번만 같은 호출을 재시도한다.
         재시도가 안전한 근거: 쓰기는 모두 한 트랜잭션이고(커밋 전 끊기면 서버가 롤백) 커밋 응답만 잃은 경우에도
         모든 쓰기 연산이 멱등이다(같은 버전·같은 해시, 같은 review_id·같은 내용은 조용히 성공, 초안은 삭제 후 삽입,
@@ -191,7 +195,7 @@ class PostgresQuestionStore(AuthoringStore):
                     def fire(c=conn):
                         aborted.set()
                         self._abort(c)
-                    timer = threading.Timer(self.statement_timeout + 1.0, fire)
+                    timer = threading.Timer((budget or self.statement_timeout) + 1.0, fire)
                     timer.daemon = True
                     timer.start()
                     return op(conn)
@@ -214,15 +218,19 @@ class PostgresQuestionStore(AuthoringStore):
     def _q(self, sql, args=()):
         return self._run(lambda c: c.execute(sql, args).fetchall(), "읽기")
 
-    def _write(self, fn):
+    def _write(self, fn, large: bool = False):
+        """large=True: 큰 자료를 쓰는 경로. 락을 얻은 뒤(락 대기는 보통 상한) 이 트랜잭션의 문장 상한만 large_statement_timeout으로 늘린다.
+        얼어붙은 서버를 끊는 클라이언트 쪽 상한도 같이 늘어난다."""
         if self._read_only:
             raise BoundaryError("PERMISSION_DENIED", "읽기 전용 연결이다")
 
         def op(c):
             with c.transaction():
                 c.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
+                if large:
+                    c.execute(f"SET LOCAL statement_timeout = {int(self.large_statement_timeout * 1000)}")
                 return fn(c)
-        return self._run(op, "쓰기")
+        return self._run(op, "쓰기", budget=(self.large_statement_timeout if large else None))
 
     # ---- 원시 연산 ----
     def _version_rows(self, qsid):
@@ -266,7 +274,7 @@ class PostgresQuestionStore(AuthoringStore):
                       (review["review_id"], qsid, n, _dump(review)))
             if change is not None:
                 c.execute("INSERT INTO changes(qsid, version_no, record) VALUES(%s,%s,%s)", (qsid, n, _dump(change)))
-        self._write(fn)
+        self._write(fn, large=True)
 
     def add_review(self, review):
         ref = review["question_set"]
@@ -290,7 +298,7 @@ class PostgresQuestionStore(AuthoringStore):
             c.execute("DELETE FROM drafts WHERE draft_id=%s", (draft["draft_id"],))
             c.execute("INSERT INTO drafts(draft_id, qsid, record) VALUES(%s,%s,%s)",
                       (draft["draft_id"], draft["question_set_id"], _dump(draft)))
-        self._write(fn)
+        self._write(fn, large=True)
 
     def load_draft(self, draft_id):
         r = self._q("SELECT record FROM drafts WHERE draft_id=%s", (draft_id,))
@@ -304,7 +312,7 @@ class PostgresQuestionStore(AuthoringStore):
     def put_source(self, source_hash, filename, data):
         self._write(lambda c: c.execute(
             "INSERT INTO blobs(source_hash, filename, data) VALUES(%s,%s,%s) ON CONFLICT DO NOTHING",
-            (source_hash, filename, bytes(data))))
+            (source_hash, filename, bytes(data))), large=True)
 
     def get_source(self, source_hash):
         r = self._q("SELECT filename, data FROM blobs WHERE source_hash=%s", (source_hash,))

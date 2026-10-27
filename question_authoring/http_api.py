@@ -39,7 +39,8 @@ def _need(d: dict, key: str):
 class Api:
     def __init__(self, service: AuthoringService, tokens: Mapping[str, Actor], *,
                  read_tokens: Optional[Mapping[str, str]] = None, signals=None, ready: Callable[[], bool] = lambda: True,
-                 db_kind: Optional[str] = None):
+                 db_kind: Optional[str] = None, signals_deadline: Optional[float] = 20.0):
+        self.signals_deadline = signals_deadline
         self.svc = service
         self.tokens = dict(tokens)
         self.read_tokens = dict(read_tokens or {})    # 토큰 -> 역할(읽기 전용)
@@ -68,6 +69,9 @@ class Api:
             return 200, self._route(method, path, q, headers, body, actor)
         except BoundaryError as e:
             return STATUS[e.code], e.to_record()
+        except Exception as e:  # 예상 밖의 오류. 연결을 끊지 않고 JSON 500으로 답한다. 원문 메시지는 쓰지 않는다(접속 정보·자료가 섞일 수 있다)
+            print(f"내부 오류: {type(e).__name__}", flush=True)
+            return 500, BoundaryError("UNAVAILABLE", "내부 오류").to_record()
 
     def _bearer(self, headers) -> Optional[str]:
         auth = {k.lower(): v for k, v in headers.items()}.get("authorization", "")
@@ -147,8 +151,14 @@ class Api:
             if not 1 <= mx <= 20000:
                 raise BoundaryError("INVALID_RECORD", "max_cases는 1~20000이어야 한다")
             from .signals import build_signals
-            return build_signals(self.signals, question_set_id=q.get("question_set_id"),
-                                 review_status=q.get("review_status"), max_cases=mx)
+            try:
+                return build_signals(self.signals, question_set_id=q.get("question_set_id"),
+                                     review_status=q.get("review_status"), max_cases=mx,
+                                     deadline_seconds=self.signals_deadline)
+            except BoundaryError as e:
+                if e.code in ("INTEGRITY_ERROR", "INVALID_RECORD", "UNSUPPORTED_VERSION"):   # 상류의 깨진 응답은 성공으로 취급하지 않는다(FAULT_POLICY 10)
+                    raise BoundaryError("UNAVAILABLE", "ops-feedback의 응답이 올바르지 않다") from None
+                raise
         if method == "POST" and path == "/v1/drafts":
             b = _json(body)
             return s.create_draft(actor, _need(b, "question_set_id"), base_version=b.get("base_version", "latest"))
@@ -182,14 +192,35 @@ class Api:
         raise BoundaryError("NOT_FOUND", f"없는 경로: {method} {path}")
 
 
-def make_server(api: Api, host: str, port: int) -> ThreadingHTTPServer:
+def make_server(api: Api, host: str, port: int, request_timeout: Optional[float] = 30.0) -> ThreadingHTTPServer:
     class H(BaseHTTPRequestHandler):
+        timeout = request_timeout   # 소켓 읽기·쓰기가 이 시간 멈추면 끊는다. 멈춘 업로드가 스레드를 영원히 쥐지 못하게 한다
+
         def _do(self, method):
-            n = int(self.headers.get("Content-Length") or 0)
-            if n > MAX_BODY:
-                status, out = 413, BoundaryError("INVALID_RECORD", "본문이 너무 크다").to_record()
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                if n < 0:
+                    raise ValueError
+            except ValueError:
+                n, bad = 0, True
             else:
-                status, out = api.handle(method, self.path, dict(self.headers), self.rfile.read(n) if n else b"")
+                bad = False
+            body = b""
+            if bad:
+                status, out = 400, BoundaryError("INVALID_RECORD", "Content-Length가 올바르지 않다").to_record()
+            elif n > MAX_BODY:
+                status, out = 413, BoundaryError("INVALID_RECORD", "본문이 너무 크다").to_record()
+                self.close_connection = True   # 읽지 않은 본문이 남는다
+            else:
+                try:
+                    body = self.rfile.read(n) if n else b""
+                except (OSError, ValueError):  # 읽는 중 멈춤(timeout)·끊김: 반쯤 온 자료는 처리하지 않는다
+                    self.close_connection = True
+                    return
+                if len(body) < n:              # 업로드 도중 연결이 끊김: 처리하지 않는다(저장 없음)
+                    self.close_connection = True
+                    return
+                status, out = api.handle(method, self.path, dict(self.headers), body)
             data = json.dumps(out, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")

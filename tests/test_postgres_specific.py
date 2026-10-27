@@ -1,4 +1,5 @@
 """PostgreSQL 구현에만 해당하는 시험. TEST_DATABASE_URL이 없으면 SKIP."""
+import json
 import psycopg
 import pytest
 from boundary_contracts.errors import BoundaryError
@@ -292,3 +293,108 @@ def test_frozen_server_readyz_503_and_request_path_bounded_then_recovers(validat
         assert s.is_ready() is True
         assert s.latest("qs-main") == ref
         s.close()
+
+
+# ---- 큰 자료 경로의 별도 상한, 원자성, 재시작 (E2 보강) ----
+def _slow_blob_trigger(c, ms):
+    c.execute(f"CREATE FUNCTION slow_blob() RETURNS trigger AS $$ BEGIN PERFORM pg_sleep({ms / 1000}); RETURN NEW; END $$ LANGUAGE plpgsql")
+    c.execute("CREATE TRIGGER slow_blob BEFORE INSERT ON blobs FOR EACH ROW EXECUTE FUNCTION slow_blob()")
+
+
+def test_large_path_has_its_own_statement_limit(validators):
+    """원본 자료 삽입이 일반 문장 상한(여기 0.5초)보다 오래 걸려도 큰 자료 상한 안이면 성공한다. 같은 지연의 일반 쓰기는 끊긴다."""
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema, statement_timeout=0.5, large_statement_timeout=5)
+        with psycopg.connect(url, autocommit=True, options=f"-c search_path={schema}") as c:
+            _slow_blob_trigger(c, 1200)
+        t = time.monotonic()
+        s.put_source("sha256:" + "a" * 64, "f.txt", b"data")                    # 1.2초 걸려도 성공
+        assert 1.1 < time.monotonic() - t < 4
+        assert s.get_source("sha256:" + "a" * 64) == ("f.txt", b"data")
+        with pytest.raises(BoundaryError) as e:                                  # 큰 자료 경로가 아닌 문장은 0.5초에 끊긴다
+            s._write(lambda c: c.execute("SELECT pg_sleep(1.2)"))
+        assert e.value.code == "UNAVAILABLE"
+        s2 = PostgresQuestionStore(url, schema=schema, statement_timeout=0.5, large_statement_timeout=0.6)
+        with pytest.raises(BoundaryError) as e:                                  # 큰 자료 상한도 무한이 아니다
+            s2.put_source("sha256:" + "b" * 64, "g.txt", b"x")
+        assert e.value.code == "UNAVAILABLE"
+        assert s.get_source("sha256:" + "b" * 64) is None                        # 끊긴 쓰기는 남지 않는다
+        s.close(); s2.close()
+
+
+def test_max_body_sized_upload_fits_default_limit(validators):
+    """서버가 받는 본문 최대(MAX_BODY, 8MiB)를 기본 상한(문장 3초)으로 삽입한다. 정상 업로드가 끊기지 않아야 한다."""
+    import hashlib, os
+    from question_authoring.http_api import MAX_BODY
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema)
+        for data in (os.urandom(MAX_BODY), b"abc def\n" * (MAX_BODY // 8)):
+            h = "sha256:" + hashlib.sha256(data).hexdigest()
+            t = time.monotonic()
+            s.put_source(h, "big", data)
+            assert time.monotonic() - t < 3.0
+            assert s.get_source(h)[1] == data
+        s.close()
+
+
+def test_commit_is_atomic_when_connection_dies_mid_transaction(validators):
+    """트랜잭션 도중(버전 삽입 뒤) 서버 쪽에서 연결이 죽으면 반쯤 저장된 버전이 남지 않는다. 재시도가 끝까지 가면 정확히 한 번 저장된다."""
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema)
+        svc = AuthoringService(s, validators)
+        ref = publish(svc)
+        bank = s.get_question_bank(ref)
+        bank2 = json.loads(json.dumps(bank)); bank2["version"] = 2; bank2["questions"][0]["name"] = "체온 측정"
+        from question_authoring.store.base import bank_hash
+        ref2 = {"id": "qs-main", "version": "2", "content_hash": bank_hash(bank2)}
+        rv = dict(s.get_reviews(ref)[0], review_id="rv-two", question_set=ref2)
+
+        def commit_dying(always):
+            calls = []
+            orig = s._write
+
+            def wrapped(fn, large=False):
+                def fn2(c):
+                    fn(c)                                                       # 삽입이 모두 끝난 뒤, 커밋 직전
+                    if always or not calls:
+                        calls.append(1)
+                        c.execute("SELECT pg_terminate_backend(pg_backend_pid())")
+                return orig(fn2, large=large)
+            s._write = wrapped
+            try:
+                s.commit_version(bank2, ref2, rv, None, None)
+            finally:
+                s._write = orig
+        with pytest.raises(BoundaryError) as e:
+            commit_dying(always=True)                                           # 두 번 다 죽는다
+        assert e.value.code == "UNAVAILABLE"
+        assert [v for v, _ in s._version_rows("qs-main")] == [1]                # 2번은 없다
+        assert len(s._q("SELECT 1 FROM reviews WHERE review_id='rv-two'")) == 0
+        commit_dying(always=False)                                              # 첫 시도만 죽고 재시도가 끝까지 간다
+        assert [v for v, _ in s._version_rows("qs-main")] == [1, 2]
+        assert len(s._q("SELECT 1 FROM reviews WHERE review_id='rv-two'")) == 1
+        s.close()
+
+
+def test_postgres_restart_keeps_draft_and_confirm_is_idempotent(validators):
+    from conftest import example_text
+    from question_authoring.http_api import Api
+    from question_authoring.service import Actor
+    auth = {"Authorization": "Bearer t"}
+    with pg_schema() as (url, schema):
+        def boot():
+            st = PostgresQuestionStore(url, schema=schema)
+            return st, Api(AuthoringService(st, validators), {"t": Actor("dr-kim", "question-author")})
+        s1, a1 = boot()
+        did = a1.handle("POST", "/v1/materials?question_set_id=qs-main&filename=f.txt", auth, example_text())[1]["draft_id"]
+        s1.close()                                                              # 서비스 재시작
+        s2, a2 = boot()
+        pv = a2.handle("GET", f"/v1/drafts/{did}/preview", auth, b"")[1]
+        body = json.dumps({"preview_hash": pv["preview_hash"]}).encode()
+        st, ref = a2.handle("POST", f"/v1/drafts/{did}/confirm", auth, body)
+        assert st == 200
+        s2.close()
+        s3, a3 = boot()
+        assert a3.handle("POST", f"/v1/drafts/{did}/confirm", auth, body) == (200, ref)
+        assert [v for v, _ in s3._version_rows("qs-main")] == [1]
+        s3.close()
