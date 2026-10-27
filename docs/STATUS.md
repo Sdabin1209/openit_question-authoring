@@ -1,4 +1,4 @@
-# STATUS (2026-10-15, 첫 구간)
+# STATUS (2026-10-27, 0.5.0 기준)
 
 ## 한 일
 - design.md, boundary.md, runbook.md, CHANGELOG.md, 변경 요청 5건.
@@ -7,6 +7,7 @@
 - Dockerfile, 스모크 시험(`scripts/smoke.sh`, `docker`로 실행해 SMOKE OK 확인).
 - 후속 2: I1 HTTP 읽기 면, 읽기 토큰, survey-schema wheel, HEALTHCHECK, 라벨 통일. boundary-contracts는 v2.0.2(clients 포함).
 - `python -m pytest -q`: 153개 통과(0.5.0, D84). 후속 구간: list_ids, boundary-contracts v1.0.0 사용, 이미지 wheel 설치, 스모크 동적 포트.
+- turn-engine·model-runtime: 이 영역은 둘을 설치하지 않고 코드에서도 쓰지 않는다. 이미지 라벨 `io.openit.turn-engine`, `io.openit.model-runtime`은 `none`이다(Dockerfile). turn-engine은 I8 규칙 미리보기를 붙일 때 처음 필요해진다(미구현).
 
 ## 남은 일
 - 관리자 콘솔 UI, 화면 입력용 템플릿(필드 목록)과 코드·단위 사전(내용은 저자가 정한다).
