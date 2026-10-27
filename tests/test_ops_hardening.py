@@ -235,6 +235,10 @@ def test_purge_threaded_with_uploads_never_loses_a_referenced_source(validators)
     s = AuthoringService(store, validators, require_two_person=False)
     lost = []
     stop = threading.Event()
+    # 시험의 가정(라운드3 조사): 보존 기간(기본 30일) 안의 새 업로드는 purge 대상이 아니다. 아래 UPDATE가 방금 올린 참조 전 원본까지
+    # '오래된 것'으로 만들면 업로드~초안 저장 사이의 합법적인 틈(원본은 있고 참조는 아직 없음)에서 purge가 지워 시험이 간헐 실패한다(코드 결함 아님).
+    # 그래서 '올림~참조 저장' 구간과 '나이 올리기'만 서로 배타적으로 하고, purge_once 자체는 업로드와 자유롭게 경쟁시킨다.
+    inflight = threading.Lock()
 
     def uploader():
         i = 0
@@ -242,14 +246,19 @@ def test_purge_threaded_with_uploads_never_loses_a_referenced_source(validators)
             i += 1
             data = b"same material"
             h = "sha256:" + "a" * 64
-            store.put_source(h, "f", data)
-            d = s.create_draft(AUTHOR, "qs-x"); d["source"] = {"kind": "material", "source_hash": h}; store.save_draft(d)
+            with inflight:
+                store.put_source(h, "f", data)
+                d = s.create_draft(AUTHOR, "qs-x"); d["source"] = {"kind": "material", "source_hash": h}; store.save_draft(d)
             if store.get_source(h) is None:
                 lost.append(i)
     t = threading.Thread(target=uploader); t.start()
     for _ in range(150):
-        store._db.execute("UPDATE blobs SET created_at=?", (_old(40),))   # 항상 오래된 것처럼 보이게 해 경쟁을 키운다
+        with inflight:
+            store._db.execute("UPDATE blobs SET created_at=?", (_old(40),))   # 항상 오래된 것처럼 보이게 해 경쟁을 키운다
         purge_once(store)
+        with inflight:   # 진행 중인 업로드가 없는 순간: 참조하는 초안이 있으면 원본은 반드시 있어야 한다(purge가 참조된 원본을 지우면 여기서 잡힌다)
+            if store.list_drafts("qs-x") and store.get_source("sha256:" + "a" * 64) is None:
+                lost.append("after-purge")
     stop.set(); t.join()
     assert not lost
     store.close()
