@@ -1,0 +1,91 @@
+# question-authoring (문항 저작)
+
+의료인이 올린 문항 자료를 검토·확인을 거쳐 "바꿀 수 없는 문항 버전"으로 저장하고, 이웃 영역이 읽게 해 주는 서비스다.
+
+이 영역은 문진 시스템에서 문항(무엇을 어떻게 묻는지)의 유일한 저장 창구다. 저자가 텍스트 양식 자료를 올리면 초안으로 바꾸고, 확신하지 못한 값(수치, 단위, 범위, 위험 기준)에는 표시를 달아 저자가 미리보기로 직접 확인하게 한다. 저자가 확인해야만 문항 세트 버전이 생기고 그 확인이 검수 기록(`ReviewRecord`)으로 남는다. 버전은 한 번 만들면 고치지 않고, 수정은 새 버전이다(docs/design.md 1절).
+하지 않는 것: 임상 기준의 내용을 정하지 않는다(저자의 몫, D30). 모델 학습·평가와 릴리스 승인을 하지 않는다. 서비스(survey-service)의 Question Bank를 직접 갱신하지 않는다(게이트를 거친 릴리스 묶음이 전달, docs/brief.md 6절). 관리자 콘솔 화면은 아직 없다(docs/STATUS.md).
+
+## 전체 속의 위치
+
+| 방향 | 상대 | 내용 | 인터페이스 |
+| --- | --- | --- | --- |
+| 출력 | 합성 데이터, model-lab, 게이트(docs/brief.md 2절) | 문항 세트 불변 버전, 검수, 변경 분류 읽기 | I1 QuestionReader. HTTP `GET /v1/question-sets` 이하(docs/boundary.md) |
+| 입력 | ops-feedback | 실패 사례로 만드는 개선 신호(읽기 전용, 설정할 때만 켜짐) | I7 FailureStore(`list_cases`, `get_trace`) |
+| 입력(미구현) | release-gate | 판정 조회 | I4 |
+| 입력(미구현) | turn-engine | 규칙 미리보기 | I8 |
+| 입력 | 사람(저자) | 문항 자료 파일, 화면 입력, 확인 | 저작 API `/v1/drafts`, `/v1/materials` 등(docs/design.md 8절) |
+
+이웃 영역의 코드는 가져오지 않는다. 계약은 `boundary-contracts` v2.0.2, 문진 스키마는 `openit-survey-schema` survey-schema-v1.0.0 패키지로만 쓴다(docs/boundary.md, requirements.lock).
+
+## 구조
+
+| 경로 | 역할 |
+| --- | --- |
+| `question_authoring/service.py` | 저작 로직: 초안, 편집, 자료 등록, 미리보기, 확인, 이후 검수. 저장소에 쓰는 유일한 길 |
+| `question_authoring/store/` | 문항 저장소. `sqlite.py`(운영, 단일 파일), `memory.py`(이웃이 시험에 쓰는 가짜 구현), `base.py`(읽기 논리) |
+| `question_authoring/extractors/` | 자료를 초안으로 바꾸는 추출기. 현재 텍스트 양식(`textform.py`)뿐 |
+| `question_authoring/preview.py` | 사람이 읽는 미리보기와 해시 |
+| `question_authoring/classify.py` | 버전 사이 변경 분류(`ChangeClassification`) |
+| `question_authoring/validation.py` | 스키마·참조 검증 |
+| `question_authoring/signals.py` | 개선 신호 수신함(I7 읽기) |
+| `question_authoring/http_api.py`, `__main__.py` | HTTP 계층과 진입점(환경 변수는 `__main__.py`에서만 읽음) |
+| `tests/` | 시험(저장소 적합성, HTTP, 추출기, 비밀 값 등) |
+| `scripts/smoke.sh`, `scripts/build_wheels.sh` | 이미지 스모크 시험, 계약 wheel 빌드 |
+| `Dockerfile`, `requirements.lock` | 이미지와 잠긴 의존(계약 태그) |
+| `examples/question_form.txt` | 텍스트 양식 입력 예 |
+| `docs/` | 설계·경계·런북 등(아래 "더 자세한 문서") |
+
+```
+자료 파일(.txt/.md) --> 환자정보 경고 --> 추출기 --> 초안(+확신 못 한 값 표시)
+                                             \-- 실패하면 빈 초안(FALLBACK) --> 화면 입력
+초안 --> 편집/표시 확인 --> 미리보기 --> 저자 확인(confirm)
+     --> 한 번에 저장: 문항 세트 버전 + ReviewRecord + (2번째 버전부터) ChangeClassification
+저장소(SQLite) --> I1 읽기 (이웃 영역, 읽기 전용 토큰)
+```
+
+## 실행 방법
+
+전제: Python 3.12(Dockerfile 기준), git, `../boundary-contracts`와 `../survey-service/schema`가 옆에 있는 워크스페이스. 스모크에는 Docker(데몬 접근 가능)와 curl이 필요하다. 이미지 설치는 github ssh 접근으로 태그를 받는다(requirements.lock).
+
+설치와 시험(docs/runbook.md):
+```
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e ../boundary-contracts -e ../survey-service/schema jsonschema pytest && pip install -e . --no-deps
+python -m pytest -q
+```
+이미지 스모크(빌드, 기동, `/healthz`, `/readyz`, 등록-미리보기-확인, 인증 거부, 비root, 라벨 확인. 포트는 Docker가 배정):
+```
+scripts/smoke.sh
+```
+서비스 실행: `python -m question_authoring`. 기본 DB 경로가 `/data/questions.sqlite3`라 로컬에서는 `QA_DB_PATH`를 쓰기 가능한 경로로 줘야 한다(이 세션에서 `--help`로 시도했더니 `/data` 권한 오류로 멈췄고, `--help` 옵션은 없다).
+비밀(`QA_AUTHOR_TOKENS`, `QA_READ_TOKENS`, `QA_FAILURES_TOKEN`)은 값을 환경 변수로 주지 않고 파일 경로를 `NAME_FILE`로 준다(D84). 예: `-e QA_AUTHOR_TOKENS_FILE=/run/secrets/author_tokens`. 환경 변수 전체 목록은 docs/runbook.md.
+
+이 세션에서 실제로 돌린 것: `python -m pytest --collect-only -q`(153개 수집), `python -m pytest -q`(153개 통과, 21.41초, 이 PC의 기존 `.venv` 한 환경), `python -m question_authoring --help`(위 오류).
+돌리지 않은 것: 의존 설치, `scripts/smoke.sh`(이미지 빌드), 서버 기동, 깨끗한 두 번째 환경에서의 확인.
+
+## 현재 상태
+
+확인된 것(출처 docs/STATUS.md, docs/CHANGELOG.md):
+- 0.5.0(2026-10-27) 비밀 파일 방식(D84)과 boundary-contracts v2.0.2 적용. STATUS 기록은 "153개 통과"이고 이 세션의 실행 결과와 같다.
+- STATUS는 스모크 `SMOKE OK`를 기록하고 있으나 이 세션에서 다시 확인하지 않았다.
+- 구현: I1 읽기(SQLite, 메모리, HTTP), 저작 서비스, 텍스트 양식 추출기, 변경 분류, 개선 신호 수신함(I7).
+미구현(docs/STATUS.md, docs/design.md 12절): 관리자 콘솔 UI, 화면 입력 템플릿과 코드·단위 사전, PDF·Word 추출기, I4·I8 연동, 저자 인증의 실제 방식(지금은 정적 토큰 표), I1 SDK의 별도 패키지·태그 배포.
+확인 못 한 것: 실제 저자가 쓰는 파일 형식(docs/design.md 7.1절), 개선 신호가 읽는 trace 필드를 ops-feedback과 맞춘 것(STATUS가 "확인 필요"라고 적음), 다른 PC·Linux 서버에서의 동작.
+
+## 이 영역의 열린 항목
+
+헤드 대장(`../head/docs/OPEN_GAPS.md`, 읽기 전용으로 읽음)에서 영역 칸에 question-authoring이 적힌 항목은 확인하지 못했다. 이 영역에 직접 걸린 열린 ID는 없다.
+다만 전 영역에 걸친 U06(일반 Linux 서버 설치 미확인)과 U12(두 번째 독립 머신에서의 영역 시험 미확인)는 이 영역에도 해당한다(사용자·환경 몫). 대장에 없는 이 영역의 남은 일은 STATUS의 "남은 일"이다: 콘솔·템플릿·사전(저자와 헤드 협의), PDF·Word 추출기(실제 저자 형식 확인 필요), I4·I8(상대 계약 필요), 인증 방식(결정 필요).
+
+## 더 자세한 문서
+
+| 문서 | 내용 |
+| --- | --- |
+| `docs/brief.md` | 영역 목적, 소유·제공·소비, 수용 기준, 건드리면 안 되는 경계 |
+| `docs/design.md` | 내부 설계: 저장소, 확인 절차, 변경 분류 표, 추출기와 텍스트 양식 문법, 저작 API 표 |
+| `docs/boundary.md` | 소유 저장소, 제공 SDK·HTTP, 지원 버전, 장애 영향 |
+| `docs/runbook.md` | 개발 환경, 스모크, 비밀 파일(D84), 환경 변수, 흔한 상황 |
+| `docs/STATUS.md` | 한 일, 남은 일, 막힌 것 |
+| `docs/CHANGELOG.md` | 버전별 변경 이력 |
+| `docs/change-requests/` | 헤드에게 낸 변경 요청 CR-0001~0005(모두 승인) |
+| `CLAUDE.md` | 이 영역 에이전트용 지침 |
