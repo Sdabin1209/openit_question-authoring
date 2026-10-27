@@ -195,3 +195,31 @@ def test_dates_do_not_trigger_phone_warnings(text):
 def test_date_exclusion_keeps_real_detections():
     for t in ("2001011234567", "홍길동900101-1234567", "010 1234 5678", "2024-01-02 연락처 010-1234-5678", "+82-10-1234-5678"):
         assert AuthoringService._phi_warnings(t.encode()), t
+
+
+# 라운드3 M2: 날짜꼴로 끝나는 전화번호는 날짜 치환에 지워지지 않고 잡혀야 한다. 날짜 문장은 계속 경고가 없어야 한다
+@pytest.mark.parametrize("text,expect", [
+    ("010-20120101", "전화번호 형태"), ("+82 10 20120101", "전화번호 형태"), ("02-20120101", "유선전화 형태"),
+    ("031-19991231", "유선전화 형태"), ("01012345678", "전화번호 형태"), ("010-2012-0101", "전화번호 형태"),
+    ("(02) 2012-0101", "유선전화 형태"), ("(031)-1999-1231", "유선전화 형태"), ("(02)20120101", "유선전화 형태"),
+    ("+82-2-20120101", "유선전화 형태"), ("연락처 010 2012 0101", "전화번호 형태"),
+])
+def test_phone_ending_like_date_is_detected(text, expect):
+    assert expect in AuthoringService._phi_warnings(text.encode())
+
+
+@pytest.mark.parametrize("text", ["2012-01-01", "2012.01.01", "20120101에 방문", "방문일 2012/01/01 입니다",
+                                  "2024-01-02 2024-01-03 1234567"])
+def test_plain_dates_still_not_phone(text):
+    assert AuthoringService._phi_warnings(text.encode()) == []
+
+
+def test_phi_check_scales_linearly_with_phone_and_date_text():
+    import time
+    unit = "방문 2012-01-01 010-2012 0101 20120101 02-".encode()
+    def t(n):
+        data = unit * n
+        t0 = time.perf_counter(); AuthoringService._phi_warnings(data); return time.perf_counter() - t0
+    t(500)
+    small, big = min(t(2000) for _ in range(3)), min(t(8000) for _ in range(3))
+    assert big < small * 4 * 3 + 0.05, (small, big)
