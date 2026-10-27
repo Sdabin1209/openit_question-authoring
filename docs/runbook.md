@@ -36,6 +36,13 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 | QA_HOST, QA_PORT | 바인드 | 0.0.0.0, 8080 |
 | QA_DB_CONNECT_TIMEOUT_SECONDS | PostgreSQL 접속 상한(초). 근거와 의미는 docs/boundary.md "DB 대기 상한" | 3 |
 | QA_DB_STATEMENT_TIMEOUT_SECONDS | 문장 하나의 상한(초). 호출 하나는 이 값 + 1초 안에 끝난다 | 3 |
+| QA_DEV_MODE | 1이면 개발·시험 구성(SQLite, 토큰 없이)을 허용. **없으면 운영 구성이어야 시작한다**: `QA_DATABASE_URL(_FILE)`과 저자 토큰(`QA_AUTHOR_TOKENS` 또는 `QA_GATEWAY_TOKENS`)이 없으면 시작을 거부 | 없음(운영) |
+| QA_REQUIRE_TWO_PERSON | 저자 != 검수자(4-eyes). false면 이전 동작이고 `/readyz`에 `warnings: ["two_person_disabled"]` | true |
+| QA_AUTHOR_TOKENS(`_FILE`) 역할 | `question-author`(자료 등록·편집·확인), `clinical-reviewer`(임상 근거 승인, 조회). 다른 역할은 시작 거부 | |
+| QA_GATEWAY_TOKENS(`_FILE`) | gateway가 쓰는 서비스 토큰 목록. 이 토큰의 요청만 `X-Openit-User`를 신뢰한다 | 없음 |
+| QA_USER_ROLES | `사용자ID=역할` 쉼표 목록(gateway 경유 사용자의 역할표) | 없음 |
+| QA_MAX_CONCURRENT_REQUESTS | 동시 처리 요청 상한. 넘으면 503 + Retry-After | 32 |
+| QA_DRAFT_RETENTION_DAYS, QA_SOURCE_RETENTION_DAYS | `python -m question_authoring purge`의 보존 일수. 양의 정수만(무기한 불가) | 30, 30 |
 | QA_DB_LARGE_STATEMENT_TIMEOUT_SECONDS | 큰 자료(원본 자료, 초안, 문항 세트 버전) 쓰기의 문장 상한(초) | 30 |
 | QA_REQUEST_TIMEOUT_SECONDS | HTTP 요청 소켓이 이 시간 멈추면 끊는다(멈춘 업로드) | 30 |
 | QA_FAILURES_TIMEOUT_SECONDS | I7 호출 하나의 읽기 상한(초) | 5 |

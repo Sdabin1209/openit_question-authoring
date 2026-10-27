@@ -18,6 +18,7 @@ from .service import Actor, AuthoringService
 
 STATUS = {"NOT_FOUND": 404, "INVALID_RECORD": 400, "UNSUPPORTED_VERSION": 422, "CONFLICT": 409,
           "INTEGRITY_ERROR": 422, "FAILED_PRECONDITION": 412, "PERMISSION_DENIED": 403, "UNAVAILABLE": 503}
+# 왜 8MiB: 도입 시 근거 기록 없음. 문항 자료는 작은 텍스트 양식이라 넉넉한 선이고, 동시 요청 상한(32)과 곱해 메모리 상한(256MiB)을 계산할 수 있다. ADR 0007
 MAX_BODY = 8 * 1024 * 1024
 
 

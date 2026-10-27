@@ -46,10 +46,12 @@ $$ LANGUAGE plpgsql;
 IMMUTABLE = ["versions", "reviews", "changes"]
 SCHEMA_VERSION = "1"
 # 기본 상한(초). 근거는 docs/boundary.md "DB 대기 상한".
+# 값의 근거와 측정 여부는 docs/adr/0007-요청-한도와-timeout-값.md. 정상 문장은 수 ms(이 PC 측정), 3초는 느린 디스크·잠깐의 락 대기를 견디는 여유값[제안]
 DEFAULT_CONNECT_TIMEOUT = 3.0
 DEFAULT_STATEMENT_TIMEOUT = 3.0
 DEFAULT_PROBE_TIMEOUT = 2.0
-DEFAULT_LARGE_STATEMENT_TIMEOUT = 30.0   # 큰 자료(원본 자료, 초안, 문항 세트 버전)를 쓰는 쓰기 전용 문장 상한
+DEFAULT_LARGE_STATEMENT_TIMEOUT = 30.0   # 8MiB 삽입 실측 0.09초(이 PC)의 약 300배 여유. 실제 환경 값은 측정 안 함. ADR 0003, 0007
+#  # 큰 자료(원본 자료, 초안, 문항 세트 버전)를 쓰는 쓰기 전용 문장 상한
 _INIT_STATEMENT_MS = 30000   # 시작 때 스키마 생성은 다른 인스턴스의 advisory lock을 기다릴 수 있어 더 길게 준다(그래도 무한은 아니다)
 _LOCK_KEY = 0x71A07E5  # 이 서비스의 쓰기 직렬화 키(데이터베이스 안에서만 의미가 있다)
 

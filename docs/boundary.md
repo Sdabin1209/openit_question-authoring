@@ -91,6 +91,16 @@
 
 확인하지 못한 것: 컨테이너 조합(gateway, 실제 ops-feedback 이미지)에서의 측정은 deploy E2E에서 헤드가 한다. 실제 네트워크 단절·패킷 손실, 매우 큰(수 MB) 실제 저자 자료로 한 PDF·Word 추출(미구현), 실제 서버의 디스크 속도에서의 삽입 시간, HTTP 서버가 동시에 받을 수 있는 업로드 수의 상한(스레드당 한 연결, 상한 없음)은 시험하지 않았다.
 
+## 인증, 4-eyes, gateway 경유 (D88 U9, E2 준비)
+
+- **4-eyes(기본)**: 저자의 `confirm`은 `clinical_basis_approved=false`로 기록한다. 임상 근거 승인은 `clinical-reviewer` 역할이 저자와 다른 주체 ID로 `add_review`할 때만 true가 된다(자기 승인은 403). 초안은 만든 주체만 편집·확인·폐기한다. 이웃이 보는 변화: `reviewed_only`에 버전이 나타나는 시점이 검수자 승인 뒤다. 계약 의미에 닿는 부분은 `docs/change-requests/CR-0006`. 끄는 설정(`QA_REQUIRE_TWO_PERSON=false`)은 `/readyz`에 경고가 뜬다. ADR 0006.
+- **E2 저자 경로를 운영에서 열 때(deploy가 gateway 경로를 만든다) 서비스가 신뢰하는 것**: (1) gateway는 사람 인증(Basic 등)을 마친 요청에 `Authorization: Bearer <QA_GATEWAY_TOKENS의 토큰>`과 `X-Openit-User: <인증된 사용자 ID>`를 붙이고, 클라이언트가 보낸 같은 이름 헤더는 지운다(`boundary-contracts/HTTP.md`, `PUBLIC_API.md`의 규약). (2) 이 서비스는 gateway 토큰의 요청에서만 `X-Openit-User`를 사용자로 쓰고 정적 토큰의 요청에서는 무시한다. (3) 사용자의 역할은 `QA_USER_ROLES`(사용자ID=역할)로 이 서비스가 정한다(역할 헤더는 계약에 없다). (4) 서비스 포트는 직접 노출하지 않는다(authoring 네트워크 안). (5) 읽기 면(I1)은 읽기 토큰으로 계속 닿는다. 열지 말지는 사용자 결정(E2)이며 이 영역은 열지 않았다. ADR 0010.
+- **운영 구성 검사**: `QA_DEV_MODE=1`이 아니면 DB URL과 토큰이 없을 때 시작을 거부한다(이전에는 tmpfs SQLite로 조용히 떴다). deploy 확인 필요: 운영 compose는 PostgreSQL URL 파일과 토큰 파일을 준다고 읽었으나 이 영역에서 실행해 확인하지 않았다. 시험 구성(compose.test.yaml)이 SQLite를 쓰면 `QA_DEV_MODE=1`이 필요하다.
+
+## 보존과 정리 (D88 U4, ADR 0011)
+
+`python -m question_authoring purge`(run-once, 멱등): 처리되지 않은(OPEN, DISCARDED) 초안은 마지막 수정 30일 뒤, 어떤 버전·초안도 참조하지 않는 원본 자료(고아 포함)는 저장 30일 뒤 지운다. 버전·검수·변경 분류·확정된 초안은 지우지 않는다. 일수는 설정이고 무기한은 거부한다. 30일은 잠정 기본값(병원 정책 미정). 스케줄은 deploy 몫이며 아직 연결되지 않았다.
+
 ## 변경 요청
 
 `docs/change-requests/` 참고: CR-0001 출처 위치, CR-0002 QuestionBank.version 의미, CR-0003 SlotRef 문자열, CR-0004 의미 해석(reviewed_only, 후속 작업 매핑), CR-0005 계약 패키지 배포(스키마 포함, 태그). 헤드가 모두 승인했다(CR 파일 상단 참고).

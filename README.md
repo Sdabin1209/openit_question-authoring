@@ -64,7 +64,13 @@ scripts/smoke.sh
 이 세션에서 실제로 돌린 것: `python -m pytest --collect-only -q`(153개 수집), `python -m pytest -q`(153개 통과, 21.41초, 이 PC의 기존 `.venv` 한 환경), `python -m question_authoring --help`(위 오류).
 돌리지 않은 것: 의존 설치, `scripts/smoke.sh`(이미지 빌드), 서버 기동, 깨끗한 두 번째 환경에서의 확인.
 
+## 설계 결정 기록(ADR)
+
+구조 선택의 이유는 [docs/adr/](docs/adr/README.md)에 있다: 저장소(SQLite 개발, PostgreSQL 운영), 불변 버전과 content_hash, 원본 자료 보관, 선형 줄 파서, 환자 정보 정규식 경고, 저자와 다른 검수자(4-eyes), 한도와 timeout 값, 확인 흐름과 예약, 개선 신호, 인증과 gateway, 보존 정리, HTTP 서버. 근거를 찾지 못한 값은 ADR에 '근거 기록 없음'으로 적었다.
+
 ## 현재 상태
+
+0.7.0(2026-10-28): 전수 점검 반영(추출기 선형화, 4-eyes 기본, 엄격 입력, 환자 정보 탐지 확대, 운영 구성 거부, 동시 요청 상한, SIGTERM, 보존 `purge`, v2 Trace 문항 ID). 상세와 한계는 docs/CHANGELOG.md, docs/boundary.md.
 
 저자 경로·개선 신호의 장애 동작(0.6.3, 2026-10-28, FAULT_MATRIX E2·D5): 멈춘/끊긴 업로드, 깨진 요청, 예상 밖 오류, 재시작·재전송 멱등, 큰 자료 쓰기 상한, 개선 신호의 느림·5xx·깨진 응답. 칸별 표와 한계는 docs/boundary.md. 확인한 것(이 PC, 일회용 PostgreSQL 한 대): `python -m pytest -q`는 `TEST_DATABASE_URL` 설정 시 283개 통과, 미설정 시 206개 통과 + 77개 SKIP. 운영에서 저자 경로를 열지 말지는 사용자 결정이라 열지 않았다. 컨테이너 조합 재측정은 deploy E2E에서 헤드가 한다.
 
