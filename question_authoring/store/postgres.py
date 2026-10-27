@@ -5,15 +5,21 @@
   그래서 "다음 버전 번호는 마지막 + 1" 검사와 삽입 사이에 다른 쓰기가 끼어들지 못한다(여러 프로세스 포함).
 - 시작 시 스키마를 멱등하게 만든다(IF NOT EXISTS, 같은 lock 아래). 읽기 전용 연결은 만들지 않고 형식만 확인한다.
 - 접속 문자열(암호 포함)은 로그·오류·예외 메시지에 쓰지 않는다. 오류에는 예외 종류와 SQLSTATE만 낸다.
+- 대기 상한(docs/boundary.md "DB 대기 상한"): 접속은 connect_timeout, 문장은 서버 쪽 statement_timeout. 서버가 얼어 응답이 없으면
+  서버 쪽 값은 소용없으므로 호출 하나가 statement_timeout + 1초 안에 안 끝나면 클라이언트가 소켓을 닫아 끝낸다(UNAVAILABLE).
+  /readyz의 확인(is_ready)은 주 연결·락을 쓰지 않는 별도 짧은 연결로 probe_timeout 안에 끝난다.
 """
 from __future__ import annotations
 
 import json
+import os
 import re
+import socket
 import threading
 from typing import Optional
 
 import psycopg
+import psycopg.conninfo
 
 from boundary_contracts.errors import BoundaryError
 from .base import AuthoringStore, bank_hash
@@ -38,6 +44,11 @@ $$ LANGUAGE plpgsql;
 """
 IMMUTABLE = ["versions", "reviews", "changes"]
 SCHEMA_VERSION = "1"
+# 기본 상한(초). 근거는 docs/boundary.md "DB 대기 상한".
+DEFAULT_CONNECT_TIMEOUT = 3.0
+DEFAULT_STATEMENT_TIMEOUT = 3.0
+DEFAULT_PROBE_TIMEOUT = 2.0
+_INIT_STATEMENT_MS = 30000   # 시작 때 스키마 생성은 다른 인스턴스의 advisory lock을 기다릴 수 있어 더 길게 준다(그래도 무한은 아니다)
 _LOCK_KEY = 0x71A07E5  # 이 서비스의 쓰기 직렬화 키(데이터베이스 안에서만 의미가 있다)
 
 
@@ -56,7 +67,15 @@ class PostgresQuestionStore(AuthoringStore):
 
     kind = "postgres"
 
-    def __init__(self, url: str, *, read_only: bool = False, schema: Optional[str] = None):
+    def __init__(self, url: str, *, read_only: bool = False, schema: Optional[str] = None,
+                 connect_timeout: float = DEFAULT_CONNECT_TIMEOUT, statement_timeout: float = DEFAULT_STATEMENT_TIMEOUT,
+                 probe_timeout: float = DEFAULT_PROBE_TIMEOUT):
+        for name, v in (("connect_timeout", connect_timeout), ("statement_timeout", statement_timeout), ("probe_timeout", probe_timeout)):
+            if not (isinstance(v, (int, float)) and 0 < v <= 600):
+                raise ValueError(f"{name}은 0보다 크고 600 이하인 초 단위 숫자여야 한다")
+        self.connect_timeout = float(connect_timeout)        # 접속 시도 상한(초). libpq는 정수 초이고 2초 미만은 2초로 본다
+        self.statement_timeout = float(statement_timeout)    # 문장 하나의 상한(초). 호출 하나의 클라이언트 쪽 상한은 이 값 + 1초
+        self.probe_timeout = float(probe_timeout)            # /readyz의 DB 확인 상한(초)
         if schema is not None and not re.fullmatch(r"[a-z_][a-z0-9_]{0,40}", schema):
             raise ValueError("스키마 이름 형식이 아니다")
         self._lock = threading.RLock()
@@ -77,15 +96,9 @@ class PostgresQuestionStore(AuthoringStore):
     def _conn(self) -> psycopg.Connection:
         if self._db is not None and not self._db.closed:
             return self._db
-        opts = []
-        if self._schema:
-            opts.append(f"-c search_path={self._schema}")
-        if self._read_only:
-            opts.append("-c default_transaction_read_only=on")
         c, err = None, None
         try:
-            c = psycopg.connect(self._url, autocommit=True, connect_timeout=5,
-                                **({"options": " ".join(opts)} if opts else {}))
+            c = psycopg.connect(autocommit=True, **self._params(self.connect_timeout, self.statement_timeout))
         except psycopg.OperationalError as e:
             err = f"저장소 연결 실패: {_why(e)}"
         except Exception as e:  # 접속 문자열 형식 오류 등. 예외 원문·문맥에 접속 문자열이 있을 수 있어 아래에서 문맥 없이 올린다
@@ -95,10 +108,36 @@ class PostgresQuestionStore(AuthoringStore):
         self._db = c
         return c
 
+    def _params(self, connect_secs: float, stmt_secs: float) -> dict:
+        """접속 인자. URL 안의 options는 덮어쓰지 않고 이어 붙인다. 서버 쪽 statement_timeout을 세션에 건다."""
+        p = psycopg.conninfo.conninfo_to_dict(self._url)
+        opts = [p.get("options", "")]
+        if self._schema:
+            opts.append(f"-c search_path={self._schema}")
+        if self._read_only:
+            opts.append("-c default_transaction_read_only=on")
+        opts.append(f"-c statement_timeout={int(stmt_secs * 1000)}")
+        p["options"] = " ".join(o for o in opts if o)
+        p["connect_timeout"] = max(1, int(connect_secs + 0.999))
+        return p
+
+    @staticmethod
+    def _abort(conn) -> None:
+        """서버가 얼어 응답이 없을 때(예: docker pause) 서버 쪽 statement_timeout은 듣지 못한다. 소켓을 닫아 막힌 읽기를 끝낸다."""
+        try:
+            sk = socket.socket(fileno=os.dup(conn.fileno()))
+            try:
+                sk.shutdown(socket.SHUT_RDWR)
+            finally:
+                sk.close()
+        except Exception:
+            pass
+
     def _init_schema(self) -> None:
         c = self._conn()
         try:
             with c.transaction():
+                c.execute(f"SET LOCAL statement_timeout = {_INIT_STATEMENT_MS}")
                 c.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
                 c.execute(SCHEMA)
                 for t in IMMUTABLE:
@@ -143,15 +182,33 @@ class PostgresQuestionStore(AuthoringStore):
         with self._lock:
             err = None
             for attempt in (1, 2):
+                conn = None
+                timer = None
+                aborted = threading.Event()
                 try:
-                    return op(self._conn())
+                    conn = self._conn()
+
+                    def fire(c=conn):
+                        aborted.set()
+                        self._abort(c)
+                    timer = threading.Timer(self.statement_timeout + 1.0, fire)
+                    timer.daemon = True
+                    timer.start()
+                    return op(conn)
                 except psycopg.Error as e:
+                    if aborted.is_set():   # 응답 없는 서버를 클라이언트가 끊었다. 같은 서버에 바로 다시 걸지 않는다(상한을 두 배로 늘리지 않는다)
+                        self._drop()
+                        err = f"저장소 {what} 시간 초과: {_why(e)}"
+                        break
                     if self._lost(e) or (self._db is not None and (self._db.closed or self._db.broken)):
                         self._drop()
                         if attempt == 1:
                             continue
                     err = f"저장소 {what} 실패: {_why(e)}"
                     break
+                finally:
+                    if timer is not None:
+                        timer.cancel()
             raise BoundaryError("UNAVAILABLE", err)  # except 밖에서 올린다(문맥에 접속 정보가 남지 않게)
 
     def _q(self, sql, args=()):
@@ -262,8 +319,30 @@ class PostgresQuestionStore(AuthoringStore):
             c.execute("ALTER TABLE versions ENABLE TRIGGER versions_immutable")
 
     def is_ready(self) -> bool:
-        try:
-            self._q("SELECT 1")
-            return True
-        except BoundaryError:
+        """/readyz용 DB 확인. **주 연결도 self._lock도 쓰지 않는다**: 쓰기가 연결을 쥐고 기다리는 중이어도 막히지 않는다.
+        별도 짧은 연결로 접속하고(connect_timeout·statement_timeout = probe_timeout) 형식 표지를 읽는다.
+        접속 뒤 서버가 얼어도 probe_timeout 안에 호출자가 돌아온다(작업 스레드를 기다리다 포기하고 그 소켓을 닫는다).
+        실패 원인은 돌려주지 않는다(접속 정보가 섞일 수 있다)."""
+        done = threading.Event()
+        box: dict = {}
+
+        def work():
+            try:
+                with psycopg.connect(autocommit=True, **self._params(self.probe_timeout, self.probe_timeout)) as c:
+                    box["conn"] = c
+                    if box.get("giveup"):
+                        return
+                    row = c.execute("SELECT v FROM meta WHERE k='schema_version'").fetchone()
+                    box["ok"] = bool(row) and row[0] == SCHEMA_VERSION
+            except Exception:
+                box["ok"] = False
+            finally:
+                done.set()
+
+        threading.Thread(target=work, daemon=True, name="qa-readyz-probe").start()
+        if not done.wait(self.probe_timeout):
+            box["giveup"] = True
+            if box.get("conn") is not None:
+                self._abort(box["conn"])      # 얼어 있는 소켓을 닫아 작업 스레드도 끝나게 한다
             return False
+        return bool(box.get("ok"))

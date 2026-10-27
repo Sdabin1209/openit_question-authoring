@@ -130,3 +130,165 @@ def test_non_connection_errors_are_not_retried(validators):
             s._q("SELECT * FROM no_such_table")
         assert e.value.code == "UNAVAILABLE" and len(n) == 1
         s.close()
+
+
+# ---- DB 대기 상한 (FAULT_MATRIX P0-3 / E1) ----
+import subprocess
+import threading
+import time
+from urllib.parse import urlparse
+
+BLACKHOLE = "postgresql://qa:SECRET-dbpw-5e1f@10.255.255.1:5432/q"   # 응답하지 않는 주소(SYN을 버린다)
+
+
+def _container_of(url):
+    """TEST_DATABASE_URL의 호스트 포트를 게시한 docker 컨테이너 이름. docker가 없거나 못 찾으면 SKIP."""
+    port = urlparse(url).port
+    try:
+        rows = subprocess.run(["docker", "ps", "--format", "{{.Names}}\t{{.Ports}}"],
+                              capture_output=True, text=True, timeout=20).stdout.splitlines()
+        out = [r.split("\t")[0] for r in rows if f":{port}->5432" in r]
+    except (OSError, subprocess.TimeoutExpired):
+        out = []
+    if not out:
+        pytest.skip("TEST_DATABASE_URL의 컨테이너를 docker에서 찾지 못해 pause 시험 건너뜀")
+    return out[0]
+
+
+@pytest.fixture
+def paused(request):
+    """docker pause로 PostgreSQL을 얼린다(TCP는 받되 응답이 없다). 끝나면 반드시 되돌린다."""
+    state = {"name": None}
+
+    def pause(url):
+        state["name"] = _container_of(url)
+        subprocess.run(["docker", "pause", state["name"]], check=True, capture_output=True, timeout=30)
+
+    def resume():
+        if state["name"]:
+            subprocess.run(["docker", "unpause", state["name"]], capture_output=True, timeout=30)
+            state["name"] = None
+    request.addfinalizer(resume)
+    pause.resume = resume
+    return pause
+
+
+def test_timeout_settings_are_validated():
+    for bad in (0, -1, 601, "3"):
+        with pytest.raises(ValueError):
+            PostgresQuestionStore("postgresql://u@h/d", connect_timeout=bad)
+    with pytest.raises(ValueError):
+        PostgresQuestionStore("postgresql://u@h/d", probe_timeout=0)
+
+
+def test_server_side_statement_timeout_is_set(validators):
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema, statement_timeout=2)
+        assert s._q("SHOW statement_timeout")[0][0] == "2s"
+        s.close()
+
+
+def test_slow_statement_is_cut_by_server_timeout(validators):
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema, statement_timeout=1)
+        t = time.monotonic()
+        with pytest.raises(BoundaryError) as e:
+            s._q("SELECT pg_sleep(30)")
+        assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < 3
+        assert s._q("SELECT 1") == [(1,)]
+        s.close()
+
+
+def test_lock_wait_in_write_is_bounded(validators):
+    """다른 세션이 쓰기 직렬화 락을 쥐고 있으면 쓰기는 statement_timeout 안에 UNAVAILABLE이 된다. 읽기는 영향이 없다."""
+    from question_authoring.store.postgres import _LOCK_KEY
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema, statement_timeout=1)
+        ref = publish(AuthoringService(s, validators))
+        with psycopg.connect(url, autocommit=True) as holder:
+            holder.execute("BEGIN")
+            holder.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
+            t = time.monotonic()
+            with pytest.raises(BoundaryError) as e:
+                s.add_review({"question_set": ref, "review_id": "rv-x"})
+            assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < 3
+            assert s.latest("qs-main") == ref
+            holder.execute("ROLLBACK")
+        s.close()
+
+
+def test_readyz_probe_does_not_wait_for_main_connection_or_lock(validators):
+    """주 연결이 쓰기(락 대기)에 묶여 있어도 is_ready는 즉시 True다."""
+    from question_authoring.store.postgres import _LOCK_KEY
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema, statement_timeout=3)
+        ref = publish(AuthoringService(s, validators))
+        with psycopg.connect(url, autocommit=True) as holder:
+            holder.execute("BEGIN")
+            holder.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
+            def blocked_write():
+                try:
+                    s.add_review({"question_set": ref, "review_id": "rv-y"})
+                except BoundaryError:
+                    pass
+            th = threading.Thread(target=blocked_write)
+            th.start()
+            time.sleep(0.5)                                  # 쓰기가 self._lock과 주 연결을 쥔 채 락을 기다리는 중
+            t = time.monotonic()
+            assert s.is_ready() is True
+            assert time.monotonic() - t < 1.0
+            holder.execute("ROLLBACK")
+            th.join(10)
+        s.close()
+
+
+def test_readyz_503_within_limit_when_unreachable_then_recovers(validators):
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema)
+        assert s.is_ready() is True
+        good = s._url
+        s._url = BLACKHOLE
+        t = time.monotonic()
+        assert s.is_ready() is False
+        assert time.monotonic() - t < 3.0                    # 기본 2초 + 여유
+        s._url = good
+        assert s.is_ready() is True
+        s.close()
+
+
+def test_connect_is_bounded_when_unreachable():
+    t = time.monotonic()
+    with pytest.raises(BoundaryError) as e:
+        PostgresQuestionStore(BLACKHOLE, connect_timeout=2)
+    assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < 4
+    assert "SECRET-dbpw-5e1f" not in repr(e.value) + str(e.value.to_record()) and e.value.__context__ is None
+
+
+def test_frozen_server_readyz_503_and_request_path_bounded_then_recovers(validators, paused):
+    """docker pause: TCP는 받되 응답이 없다. 주 연결이 이미 열려 있는 경우(요청 경로)와 새 접속(/readyz 확인) 모두."""
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema, statement_timeout=2, probe_timeout=2)
+        ref = publish(AuthoringService(s, validators))
+        paused(url)
+        try:
+            t = time.monotonic()
+            assert s.is_ready() is False
+            probe_secs = time.monotonic() - t
+            assert probe_secs < 3.0, probe_secs
+            t = time.monotonic()
+            with pytest.raises(BoundaryError) as e:         # 열려 있던 주 연결로 읽기: 서버가 얼어 서버 쪽 timeout은 못 듣는다 -> 클라이언트가 끊는다
+                s.latest("qs-main")
+            read_secs = time.monotonic() - t
+            assert e.value.code == "UNAVAILABLE" and read_secs < 2 + 1 + 1.5, read_secs
+            t = time.monotonic()
+            with pytest.raises(BoundaryError):               # 새 접속도 connect_timeout 안에 포기
+                s.latest("qs-main")
+            assert time.monotonic() - t < 3 + 1.5
+        finally:
+            paused.resume()
+        deadline = time.monotonic() + 15                     # 복구: 서비스를 다시 띄우지 않아도 다시 쓸 수 있다
+        while not s.is_ready() and time.monotonic() < deadline:
+            time.sleep(0.5)
+        assert s.is_ready() is True
+        assert s.latest("qs-main") == ref
+        s.close()
