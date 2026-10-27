@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Optional
 
 from .base import (MISSING, UNPARSED, UNSURE, ExtractedFlag, ExtractionFailure, ExtractionResult)
@@ -14,7 +15,20 @@ NUM = r"-?\d+(?:\.\d+)?"
 _num_re = re.compile(rf"^{NUM}$")
 _Q_HEAD = re.compile(r"^문항\s+(\S+?)\s*:\s*(.+)$")
 _S_HEAD = re.compile(r"^슬롯\s+(\S+?)\s*:\s*(필수|선택)\s*$")
-_KV = re.compile(r"^([^:：]+?)\s*[:：]\s*(.*)$")
+# 입력 한도(제곱·무한 시간 방지, 모두 선형 시간으로 처리하되 상한을 둔다). 넘으면 추측하지 않고 알린다.
+MAX_LINE_CHARS = 4096          # 한 줄. 넘는 줄은 UNPARSED로 알리고 내용은 읽지 않는다
+MAX_QUESTIONS = 2000           # 문항 수
+MAX_SLOTS_PER_QUESTION = 200   # 문항당 슬롯 수
+MAX_FLAGS = 5000               # 플래그 수. 이만큼 해석하지 못하면 양식이 아니라고 보고 화면 입력으로 이어 간다
+TIME_BUDGET_SECONDS = 20.0     # 추출 전체의 시간 예산(넘으면 ExtractionFailure -> 화면 입력으로 이어 감)
+
+
+def _kv_split(raw: str):
+    """첫 ':' 또는 '：'에서 나눈다(정규식의 되돌림 없이 한 번 훑는다). 콜론이 없거나 맨 앞이면 (None, None)."""
+    i = min((j for j in (raw.find(":"), raw.find("：")) if j >= 0), default=-1)
+    if i <= 0:
+        return None, None
+    return raw[:i].strip(), raw[i + 1:].strip()
 
 
 def _split(s: str) -> list[str]:
@@ -30,6 +44,7 @@ class TextFormExtractor:
     name = "text-form"
     version = "1"
     extensions = (".txt", ".md")
+    time_budget = TIME_BUDGET_SECONDS
 
     def can_handle(self, filename: str, data: bytes) -> bool:
         return filename.lower().endswith(self.extensions)
@@ -44,6 +59,7 @@ class TextFormExtractor:
         except UnicodeDecodeError as e:
             raise ExtractionFailure("UTF-8 텍스트가 아니다") from e
         self.flags: list[ExtractedFlag] = []
+        self._flagged: set[str] = set()
         self.bank: dict = {"questions": []}
         self.ss: Optional[dict] = None
         self.q: Optional[dict] = None
@@ -51,9 +67,15 @@ class TextFormExtractor:
         self.s: Optional[dict] = None
         self.si = -1
         self.ctx = "top"
-        for line in text.splitlines():
+        deadline = time.monotonic() + self.time_budget
+        for n, line in enumerate(text.splitlines()):
+            if n % 256 == 0 and time.monotonic() > deadline:
+                raise ExtractionFailure("자료가 너무 커서 정해진 시간 안에 읽지 못했다")
             raw = line.strip()
             if not raw or raw.startswith("#"):
+                continue
+            if len(raw) > MAX_LINE_CHARS:
+                self._unparsed(raw[:80] + f"... (이 줄은 {len(raw)}자로 한도 {MAX_LINE_CHARS}자를 넘어 읽지 않았다)")
                 continue
             self._line(raw)
         if not self.bank["questions"]:
@@ -70,10 +92,13 @@ class TextFormExtractor:
     # ---- 도우미 ----
     def _missing(self, path, message):
         """이미 같은 자리에 UNSURE 플래그가 있으면(읽었으나 확신 못 함) 빠졌다는 플래그를 또 달지 않는다."""
-        if not any(f.path == path for f in self.flags):
+        if path not in self._flagged:
             self._flag(path, MISSING, message)
 
     def _flag(self, path, kind, message, raw=None):
+        if len(self.flags) >= MAX_FLAGS:
+            raise ExtractionFailure(f"해석하지 못했거나 확인이 필요한 항목이 {MAX_FLAGS}개를 넘는다. 양식이 맞는지 확인해 달라")
+        self._flagged.add(path)
         self.flags.append(ExtractedFlag(path, kind, message, raw))
 
     def _qp(self, *tail):
@@ -138,6 +163,8 @@ class TextFormExtractor:
         m = _Q_HEAD.match(raw)
         if m:
             self._close_slot(); self._close_question()
+            if len(self.bank["questions"]) >= MAX_QUESTIONS:
+                raise ExtractionFailure(f"문항이 {MAX_QUESTIONS}개를 넘는다. 나누어 올려 달라")
             self.q = {"question_id": m.group(1), "name": m.group(2).strip(), "guide_sentences": [],
                       "affected_followups": [], "repeat_keys": [], "slots": []}
             self.bank["questions"].append(self.q)
@@ -146,6 +173,8 @@ class TextFormExtractor:
             return
         m = _S_HEAD.match(raw)
         if m and self.q is not None:
+            if len(self.q["slots"]) >= MAX_SLOTS_PER_QUESTION:
+                raise ExtractionFailure(f"한 문항의 슬롯이 {MAX_SLOTS_PER_QUESTION}개를 넘는다")
             self._close_slot()
             self.s = {"slot_id": m.group(1), "units": [], "choices": [], "required": m.group(2) == "필수"}
             self.q["slots"].append(self.s)
@@ -153,6 +182,8 @@ class TextFormExtractor:
             self.ctx = "slot"
             return
         if raw.startswith("슬롯") and self.q is not None:
+            if len(self.q["slots"]) >= MAX_SLOTS_PER_QUESTION:
+                raise ExtractionFailure(f"한 문항의 슬롯이 {MAX_SLOTS_PER_QUESTION}개를 넘는다")
             self._close_slot()
             self.si = len(self.q["slots"])
             self.q["slots"].append({"slot_id": "", "units": [], "choices": []})
@@ -175,8 +206,7 @@ class TextFormExtractor:
         self._unparsed(raw)
 
     def _kv(self, raw):
-        m = _KV.match(raw)
-        return (m.group(1).strip(), m.group(2).strip()) if m else (None, None)
+        return _kv_split(raw)
 
     def _session_line(self, raw):
         ss = self.ss
@@ -224,10 +254,12 @@ class TextFormExtractor:
             if v == "없음":
                 q["prerequisite"] = None
             else:
-                m = re.match(r"^(\S+?)\.(\S+?)\s*=\s*(\S+)$", v)
-                if m:
-                    q["prerequisite"] = {"slot": {"question_id": m.group(1), "repeat_key": "", "slot_id": m.group(2)},
-                                         "value": m.group(3)}
+                d = v.find(".", 1)                         # 정규식 되돌림 없이 나눈다: <문항>.<슬롯> = <값>
+                qid, dot, rest = (v[:d], ".", v[d + 1:]) if d > 0 else (v, "", "")
+                i = rest.find("=", 1)
+                slot, value = (rest[:i].strip(), rest[i + 1:].strip()) if i > 0 else ("", "")
+                if (dot and qid and slot and value and not rest[:1].isspace() and not any(c.isspace() for c in qid + slot + value)):
+                    q["prerequisite"] = {"slot": {"question_id": qid, "repeat_key": "", "slot_id": slot}, "value": value}
                 else:
                     self._flag(self._qp("prerequisite"), UNSURE, "'<문항>.<슬롯> = <값>' 형식으로 읽지 못했다", raw)
         elif k == "질문":
@@ -330,7 +362,7 @@ class TextFormExtractor:
         if v == "없음":
             s["risk_rule"] = None
             return
-        v2 = v.replace("≥", ">=")
+        v2 = " ".join(v.replace("≥", ">=").split())   # 공백 덩어리를 하나로(정규식이 긴 공백에서 제곱으로 느려지지 않게)
         m = re.match(r"^(>=|=)\s*(.+?)\s+(즉시|결과 시)$", v2)
         if not m:
             self._flag(rp, UNSURE, "위험 기준을 '>= 값 단위 즉시' 또는 '= 값 결과 시' 형식으로 읽지 못했다. 값을 비워 두었다", raw)

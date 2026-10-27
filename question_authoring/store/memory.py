@@ -9,6 +9,11 @@ from boundary_contracts.errors import BoundaryError
 from .base import AuthoringStore, bank_hash
 
 
+def _now_ts() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 class MemoryQuestionStore(AuthoringStore):
     def __init__(self):
         self._lock = threading.RLock()
@@ -20,6 +25,7 @@ class MemoryQuestionStore(AuthoringStore):
         self._drafts: dict[str, dict] = {}
         self._blobs: dict[str, tuple[str, bytes]] = {}
         self._review_ids: dict[str, dict] = {}
+        self._blob_times: dict[str, Optional[str]] = {}
 
     def _version_rows(self, qsid):
         with self._lock:
@@ -97,11 +103,36 @@ class MemoryQuestionStore(AuthoringStore):
 
     def put_source(self, source_hash, filename, data):
         with self._lock:
-            self._blobs.setdefault(source_hash, (filename, bytes(data)))
+            if source_hash not in self._blobs:
+                self._blobs[source_hash] = (filename, bytes(data))
+                self._blob_times[source_hash] = _now_ts()
 
     def get_source(self, source_hash):
         with self._lock:
             return self._blobs.get(source_hash)
+
+    def _delete_draft(self, draft_id):
+        with self._lock:
+            self._drafts.pop(draft_id, None)
+
+    def _version_source_hashes(self):
+        with self._lock:
+            return {v.get("source_hash") for v in self._sources_prov.values() if v.get("source_hash")}
+
+    def _blob_meta(self):
+        with self._lock:
+            return [(h, self._blob_times.get(h)) for h in self._blobs]
+
+    def _stamp_blobs(self, now):
+        with self._lock:
+            for h in self._blobs:
+                if self._blob_times.get(h) is None:
+                    self._blob_times[h] = now
+
+    def _delete_blob(self, source_hash):
+        with self._lock:
+            self._blobs.pop(source_hash, None)
+            self._blob_times.pop(source_hash, None)
 
     # 시험용: 저장된 내용을 일부러 망가뜨린다(무결성 시험). 운영 코드는 부르지 않는다.
     def _corrupt_for_test(self, qsid: str, n: int, bank: dict) -> None:

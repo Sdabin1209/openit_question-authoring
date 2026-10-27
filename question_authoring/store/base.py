@@ -76,6 +76,40 @@ class AuthoringStore(abc.ABC):
     def get_source(self, source_hash: str) -> Optional[tuple[str, bytes]]: ...
     def close(self) -> None: ...
 
+    # ---- 보존·정리(D88 U4): 처리되지 않은 초안과, 어떤 버전·초안도 참조하지 않는 원본 자료만 지운다. 버전·검수·변경 분류는 불변이라 지우지 않는다 ----
+    @abc.abstractmethod
+    def _delete_draft(self, draft_id: str) -> None: ...
+    @abc.abstractmethod
+    def _version_source_hashes(self) -> set: ...
+    @abc.abstractmethod
+    def _blob_meta(self) -> list:
+        """[(source_hash, created_at 또는 None)]."""
+    @abc.abstractmethod
+    def _stamp_blobs(self, now: str) -> None:
+        """저장 시각을 모르는(이 기능 이전의) 원본 자료에 지금 시각을 적는다. 그때부터 보존 기간이 센다."""
+    @abc.abstractmethod
+    def _delete_blob(self, source_hash: str) -> None: ...
+
+    def purge(self, *, now: str, draft_before: str, source_before: str) -> dict:
+        """멱등. draft_before/source_before보다 오래된 것만 지운다(ISO UTC 문자열 비교). 값은 호출자가 정한다(보존 기간은 설정)."""
+        self._stamp_blobs(now)
+        removed_drafts = 0
+        for d in self.list_drafts():
+            if d.get("status") in ("OPEN", "DISCARDED") and str(d.get("updated_at", "")) < draft_before:
+                self._delete_draft(d["draft_id"])
+                removed_drafts += 1
+        keep = set(self._version_source_hashes())
+        for d in self.list_drafts():
+            h = (d.get("source") or {}).get("source_hash")
+            if h:
+                keep.add(h)
+        removed_blobs = 0
+        for h, created in self._blob_meta():
+            if h not in keep and created is not None and created < source_before:
+                self._delete_blob(h)
+                removed_blobs += 1
+        return {"drafts_removed": removed_drafts, "sources_removed": removed_blobs}
+
     # ---- I1 읽기 논리 ----
     def reader(self) -> QuestionReaderView:
         return QuestionReaderView(self)

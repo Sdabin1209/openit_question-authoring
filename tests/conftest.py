@@ -67,7 +67,9 @@ class Tick:
 @pytest.fixture
 def svc(store, validators):
     c = itertools.count(1)
-    return AuthoringService(store, validators, clock=Tick(), new_id=lambda p: f"{p}-{next(c):04d}")
+    # 기존 시험은 "저자 확인이 곧 임상 승인"인 이전 동작을 전제로 하므로 4-eyes를 끈 서비스를 쓴다.
+    # 4-eyes(기본값)는 tests/test_two_person.py가 따로 시험한다.
+    return AuthoringService(store, validators, clock=Tick(), new_id=lambda p: f"{p}-{next(c):04d}", require_two_person=False)
 
 
 def example_text() -> bytes:

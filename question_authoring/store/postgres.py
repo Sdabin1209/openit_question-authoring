@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS changes(
   qsid TEXT NOT NULL, version_no INTEGER NOT NULL, record TEXT NOT NULL, PRIMARY KEY(qsid, version_no));
 CREATE TABLE IF NOT EXISTS drafts(
   seq BIGSERIAL, draft_id TEXT PRIMARY KEY, qsid TEXT NOT NULL, record TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS blobs(source_hash TEXT PRIMARY KEY, filename TEXT NOT NULL, data BYTEA NOT NULL);
+CREATE TABLE IF NOT EXISTS blobs(source_hash TEXT PRIMARY KEY, filename TEXT NOT NULL, data BYTEA NOT NULL, created_at TEXT);
+ALTER TABLE blobs ADD COLUMN IF NOT EXISTS created_at TEXT;
 CREATE OR REPLACE FUNCTION qa_immutable() RETURNS trigger AS $$
 BEGIN RAISE EXCEPTION '% 는 불변이다', TG_TABLE_NAME USING ERRCODE = 'integrity_constraint_violation'; END;
 $$ LANGUAGE plpgsql;
@@ -51,6 +52,11 @@ DEFAULT_PROBE_TIMEOUT = 2.0
 DEFAULT_LARGE_STATEMENT_TIMEOUT = 30.0   # 큰 자료(원본 자료, 초안, 문항 세트 버전)를 쓰는 쓰기 전용 문장 상한
 _INIT_STATEMENT_MS = 30000   # 시작 때 스키마 생성은 다른 인스턴스의 advisory lock을 기다릴 수 있어 더 길게 준다(그래도 무한은 아니다)
 _LOCK_KEY = 0x71A07E5  # 이 서비스의 쓰기 직렬화 키(데이터베이스 안에서만 의미가 있다)
+
+
+def _now_ts() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _dump(o) -> str:
@@ -311,8 +317,8 @@ class PostgresQuestionStore(AuthoringStore):
 
     def put_source(self, source_hash, filename, data):
         self._write(lambda c: c.execute(
-            "INSERT INTO blobs(source_hash, filename, data) VALUES(%s,%s,%s) ON CONFLICT DO NOTHING",
-            (source_hash, filename, bytes(data))), large=True)
+            "INSERT INTO blobs(source_hash, filename, data, created_at) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+            (source_hash, filename, bytes(data), _now_ts())), large=True)
 
     def get_source(self, source_hash):
         r = self._q("SELECT filename, data FROM blobs WHERE source_hash=%s", (source_hash,))
@@ -325,6 +331,26 @@ class PostgresQuestionStore(AuthoringStore):
             c.execute("ALTER TABLE versions DISABLE TRIGGER versions_immutable")
             c.execute("UPDATE versions SET bank=%s WHERE qsid=%s AND version_no=%s", (_dump(bank), qsid, n))
             c.execute("ALTER TABLE versions ENABLE TRIGGER versions_immutable")
+
+    def _delete_draft(self, draft_id):
+        self._write(lambda c: c.execute("DELETE FROM drafts WHERE draft_id=%s", (draft_id,)))
+
+    def _version_source_hashes(self):
+        out = set()
+        for (src,) in self._q("SELECT source FROM versions WHERE source IS NOT NULL"):
+            h = (json.loads(src) or {}).get("source_hash")
+            if h:
+                out.add(h)
+        return out
+
+    def _blob_meta(self):
+        return [(r[0], r[1]) for r in self._q("SELECT source_hash, created_at FROM blobs")]
+
+    def _stamp_blobs(self, now):
+        self._write(lambda c: c.execute("UPDATE blobs SET created_at=%s WHERE created_at IS NULL", (now,)))
+
+    def _delete_blob(self, source_hash):
+        self._write(lambda c: c.execute("DELETE FROM blobs WHERE source_hash=%s", (source_hash,)))
 
     def is_ready(self) -> bool:
         """/readyz용 DB 확인. **주 연결도 self._lock도 쓰지 않는다**: 쓰기가 연결을 쥐고 기다리는 중이어도 막히지 않는다.

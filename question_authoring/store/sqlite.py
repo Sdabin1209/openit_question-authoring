@@ -22,7 +22,7 @@ CREATE INDEX IF NOT EXISTS reviews_ver ON reviews(qsid, version_no);
 CREATE TABLE IF NOT EXISTS changes(
   qsid TEXT NOT NULL, version_no INTEGER NOT NULL, record TEXT NOT NULL, PRIMARY KEY(qsid, version_no));
 CREATE TABLE IF NOT EXISTS drafts(draft_id TEXT PRIMARY KEY, qsid TEXT NOT NULL, record TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS blobs(source_hash TEXT PRIMARY KEY, filename TEXT NOT NULL, data BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS blobs(source_hash TEXT PRIMARY KEY, filename TEXT NOT NULL, data BLOB NOT NULL, created_at TEXT);
 """
 IMMUTABLE = ["versions", "reviews", "changes"]
 SCHEMA_VERSION = "1"
@@ -35,6 +35,11 @@ def _triggers() -> str:
             out.append(f"CREATE TRIGGER IF NOT EXISTS {t}_no_{op.lower()} BEFORE {op} ON {t} "
                        f"BEGIN SELECT RAISE(ABORT, '{t}는 불변이다'); END;")
     return "\n".join(out)
+
+
+def _now_ts() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _dump(o) -> str:
@@ -62,6 +67,8 @@ class SqliteQuestionStore(AuthoringStore):
         if not read_only:
             self._db.execute("PRAGMA journal_mode=WAL") if path is not None else None
             self._db.executescript(SCHEMA + _triggers())
+            if "created_at" not in [r[1] for r in self._db.execute("PRAGMA table_info(blobs)").fetchall()]:
+                self._db.execute("ALTER TABLE blobs ADD COLUMN created_at TEXT")   # 보존 기간(D88 U4) 이전에 만든 DB
             self._db.execute("INSERT OR IGNORE INTO meta(k, v) VALUES('schema_version', ?)", (SCHEMA_VERSION,))
         row = self._db.execute("SELECT v FROM meta WHERE k='schema_version'").fetchone()
         if row is None or row[0] != SCHEMA_VERSION:
@@ -170,11 +177,32 @@ class SqliteQuestionStore(AuthoringStore):
 
     def put_source(self, source_hash, filename, data):
         self._write(lambda: self._db.execute(
-            "INSERT OR IGNORE INTO blobs(source_hash, filename, data) VALUES(?,?,?)", (source_hash, filename, bytes(data))))
+            "INSERT OR IGNORE INTO blobs(source_hash, filename, data, created_at) VALUES(?,?,?,?)",
+            (source_hash, filename, bytes(data), _now_ts())))
 
     def get_source(self, source_hash):
         r = self._q("SELECT filename, data FROM blobs WHERE source_hash=?", (source_hash,))
         return (r[0][0], bytes(r[0][1])) if r else None
+
+    def _delete_draft(self, draft_id):
+        self._write(lambda: self._db.execute("DELETE FROM drafts WHERE draft_id=?", (draft_id,)))
+
+    def _version_source_hashes(self):
+        out = set()
+        for (src,) in self._q("SELECT source FROM versions WHERE source IS NOT NULL"):
+            h = (json.loads(src) or {}).get("source_hash")
+            if h:
+                out.add(h)
+        return out
+
+    def _blob_meta(self):
+        return [(r[0], r[1]) for r in self._q("SELECT source_hash, created_at FROM blobs")]
+
+    def _stamp_blobs(self, now):
+        self._write(lambda: self._db.execute("UPDATE blobs SET created_at=? WHERE created_at IS NULL", (now,)))
+
+    def _delete_blob(self, source_hash):
+        self._write(lambda: self._db.execute("DELETE FROM blobs WHERE source_hash=?", (source_hash,)))
 
     def is_ready(self) -> bool:
         try:

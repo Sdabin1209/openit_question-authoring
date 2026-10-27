@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Callable, Mapping, Optional
+from typing import Callable, Iterable, Mapping, Optional
 from urllib.parse import parse_qs, urlparse
 
 from boundary_contracts.errors import BoundaryError
@@ -39,8 +40,15 @@ def _need(d: dict, key: str):
 class Api:
     def __init__(self, service: AuthoringService, tokens: Mapping[str, Actor], *,
                  read_tokens: Optional[Mapping[str, str]] = None, signals=None, ready: Callable[[], bool] = lambda: True,
-                 db_kind: Optional[str] = None, signals_deadline: Optional[float] = 20.0):
+                 db_kind: Optional[str] = None, signals_deadline: Optional[float] = 20.0,
+                 gateway_tokens: Optional[Iterable[str]] = None, user_roles: Optional[Mapping[str, str]] = None,
+                 warnings: Optional[list] = None):
         self.signals_deadline = signals_deadline
+        # gateway 경유 인증(D88 E2 준비): gateway가 사람 인증을 마치고 서비스 토큰(gateway_tokens)과 X-Openit-User를 붙인다.
+        # 사람의 역할은 이 서비스의 user_roles(사용자 ID -> 역할) 표가 정한다. 헤더를 믿는 것은 gateway 토큰을 가진 호출뿐이다.
+        self.gateway_tokens = frozenset(gateway_tokens or ())
+        self.user_roles = dict(user_roles or {})
+        self.warnings = list(warnings or [])
         self.svc = service
         self.tokens = dict(tokens)
         self.read_tokens = dict(read_tokens or {})    # 토큰 -> 역할(읽기 전용)
@@ -59,6 +67,8 @@ class Api:
                 body = {"status": "ready" if ok else "not-ready"}
                 if self.db_kind:
                     body["db"] = self.db_kind
+                if self.warnings:
+                    body["warnings"] = list(self.warnings)     # 200을 막지 않는다(경고만)
                 return (200 if ok else 503), body
             if path == "/v1/question-sets" or path.startswith("/v1/question-sets/"):
                 self._reader_auth(headers)          # 읽기 토큰 또는 저작 토큰
@@ -80,7 +90,7 @@ class Api:
 
     def _reader_auth(self, headers) -> None:
         tok = self._bearer(headers)
-        if tok is None or (tok not in self.read_tokens and tok not in self.tokens):
+        if tok is None or (tok not in self.read_tokens and self._principal(headers) is None):
             raise BoundaryError("PERMISSION_DENIED", "인증이 필요하다")
 
     def _page(self, q) -> tuple[Optional[str], int]:
@@ -130,10 +140,31 @@ class Api:
             return {"item": ch}
         raise BoundaryError("NOT_FOUND", f"없는 경로: GET {path}")
 
+    def _principal(self, headers) -> Optional[Actor]:
+        h = {k.lower(): v for k, v in headers.items()}
+        m = re.match(r"^Bearer (\S+)$", h.get("authorization", ""))
+        if not m:
+            return None
+        tok = m.group(1)
+        if tok in self.tokens:                      # 정적 토큰: X-Openit-User는 무시한다(클라이언트가 보낸 값을 믿지 않는다)
+            return self.tokens[tok]
+        if tok in self.gateway_tokens:
+            user = h.get("x-openit-user", "")
+            role = self.user_roles.get(user)
+            if role is None or not re.match(r"^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$", user):
+                return None                         # 헤더가 없거나 이 서비스가 아는 사용자가 아니다
+            return Actor(user, role)
+        return None
+
+    def has_credentials(self, headers) -> bool:
+        """본문을 읽기 전의 빠른 검사: 알려진 토큰(또는 읽기 토큰)인가. 8MiB를 받은 뒤에야 거절하지 않으려는 것이다."""
+        if self._principal(headers) is not None:
+            return True
+        m = re.match(r"^Bearer (\S+)$", {k.lower(): v for k, v in headers.items()}.get("authorization", ""))
+        return bool(m and m.group(1) in self.read_tokens)
+
     def _actor(self, headers) -> Actor:
-        auth = {k.lower(): v for k, v in headers.items()}.get("authorization", "")
-        m = re.match(r"^Bearer (\S+)$", auth)
-        actor = self.tokens.get(m.group(1)) if m else None
+        actor = self._principal(headers)
         if actor is None:
             raise BoundaryError("PERMISSION_DENIED", "인증이 필요하다")
         return actor
@@ -141,7 +172,7 @@ class Api:
     def _route(self, method, path, q, headers, body, actor):
         s = self.svc
         if method == "GET" and path == "/v1/signals":
-            s.require_author(actor)                    # 저자 인증. 읽기 토큰은 여기 오기 전에 403
+            s.require_reader(actor)                    # 저자 또는 검수자. 읽기 토큰은 여기 오기 전에 403
             if self.signals is None:
                 return {"status": "DISABLED", "reason": "I7(ops-feedback)가 설정되지 않았다(QA_FAILURES_URL)"}
             try:
@@ -163,6 +194,7 @@ class Api:
             b = _json(body)
             return s.create_draft(actor, _need(b, "question_set_id"), base_version=b.get("base_version", "latest"))
         if method == "GET" and path == "/v1/drafts":
+            s.require_reader(actor)
             return {"drafts": s.list_drafts(q.get("question_set_id"))}
         if method == "POST" and path == "/v1/materials":
             return s.ingest_material(actor, _need(q, "question_set_id"), _need(q, "filename"), body,
@@ -177,8 +209,10 @@ class Api:
         if m:
             did, act = m.groups()
             if method == "GET" and act is None:
+                s.require_reader(actor)
                 return s.get_draft(did)
             if method == "GET" and act == "preview":
+                s.require_reader(actor)
                 return s.get_preview(did)
             b = _json(body) if method == "POST" else {}
             if method == "POST" and act == "edits":
@@ -192,11 +226,42 @@ class Api:
         raise BoundaryError("NOT_FOUND", f"없는 경로: {method} {path}")
 
 
-def make_server(api: Api, host: str, port: int, request_timeout: Optional[float] = 30.0) -> ThreadingHTTPServer:
+def make_server(api: Api, host: str, port: int, request_timeout: Optional[float] = 30.0,
+                max_concurrent: int = 32) -> ThreadingHTTPServer:
+    # 동시에 처리하는 요청 수의 상한(8MiB 본문 x N이 메모리를 채우지 않게). /healthz, /readyz는 세지 않는다.
+    # 기본 32: 근거 기록 없음(저자는 관리자 소수라는 가정에서 넉넉하게 잡은 값, 측정 안 함).
+    slots = threading.BoundedSemaphore(max_concurrent)
+
     class H(BaseHTTPRequestHandler):
         timeout = request_timeout   # 소켓 읽기·쓰기가 이 시간 멈추면 끊는다. 멈춘 업로드가 스레드를 영원히 쥐지 못하게 한다
 
+        def _reply(self, status, out, extra=None):
+            data = json.dumps(out, ensure_ascii=False).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            for k, v in (extra or {}).items():
+                self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(data)
+
         def _do(self, method):
+            path = self.path.split("?", 1)[0]
+            if path in ("/healthz", "/readyz"):
+                return self._do_inner(method)
+            if not api.has_credentials(dict(self.headers)):
+                self.close_connection = True    # 인증 없는 호출의 본문은 읽지 않는다
+                return self._reply(403, BoundaryError("PERMISSION_DENIED", "인증이 필요하다").to_record())
+            if not slots.acquire(blocking=False):
+                self.close_connection = True
+                return self._reply(503, BoundaryError("UNAVAILABLE", "동시 요청이 너무 많다. 잠시 뒤 다시 시도").to_record(),
+                                   {"Retry-After": "2"})
+            try:
+                return self._do_inner(method)
+            finally:
+                slots.release()
+
+        def _do_inner(self, method):
             try:
                 n = int(self.headers.get("Content-Length") or 0)
                 if n < 0:
@@ -221,12 +286,7 @@ def make_server(api: Api, host: str, port: int, request_timeout: Optional[float]
                     self.close_connection = True
                     return
                 status, out = api.handle(method, self.path, dict(self.headers), body)
-            data = json.dumps(out, ensure_ascii=False).encode("utf-8")
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
+            self._reply(status, out)
 
         def do_GET(self): self._do("GET")
         def do_POST(self): self._do("POST")

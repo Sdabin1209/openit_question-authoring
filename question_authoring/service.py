@@ -8,6 +8,8 @@ from __future__ import annotations
 import copy
 import re
 import tempfile
+import threading
+import unicodedata
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -23,11 +25,17 @@ from .store.base import AuthoringStore, bank_hash
 from .validation import PIPELINE_SCHEMA_VERSION, Validators, semantic_errors
 
 EXT_KEY = "question-authoring"
+NON_UTF8_WARNING = "UTF-8 텍스트가 아니라 환자 정보를 검사하지 못했다"
+REVIEWER_ROLE = "clinical-reviewer"
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 # 환자 정보가 섞였을 가능성을 알리는 단순 패턴(경고 전용. 판단은 저자가 한다)
-_PHI = [("주민등록번호 형태", re.compile(r"\b\d{6}-[1-4]\d{6}\b")),
-        ("전화번호 형태", re.compile(r"\b01[016789]-?\d{3,4}-?\d{4}\b")),
-        ("이메일 형태", re.compile(r"[\w.+-]{1,64}@[\w-]{1,63}\.[\w.]{1,63}"))]  # 길이를 묶어 긴 한 줄에서 제곱으로 느려지지 않게 한다
+# 환자 정보로 보이는 패턴(경고 전용, 판단은 저자가 한다). 놓치는 것보다 거짓 경고가 낫다(D88 U5). 모두 길이를 묶거나 숫자 경계만 써서 선형 시간이다.
+# 근거: 이전 패턴이 한글에 붙은 번호, 구분자 없는 번호, 공백으로 나눈 전화, +82, 유선을 놓쳤다(전수 점검 P5). 병록번호·이름·주소는 패턴이 없어 탐지하지 못한다(한계).
+_SEP = r"[-\s.\u2010-\u2015\u2212\uff0d]?"     # 하이픈 종류(전각 포함), 공백, 점 중 하나 또는 없음
+_PHI = [("주민등록번호 형태", re.compile(rf"(?<!\d)\d{{2}}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]){_SEP}[1-8]\d{{6}}(?!\d)")),
+        ("전화번호 형태", re.compile(rf"(?<!\d)(?:\+?82{_SEP}0?{_SEP}1[016789]|01[016789]){_SEP}\d{{3,4}}{_SEP}\d{{4}}(?!\d)")),
+        ("유선전화 형태", re.compile(rf"(?<!\d)(?:0(?:2|[3-6]\d)|\+?82{_SEP}0?{_SEP}(?:2|[3-6]\d)){_SEP}\d{{3,4}}{_SEP}\d{{4}}(?!\d)")),
+        ("이메일 형태", re.compile(r"[\w.+-]{1,64}@[\w-]{1,63}\.[\w.]{1,63}"))]
 
 
 @dataclass(frozen=True)
@@ -109,21 +117,40 @@ class AuthoringService:
     def __init__(self, store: AuthoringStore, validators: Validators, *,
                  extractors: Optional[ExtractorRegistry] = None,
                  author_roles: Iterable[str] = ("question-author",),
+                 require_two_person: bool = True,
                  clock: Callable[[], datetime] = _now_default,
                  new_id: Callable[[str], str] = _new_id_default):
         self.store = store
         self.v = validators
         self.extractors = extractors or default_registry()
         self.author_roles = frozenset(author_roles)
+        # D88 U9: 임상 근거 승인은 저자와 다른 주체(검수 역할)만 한다. False는 이전 동작(저자 확인이 곧 승인)이고 /readyz에 경고가 뜬다
+        self.require_two_person = bool(require_two_person)
+        self._draft_locks: dict[str, threading.RLock] = {}
+        self._draft_locks_guard = threading.Lock()
         self._clock = clock
         self._new_id = new_id
 
     def require_author(self, actor: Optional[Actor]) -> Actor:
         return self._auth(actor)
 
+    def require_reader(self, actor: Optional[Actor]) -> Actor:
+        """초안 조회·개선 신호 읽기: 저자와 (4-eyes 모드의) 검수자."""
+        return self._auth(actor, reviewer_ok=True)
+
+    def _own(self, actor: Actor, d: dict) -> None:
+        """D88 U9: 다른 주체의 초안은 고치거나 확정하거나 버리지 못한다(4-eyes 모드)."""
+        if self.require_two_person and d.get("created_by") != actor.id:
+            raise BoundaryError("PERMISSION_DENIED", "다른 저자의 초안이다")
+
+    def _dlock(self, draft_id: str) -> threading.RLock:
+        with self._draft_locks_guard:
+            return self._draft_locks.setdefault(draft_id, threading.RLock())
+
     # ---------- 공통 ----------
-    def _auth(self, actor: Optional[Actor]) -> Actor:
-        if actor is None or actor.role not in self.author_roles:
+    def _auth(self, actor: Optional[Actor], *, reviewer_ok: bool = False) -> Actor:
+        ok_roles = self.author_roles | ({REVIEWER_ROLE} if reviewer_ok and self.require_two_person else frozenset())
+        if actor is None or actor.role not in ok_roles:
             raise BoundaryError("PERMISSION_DENIED", "저작 권한이 없다")
         if not _ID.match(actor.id or ""):
             raise BoundaryError("INVALID_RECORD", "actor.id 형식이 아니다")
@@ -202,7 +229,14 @@ class AuthoringService:
     def apply_edits(self, actor: Actor, draft_id: str, edits: list[dict]) -> dict:
         """화면 입력(템플릿 양식)의 저장 형태. 경로를 고치면 그 아래 플래그는 저자가 직접 값을 정한 것으로 닫힌다."""
         self._auth(actor)
+        if not isinstance(edits, list) or not all(isinstance(e, dict) for e in edits):
+            raise BoundaryError("INVALID_RECORD", "edits는 객체의 목록이어야 한다")
+        with self._dlock(draft_id):
+            return self._apply_edits(actor, draft_id, edits)
+
+    def _apply_edits(self, actor, draft_id, edits):
         d = self._open_draft(draft_id)
+        self._own(actor, d)
         new_bank = copy.deepcopy(d["bank"])
         for e in edits:
             apply_edit(new_bank, e)
@@ -217,7 +251,14 @@ class AuthoringService:
     def acknowledge_flags(self, actor: Actor, draft_id: str, flag_ids: list[str]) -> dict:
         """추출된 값이 맞다고 저자가 직접 확인한다."""
         self._auth(actor)
+        if not isinstance(flag_ids, list) or not all(isinstance(x, str) for x in flag_ids):
+            raise BoundaryError("INVALID_RECORD", "flag_ids는 문자열의 목록이어야 한다")
+        with self._dlock(draft_id):
+            return self._acknowledge(actor, draft_id, flag_ids)
+
+    def _acknowledge(self, actor, draft_id, flag_ids):
         d = self._open_draft(draft_id)
+        self._own(actor, d)
         by_id = {f["flag_id"]: f for f in d["flags"]}
         for fid in flag_ids:
             if fid not in by_id:
@@ -232,10 +273,14 @@ class AuthoringService:
     def discard_draft(self, actor: Actor, draft_id: str, reason: str) -> dict:
         """확인하지 않고 버린다. 버전이 아니므로 ReviewRecord는 만들지 않는다."""
         self._auth(actor)
-        d = self._open_draft(draft_id)
-        d["status"], d["discard_reason"] = "DISCARDED", reason
-        self._touch(d)
-        return d
+        if not isinstance(reason, str) or not reason.strip():
+            raise BoundaryError("INVALID_RECORD", "reason은 비어 있지 않은 문자열이어야 한다")
+        with self._dlock(draft_id):
+            d = self._open_draft(draft_id)
+            self._own(actor, d)
+            d["status"], d["discard_reason"], d["discarded_by"] = "DISCARDED", reason, actor.id
+            self._touch(d)
+            return d
 
     # ---------- 문항 자료 등록 ----------
     def ingest_material(self, actor: Actor, question_set_id: str, filename: str, data: bytes, *,
@@ -288,7 +333,12 @@ class AuthoringService:
 
     @staticmethod
     def _phi_warnings(data: bytes) -> list[str]:
-        text = data.decode("utf-8", errors="ignore")
+        try:
+            text = data.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            # UTF-8이 아니면 정규식으로 살필 수 없다. 조용히 통과시키지 않고 경고한다(UTF-16 등은 바이트가 달라 패턴이 맞지 않는다)
+            return [NON_UTF8_WARNING]
+        text = unicodedata.normalize("NFKC", text)   # 전각 숫자·하이픈을 반각으로
         return [name for name, rx in _PHI if rx.search(text)]
 
     # ---------- 미리보기 ----------
@@ -318,7 +368,14 @@ class AuthoringService:
     # ---------- 확인(저자 확인 = ReviewRecord) ----------
     def confirm(self, actor: Actor, draft_id: str, preview_hash: str) -> dict:
         self._auth(actor)
+        if not isinstance(preview_hash, str):
+            raise BoundaryError("INVALID_RECORD", "preview_hash는 문자열이어야 한다")
+        with self._dlock(draft_id):
+            return self._confirm(actor, draft_id, preview_hash)
+
+    def _confirm(self, actor: Actor, draft_id: str, preview_hash: str) -> dict:
         d = self._draft(draft_id)
+        self._own(actor, d)
         if d["status"] == "CONFIRMED":
             if d["confirmed"]["preview_hash"] == preview_hash:
                 return d["confirmed"]["ref"]            # 멱등
@@ -363,7 +420,8 @@ class AuthoringService:
         review = {
             "pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "review_id": "rv-" + draft_id,
             "question_set": ref, "reviewer_role": actor.role, "reviewer_id": actor.id,
-            "decision": "APPROVED", "clinical_basis_approved": True, "reviewed_at": at,
+            # 4-eyes(기본): 저자의 확인은 내용 확인이고 임상 근거 승인이 아니다. 임상 승인은 검수 역할이 add_review로만 한다(D88 U9)
+            "decision": "APPROVED", "clinical_basis_approved": not self.require_two_person, "reviewed_at": at,
             "ext": {EXT_KEY: {
                 "kind": "AUTHOR_CONFIRMATION", "draft_id": draft_id, "preview_hash": preview_hash,
                 "source": source,
@@ -373,7 +431,15 @@ class AuthoringService:
         }
         self._check_id("review_id", review["review_id"])
         self.v.check("ReviewRecord", review)
-        self.store.commit_version(bank, ref, review, change, source)
+        try:
+            self.store.commit_version(bank, ref, review, change, source)
+        except BoundaryError as e:
+            if e.code == "CONFLICT" and d.get("confirming"):
+                # 다른 초안이 같은 번호를 먼저 썼다. 예약을 풀어야 이 초안이 영영 막히지 않는다(전수 점검 A7)
+                d.pop("confirming", None)
+                self.store.save_draft(d)
+                raise BoundaryError("FAILED_PRECONDITION", "다른 초안이 먼저 확정되어 번호 예약을 풀었다. 최신 버전에서 다시 시작해야 한다") from None
+            raise
         d["status"], d["confirmed"] = "CONFIRMED", {"ref": ref, "preview_hash": preview_hash, "review_id": review["review_id"]}
         self._touch(d)
         return ref
@@ -382,12 +448,27 @@ class AuthoringService:
     def add_review(self, actor: Actor, ref: dict, *, decision: str, clinical_basis_approved: bool,
                    reason: Optional[str] = None, review_id: Optional[str] = None) -> dict:
         """만들어진 버전에 검수를 덧붙인다(두 번째 검수자 또는 승인 철회). 이전 검수는 지우지 않는다."""
-        self._auth(actor)
+        self._auth(actor, reviewer_ok=True)
+        # 엄격 파싱: 불리언만(문자열 "false"가 승인으로 저장되던 문제, 전수 점검 P2)
+        if not isinstance(clinical_basis_approved, bool):
+            raise BoundaryError("INVALID_RECORD", "clinical_basis_approved는 true 또는 false여야 한다")
+        if decision not in ("APPROVED", "REJECTED", "CHANGES_REQUESTED"):
+            raise BoundaryError("INVALID_RECORD", "decision이 올바르지 않다")
+        if reason is not None and not isinstance(reason, str):
+            raise BoundaryError("INVALID_RECORD", "reason은 문자열이어야 한다")
+        if self.require_two_person and clinical_basis_approved:
+            # 임상 근거 승인: 검수 역할이고, 이 버전을 만든(확인한) 주체와 달라야 한다
+            if actor.role != REVIEWER_ROLE:
+                raise BoundaryError("PERMISSION_DENIED", "임상 근거 승인은 검수 역할(clinical-reviewer)만 한다")
+            for old in self.store.get_reviews(ref):
+                ext = (old.get("ext") or {}).get(EXT_KEY) or {}
+                if ext.get("kind") == "AUTHOR_CONFIRMATION" and old.get("reviewer_id") == actor.id:
+                    raise BoundaryError("PERMISSION_DENIED", "자신이 확인한 버전을 스스로 임상 승인할 수 없다(저자와 검수자는 달라야 한다)")
         self.store.get_question_bank(ref)  # 존재와 무결성
         rec = {
             "pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "review_id": review_id or self._new_id("rv"),
             "question_set": ref, "reviewer_role": actor.role, "reviewer_id": actor.id, "decision": decision,
-            "clinical_basis_approved": bool(clinical_basis_approved), "reviewed_at": _ts(self._clock()),
+            "clinical_basis_approved": clinical_basis_approved, "reviewed_at": _ts(self._clock()),
             "ext": {EXT_KEY: {"kind": "FOLLOW_UP_REVIEW"}},
         }
         if reason:
