@@ -70,7 +70,7 @@ scripts/smoke.sh
 
 ## 현재 상태
 
-0.7.0(2026-10-28): 전수 점검 반영(추출기 선형화, 4-eyes 기본, 엄격 입력, 환자 정보 탐지 확대, 운영 구성 거부, 동시 요청 상한, SIGTERM, 보존 `purge`, v2 Trace 문항 ID). 상세와 한계는 docs/CHANGELOG.md, docs/boundary.md.
+0.7.0(2026-10-28; pytest 343개 통과 PostgreSQL 포함, 미포함 시 아래 SKIP 제외 통과, SQLite·PostgreSQL 스모크 SMOKE OK): 전수 점검 반영(추출기 선형화, 4-eyes 기본, 엄격 입력, 환자 정보 탐지 확대, 운영 구성 거부, 동시 요청 상한, SIGTERM, 보존 `purge`, v2 Trace 문항 ID). 상세와 한계는 docs/CHANGELOG.md, docs/boundary.md.
 
 저자 경로·개선 신호의 장애 동작(0.6.3, 2026-10-28, FAULT_MATRIX E2·D5): 멈춘/끊긴 업로드, 깨진 요청, 예상 밖 오류, 재시작·재전송 멱등, 큰 자료 쓰기 상한, 개선 신호의 느림·5xx·깨진 응답. 칸별 표와 한계는 docs/boundary.md. 확인한 것(이 PC, 일회용 PostgreSQL 한 대): `python -m pytest -q`는 `TEST_DATABASE_URL` 설정 시 283개 통과, 미설정 시 206개 통과 + 77개 SKIP. 운영에서 저자 경로를 열지 말지는 사용자 결정이라 열지 않았다. 컨테이너 조합 재측정은 deploy E2E에서 헤드가 한다.
 

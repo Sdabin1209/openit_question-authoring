@@ -5,7 +5,7 @@
 ## 1. 원칙
 
 1. 문항 세트 버전은 불변이다. 수정은 새 버전이다(D25).
-2. 저자가 사람이 읽는 미리보기로 확인하기 전에는 버전이 되지 않는다(D31). 확인은 `ReviewRecord`(`clinical_basis_approved=true`)로 정확한 버전에 묶인다(D30).
+2. 저자가 사람이 읽는 미리보기로 확인하기 전에는 버전이 되지 않는다(D31). 확인은 `ReviewRecord`로 정확한 버전에 묶인다. 0.7.0부터 기본(4-eyes, D88 U9, ADR 0006)에서는 저자의 확인이 `clinical_basis_approved=false`이고 임상 근거 승인은 다른 주체의 검수 역할이 `add_review`로 한다(이전 D30의 "저자 확인이 곧 임상 승인"은 `QA_REQUIRE_TWO_PERSON=false`일 때의 동작).
 3. 저장소에 쓰는 길은 저작 서비스(`service.py`) 하나다. 이웃에게는 읽기 전용 뷰(`store.reader()`)와 읽기 전용 SQLite 연결만 준다.
 4. 파싱은 추정하지 않는다. 확신하지 못한 값은 비우거나 원문을 두고 플래그를 달며, 열린 플래그가 있으면 확인할 수 없다.
 5. 임상 기준의 내용은 정하지 않는다. 기본값을 만들어 넣지 않는다(정책 수치, 위험 기준, 범위는 자료나 저자가 준 것만 쓴다).
@@ -64,7 +64,7 @@ confirmed: {ref, preview_hash, review_id}
 1. 초안 만들기: `create_draft`(기본은 최신 버전에서 복사, 새 문항 세트면 빈 초안) 또는 `ingest_material`.
 2. 편집: `apply_edits`는 JSON 포인터 기반 `set/append/remove`다. 이것이 화면 입력(템플릿 양식)의 저장 형태이며, 콘솔이 필드 입력창을 이 호출로 옮긴다. 편집한 경로(와 그 아래)의 플래그는 "저자가 직접 정함"(EDITED)으로 닫힌다. 추출된 값이 맞으면 `acknowledge_flags`로 닫는다(ACKNOWLEDGED). 둘 다 기록에 남는다.
 3. 미리보기(`get_preview`): 사람이 읽는 한국어 글(`text`), 열린 플래그, 스키마·참조 검증 오류, 기반 버전과의 변경 요약, `preview_hash`, `ready_to_confirm`. 수치(정책 한도, 단위·범위·환산, 위험 기준, 세션 한도)는 "수치" 줄로 항상 따로 보인다. 비어 있는 값은 "(비어 있음)"으로 보이고 채우지 않는다.
-4. 확인(`confirm`): 저자 권한 확인 -> 미리보기 해시가 현재 초안과 같은지 -> 열린 플래그 0 -> 기반이 아직 최신인지 -> `version` 부여 후 QuestionBank 스키마와 참조 검증 -> 이전 버전과 내용이 같지 않은지 -> ChangeClassification 생성 -> ReviewRecord(`reviewer_role`=확인한 사람의 역할, `reviewer_id`, APPROVED, `clinical_basis_approved`=true) 생성 -> 한 트랜잭션으로 저장. 어느 단계든 실패하면 아무것도 저장되지 않는다. 같은 `preview_hash`로 다시 부르면 같은 ref(멱등), 다른 해시면 `CONFLICT`. 저장 직후 초안 갱신에 실패해도 예약된 번호와 시각으로 재시도하면 같은 버전을 돌려준다(시험함).
+4. 확인(`confirm`): 저자 권한 확인 -> 미리보기 해시가 현재 초안과 같은지 -> 열린 플래그 0 -> 기반이 아직 최신인지 -> `version` 부여 후 QuestionBank 스키마와 참조 검증 -> 이전 버전과 내용이 같지 않은지 -> ChangeClassification 생성 -> ReviewRecord(`reviewer_role`=확인한 사람의 역할, `reviewer_id`, APPROVED, `clinical_basis_approved`=4-eyes면 false 아니면 true) 생성 -> 한 트랜잭션으로 저장. 어느 단계든 실패하면 아무것도 저장되지 않는다. 같은 `preview_hash`로 다시 부르면 같은 ref(멱등), 다른 해시면 `CONFLICT`. 저장 직후 초안 갱신에 실패해도 예약된 번호와 시각으로 재시도하면 같은 버전을 돌려준다(시험함).
 5. ReviewRecord의 `ext.question-authoring`: `kind`, `draft_id`, `preview_hash`, `source`(자료 해시 포함), 직접 고친 플래그와 확인한 플래그의 ID.
 6. 역할: 서비스는 허용 역할 집합(`author_roles`)을 받는다. 어떤 역할 이름을 쓸지는 운영이 정한다(기본값 `question-author`는 제안). 임상 승인을 하는 저자와 콘솔 사용자의 구분은 미구현이며 인증은 11절.
 

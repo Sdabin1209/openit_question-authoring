@@ -7,7 +7,7 @@ from boundary_contracts.errors import BoundaryError
 from conftest import pg_schema
 from question_authoring.service import AuthoringService
 from question_authoring.store import PostgresQuestionStore
-from helpers import publish
+from helpers import publish, AUTHOR as AUTHOR_FOR_PG
 
 
 def test_immutable_triggers(validators):
@@ -96,7 +96,7 @@ def test_write_retry_after_lost_commit_ack_is_idempotent(validators):
     """커밋은 됐는데 응답을 잃은 경우를 흉내 낸다: 같은 commit_version을 다시 불러도 조용히 성공하고 중복이 없다."""
     with pg_schema() as (url, schema):
         s = PostgresQuestionStore(url, schema=schema)
-        svc = AuthoringService(s, validators)
+        svc = AuthoringService(s, validators, require_two_person=False)
         ref = publish(svc)
         bank = s.get_question_bank(ref)
         rv = s.get_reviews(ref)[0]
@@ -398,3 +398,26 @@ def test_postgres_restart_keeps_draft_and_confirm_is_idempotent(validators):
         assert a3.handle("POST", f"/v1/drafts/{did}/confirm", auth, body) == (200, ref)
         assert [v for v, _ in s3._version_rows("qs-main")] == [1]
         s3.close()
+
+
+def test_postgres_purge_retention(validators):
+    from datetime import datetime, timedelta, timezone
+    from question_authoring.__main__ import purge_once
+    old = (datetime.now(timezone.utc) - timedelta(days=40)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema)
+        svc = AuthoringService(s, validators, require_two_person=False)
+        ref = publish(svc)
+        h = s._version_source_hashes()
+        assert len(h) == 1
+        s.put_source("sha256:" + "d" * 64, "orphan", b"x")
+        d = svc.create_draft(AUTHOR_FOR_PG, "qs-old")
+        d["updated_at"] = old
+        s.save_draft(d)
+        s._write(lambda c: c.execute("UPDATE blobs SET created_at=%s", (old,)))
+        out = purge_once(s)
+        assert out == {"drafts_removed": 1, "sources_removed": 1}
+        assert s.load_draft(d["draft_id"]) is None and s.get_source("sha256:" + "d" * 64) is None
+        assert s.get_source(next(iter(h))) is not None and s.latest("qs-main") == ref
+        assert purge_once(s) == {"drafts_removed": 0, "sources_removed": 0}
+        s.close()
