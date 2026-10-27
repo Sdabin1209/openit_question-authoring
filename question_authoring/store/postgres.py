@@ -319,7 +319,8 @@ class PostgresQuestionStore(AuthoringStore):
 
     def put_source(self, source_hash, filename, data):
         self._write(lambda c: c.execute(
-            "INSERT INTO blobs(source_hash, filename, data, created_at) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+            "INSERT INTO blobs(source_hash, filename, data, created_at) VALUES(%s,%s,%s,%s) "
+            "ON CONFLICT (source_hash) DO UPDATE SET created_at=EXCLUDED.created_at",      # 다시 올리면 보존 기간이 새로 센다
             (source_hash, filename, bytes(data), _now_ts())), large=True)
 
     def get_source(self, source_hash):
@@ -334,8 +335,9 @@ class PostgresQuestionStore(AuthoringStore):
             c.execute("UPDATE versions SET bank=%s WHERE qsid=%s AND version_no=%s", (_dump(bank), qsid, n))
             c.execute("ALTER TABLE versions ENABLE TRIGGER versions_immutable")
 
-    def _delete_draft(self, draft_id):
-        self._write(lambda c: c.execute("DELETE FROM drafts WHERE draft_id=%s", (draft_id,)))
+    def _delete_draft_if_unchanged(self, draft):
+        return bool(self._write(lambda c: c.execute(
+            "DELETE FROM drafts WHERE draft_id=%s AND record=%s", (draft["draft_id"], _dump(draft))).rowcount))
 
     def _version_source_hashes(self):
         out = set()
@@ -351,8 +353,13 @@ class PostgresQuestionStore(AuthoringStore):
     def _stamp_blobs(self, now):
         self._write(lambda c: c.execute("UPDATE blobs SET created_at=%s WHERE created_at IS NULL", (now,)))
 
-    def _delete_blob(self, source_hash):
-        self._write(lambda c: c.execute("DELETE FROM blobs WHERE source_hash=%s", (source_hash,)))
+    def _delete_blob_if_stale(self, source_hash, before):
+        # 쓰기 락 아래 한 문장: 확인과 삭제 사이에 새 초안·재업로드가 끼어들 수 없다(모든 쓰기가 같은 advisory lock을 쓴다)
+        return bool(self._write(lambda c: c.execute(
+            "DELETE FROM blobs WHERE source_hash=%s AND created_at IS NOT NULL AND created_at < %s "
+            "AND NOT EXISTS (SELECT 1 FROM versions WHERE source IS NOT NULL AND position(%s in source) > 0) "
+            "AND NOT EXISTS (SELECT 1 FROM drafts WHERE position(%s in record) > 0)",
+            (source_hash, before, source_hash, source_hash)).rowcount))
 
     def is_ready(self) -> bool:
         """/readyz용 DB 확인. **주 연결도 self._lock도 쓰지 않는다**: 쓰기가 연결을 쥐고 기다리는 중이어도 막히지 않는다.

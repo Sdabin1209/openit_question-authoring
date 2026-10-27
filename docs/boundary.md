@@ -95,11 +95,13 @@
 
 - **4-eyes(기본)**: 저자의 `confirm`은 `clinical_basis_approved=false`로 기록한다. 임상 근거 승인은 `clinical-reviewer` 역할이 저자와 다른 주체 ID로 `add_review`할 때만 true가 된다(자기 승인은 403). 초안은 만든 주체만 편집·확인·폐기한다. 이웃이 보는 변화: `reviewed_only`에 버전이 나타나는 시점이 검수자 승인 뒤다. 계약 의미에 닿는 부분은 `docs/change-requests/CR-0006`. 끄는 설정(`QA_REQUIRE_TWO_PERSON=false`)은 `/readyz`에 경고가 뜬다. ADR 0006.
 - **E2 저자 경로를 운영에서 열 때(deploy가 gateway 경로를 만든다) 서비스가 신뢰하는 것**: (1) gateway는 사람 인증(Basic 등)을 마친 요청에 `Authorization: Bearer <QA_GATEWAY_TOKENS의 토큰>`과 `X-Openit-User: <인증된 사용자 ID>`를 붙이고, 클라이언트가 보낸 같은 이름 헤더는 지운다(`boundary-contracts/HTTP.md`, `PUBLIC_API.md`의 규약). (2) 이 서비스는 gateway 토큰의 요청에서만 `X-Openit-User`를 사용자로 쓰고 정적 토큰의 요청에서는 무시한다. (3) 사용자의 역할은 `QA_USER_ROLES`(사용자ID=역할)로 이 서비스가 정한다(역할 헤더는 계약에 없다). (4) 서비스 포트는 직접 노출하지 않는다(authoring 네트워크 안). (5) 읽기 면(I1)은 읽기 토큰으로 계속 닿는다. 열지 말지는 사용자 결정(E2)이며 이 영역은 열지 않았다. ADR 0010.
+- **gateway 사용자 ID**: 일반 ID 또는 이메일형(`local@domain`, 문자 `A-Za-z0-9._-`, 길이 각 60자 이하)만 받는다. 계약의 `Id`(ReviewRecord.reviewer_id)는 `@`를 허용하지 않으므로 기록할 때 `@`를 `:at:`로 바꾼다(예 `kim@hosp.kr` -> `kim:at:hosp.kr`). 입력의 `:`는 허용하지 않아 충돌이 없다. 이전에는 `_principal`이 `@`를 받고 `_ID`가 거부해 이메일형 ID가 400이었다.
+- **SIGTERM**: 새 요청을 받지 않고 진행 중 요청을 `QA_SHUTDOWN_GRACE_SECONDS`(기본 8초, docker stop 기본 10초보다 짧게; 측정 안 함)까지 기다린 뒤 종료한다. 이전 주석은 "마친다"였으나 실제로는 기다리지 않았다. 유예를 넘기면 남은 수를 기록하고 종료하며, 확인 도중이면 `confirming` 예약이 남지만 다음 호출이 복구한다.
 - **운영 구성 검사**: `QA_DEV_MODE=1`이 아니면 DB URL과 토큰이 없을 때 시작을 거부한다(이전에는 tmpfs SQLite로 조용히 떴다). deploy 확인 필요: 운영 compose는 PostgreSQL URL 파일과 토큰 파일을 준다고 읽었으나 이 영역에서 실행해 확인하지 않았다. 시험 구성(compose.test.yaml)이 SQLite를 쓰면 `QA_DEV_MODE=1`이 필요하다.
 
 ## 보존과 정리 (D88 U4, ADR 0011)
 
-`python -m question_authoring purge`(run-once, 멱등): 처리되지 않은(OPEN, DISCARDED) 초안은 마지막 수정 30일 뒤, 어떤 버전·초안도 참조하지 않는 원본 자료(고아 포함)는 저장 30일 뒤 지운다. 버전·검수·변경 분류·확정된 초안은 지우지 않는다. 일수는 설정이고 무기한은 거부한다. 30일은 잠정 기본값(병원 정책 미정). 스케줄은 deploy 몫이며 아직 연결되지 않았다.
+`python -m question_authoring purge`(run-once, 멱등): 처리되지 않은(OPEN, DISCARDED) 초안은 마지막 수정 30일 뒤, 어떤 버전·초안도 참조하지 않는 원본 자료(고아 포함)는 저장 30일 뒤 지운다. 버전·검수·변경 분류·확정된 초안은 지우지 않는다. 일수는 설정이고 무기한은 거부한다. 삭제는 확인과 삭제를 한 문장(같은 쓰기 락·트랜잭션)으로 한다: 저장 시각이 오래됐고 어떤 버전·초안도 참조하지 않을 때만 지우며, 같은 자료를 다시 올리면 저장 시각이 갱신된다(새 초안·재업로드와 겹쳐도 참조 중인 원본을 지우지 않는다). 초안은 읽은 그대로일 때만 지운다. `purge`도 운영 구성 검사(`QA_DEV_MODE` 아니면 DB URL 필수, 토큰은 요구하지 않음)를 거친다. 30일은 잠정 기본값(병원 정책 미정). 스케줄은 deploy 몫이며 아직 연결되지 않았다.
 
 ## 변경 요청
 

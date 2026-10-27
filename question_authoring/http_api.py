@@ -38,6 +38,10 @@ def _need(d: dict, key: str):
     return d[key]
 
 
+# gateway 사용자 ID: 일반 ID 또는 이메일형(local@domain). 문자 집합과 길이를 제한한다(총 길이가 계약 Id의 128자 안에 들도록 local 60, domain 60).
+_USER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,59}(?:@[A-Za-z0-9][A-Za-z0-9.-]{0,59})?$")
+
+
 class Api:
     def __init__(self, service: AuthoringService, tokens: Mapping[str, Actor], *,
                  read_tokens: Optional[Mapping[str, str]] = None, signals=None, ready: Callable[[], bool] = lambda: True,
@@ -152,9 +156,10 @@ class Api:
         if tok in self.gateway_tokens:
             user = h.get("x-openit-user", "")
             role = self.user_roles.get(user)
-            if role is None or not re.match(r"^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$", user):
+            if role is None or not _USER_RE.match(user):
                 return None                         # 헤더가 없거나 이 서비스가 아는 사용자가 아니다
-            return Actor(user, role)
+            # 계약의 Id(reviewer_id)는 '@'를 허용하지 않는다. 이메일형 ID는 '@'를 ':at:'로 바꿔 기록한다(역변환 가능, 충돌 없음: 입력에 ':'를 허용하지 않는다)
+            return Actor(user.replace("@", ":at:"), role)
         return None
 
     def has_credentials(self, headers) -> bool:
@@ -232,6 +237,8 @@ def make_server(api: Api, host: str, port: int, request_timeout: Optional[float]
     # 동시에 처리하는 요청 수의 상한(8MiB 본문 x N이 메모리를 채우지 않게). /healthz, /readyz는 세지 않는다.
     # 기본 32: 근거 기록 없음(저자는 관리자 소수라는 가정에서 넉넉하게 잡은 값, 측정 안 함).
     slots = threading.BoundedSemaphore(max_concurrent)
+    inflight = [0]                      # 처리 중인 요청 수(우아한 종료가 기다린다)
+    inflight_lock = threading.Lock()
 
     class H(BaseHTTPRequestHandler):
         timeout = request_timeout   # 소켓 읽기·쓰기가 이 시간 멈추면 끊는다. 멈춘 업로드가 스레드를 영원히 쥐지 못하게 한다
@@ -247,6 +254,15 @@ def make_server(api: Api, host: str, port: int, request_timeout: Optional[float]
             self.wfile.write(data)
 
         def _do(self, method):
+            with inflight_lock:
+                inflight[0] += 1
+            try:
+                self._do_checked(method)
+            finally:
+                with inflight_lock:
+                    inflight[0] -= 1
+
+        def _do_checked(self, method):
             path = self.path.split("?", 1)[0]
             if path in ("/healthz", "/readyz"):
                 return self._do_inner(method)
@@ -261,6 +277,7 @@ def make_server(api: Api, host: str, port: int, request_timeout: Optional[float]
                 return self._do_inner(method)
             finally:
                 slots.release()
+
 
         def _do_inner(self, method):
             try:
@@ -295,4 +312,6 @@ def make_server(api: Api, host: str, port: int, request_timeout: Optional[float]
         def log_message(self, fmt, *args):  # 표준 출력으로 낸다(개인 정보 없는 요청 줄만)
             print("%s %s" % (self.address_string(), fmt % args), flush=True)
 
-    return ThreadingHTTPServer((host, port), H)
+    srv = ThreadingHTTPServer((host, port), H)
+    srv.inflight = lambda: inflight[0]  # type: ignore[attr-defined]
+    return srv

@@ -78,7 +78,8 @@ class AuthoringStore(abc.ABC):
 
     # ---- 보존·정리(D88 U4): 처리되지 않은 초안과, 어떤 버전·초안도 참조하지 않는 원본 자료만 지운다. 버전·검수·변경 분류는 불변이라 지우지 않는다 ----
     @abc.abstractmethod
-    def _delete_draft(self, draft_id: str) -> None: ...
+    def _delete_draft_if_unchanged(self, draft: dict) -> bool:
+        """읽은 그대로일 때만 지운다(그 사이 편집됐으면 지우지 않는다). 지웠으면 True."""
     @abc.abstractmethod
     def _version_source_hashes(self) -> set: ...
     @abc.abstractmethod
@@ -88,7 +89,9 @@ class AuthoringStore(abc.ABC):
     def _stamp_blobs(self, now: str) -> None:
         """저장 시각을 모르는(이 기능 이전의) 원본 자료에 지금 시각을 적는다. 그때부터 보존 기간이 센다."""
     @abc.abstractmethod
-    def _delete_blob(self, source_hash: str) -> None: ...
+    def _delete_blob_if_stale(self, source_hash: str, before: str) -> bool:
+        """한 번에(같은 트랜잭션·락 안에서) 확인하고 지운다: 저장 시각이 before보다 오래됐고 어떤 버전·초안도 참조하지 않을 때만.
+        purge가 계산한 뒤 새 초안이 같은 해시를 참조하거나 같은 자료가 다시 올라온 경우(저장 시각 갱신)를 지우지 않는다."""
 
     def purge(self, *, now: str, draft_before: str, source_before: str) -> dict:
         """멱등. draft_before/source_before보다 오래된 것만 지운다(ISO UTC 문자열 비교). 값은 호출자가 정한다(보존 기간은 설정)."""
@@ -96,17 +99,11 @@ class AuthoringStore(abc.ABC):
         removed_drafts = 0
         for d in self.list_drafts():
             if d.get("status") in ("OPEN", "DISCARDED") and str(d.get("updated_at", "")) < draft_before:
-                self._delete_draft(d["draft_id"])
-                removed_drafts += 1
-        keep = set(self._version_source_hashes())
-        for d in self.list_drafts():
-            h = (d.get("source") or {}).get("source_hash")
-            if h:
-                keep.add(h)
+                if self._delete_draft_if_unchanged(d):
+                    removed_drafts += 1
         removed_blobs = 0
         for h, created in self._blob_meta():
-            if h not in keep and created is not None and created < source_before:
-                self._delete_blob(h)
+            if created is not None and created < source_before and self._delete_blob_if_stale(h, source_before):
                 removed_blobs += 1
         return {"drafts_removed": removed_drafts, "sources_removed": removed_blobs}
 

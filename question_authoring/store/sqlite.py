@@ -177,15 +177,17 @@ class SqliteQuestionStore(AuthoringStore):
 
     def put_source(self, source_hash, filename, data):
         self._write(lambda: self._db.execute(
-            "INSERT OR IGNORE INTO blobs(source_hash, filename, data, created_at) VALUES(?,?,?,?)",
+            "INSERT INTO blobs(source_hash, filename, data, created_at) VALUES(?,?,?,?) "
+            "ON CONFLICT(source_hash) DO UPDATE SET created_at=excluded.created_at",      # 다시 올리면 보존 기간이 새로 센다
             (source_hash, filename, bytes(data), _now_ts())))
 
     def get_source(self, source_hash):
         r = self._q("SELECT filename, data FROM blobs WHERE source_hash=?", (source_hash,))
         return (r[0][0], bytes(r[0][1])) if r else None
 
-    def _delete_draft(self, draft_id):
-        self._write(lambda: self._db.execute("DELETE FROM drafts WHERE draft_id=?", (draft_id,)))
+    def _delete_draft_if_unchanged(self, draft):
+        return bool(self._write(lambda: self._db.execute(
+            "DELETE FROM drafts WHERE draft_id=? AND record=?", (draft["draft_id"], _dump(draft))).rowcount))
 
     def _version_source_hashes(self):
         out = set()
@@ -201,8 +203,13 @@ class SqliteQuestionStore(AuthoringStore):
     def _stamp_blobs(self, now):
         self._write(lambda: self._db.execute("UPDATE blobs SET created_at=? WHERE created_at IS NULL", (now,)))
 
-    def _delete_blob(self, source_hash):
-        self._write(lambda: self._db.execute("DELETE FROM blobs WHERE source_hash=?", (source_hash,)))
+    def _delete_blob_if_stale(self, source_hash, before):
+        # 확인과 삭제를 한 문장(한 쓰기 트랜잭션)으로: 그 사이에 새 초안·재업로드가 끼어들 수 없다
+        return bool(self._write(lambda: self._db.execute(
+            "DELETE FROM blobs WHERE source_hash=? AND created_at IS NOT NULL AND created_at < ? "
+            "AND NOT EXISTS (SELECT 1 FROM versions WHERE source IS NOT NULL AND instr(source, ?) > 0) "
+            "AND NOT EXISTS (SELECT 1 FROM drafts WHERE instr(record, ?) > 0)",
+            (source_hash, before, source_hash, source_hash)).rowcount))
 
     def is_ready(self) -> bool:
         try:

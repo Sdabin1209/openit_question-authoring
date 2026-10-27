@@ -13,6 +13,7 @@ QA_DB_CONNECT_TIMEOUT_SECONDS    PostgreSQL 접속 상한(초, 기본 3)
 QA_DB_STATEMENT_TIMEOUT_SECONDS  PostgreSQL 문장 하나의 상한(초, 기본 3). 호출 하나는 이 값 + 1초 안에 끝난다
 QA_READYZ_DB_TIMEOUT_SECONDS     /readyz의 DB 확인 상한(초, 기본 2)
 QA_DB_LARGE_STATEMENT_TIMEOUT_SECONDS  큰 자료(원본 자료, 초안, 문항 세트 버전) 쓰기의 문장 상한(초, 기본 30)
+QA_SHUTDOWN_GRACE_SECONDS       SIGTERM 뒤 진행 중 요청을 기다리는 최대 시간(기본 8초)
 QA_REQUEST_TIMEOUT_SECONDS       HTTP 요청 소켓의 무응답 상한(초, 기본 30). 업로드가 이 시간 동안 멈추면 끊는다
 QA_DEV_MODE                      1이면 개발·시험 구성을 허용한다(SQLite, 토큰 없이 기동). 없으면 운영 구성이어야 시작한다:
                                  QA_DATABASE_URL(_FILE)과 토큰(QA_AUTHOR_TOKENS 또는 QA_GATEWAY_TOKENS)이 없으면 시작을 거부한다
@@ -29,6 +30,7 @@ import os
 import signal
 import sys
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 from boundary_contracts import read_secret
@@ -87,9 +89,21 @@ def _days(name: str, default: int) -> int:
     return int(raw)
 
 
+def _require_production_config(*, need_tokens: bool) -> None:
+    """운영 구성 검사(전수 점검 P6). QA_DEV_MODE=1이 아니면 DB URL(과 서비스 기동이면 토큰)이 있어야 한다.
+    purge도 같은 검사를 거친다: 개발 플래그 없이 빈 임시 SQLite를 열어 "0건 삭제"로 성공하는 일이 없게 한다."""
+    if _bool("QA_DEV_MODE", False):
+        return
+    if not read_secret("QA_DATABASE_URL"):
+        raise SystemExit("QA_DATABASE_URL(_FILE)이 없다. 개발·시험이면 QA_DEV_MODE=1을 준다")
+    if need_tokens and not (read_secret("QA_AUTHOR_TOKENS") or read_secret("QA_GATEWAY_TOKENS")):
+        raise SystemExit("저자 토큰이 없다(QA_AUTHOR_TOKENS 또는 QA_GATEWAY_TOKENS). 개발·시험이면 QA_DEV_MODE=1을 준다")
+
+
 def build() -> tuple[Api, AuthoringStore]:
     env = os.environ
     dev = _bool("QA_DEV_MODE", False)
+    _require_production_config(need_tokens=True)
     tokens = {}
     for item in filter(None, (read_secret("QA_AUTHOR_TOKENS") or "").split(",")):
         tok, aid, role = item.split(":")
@@ -104,11 +118,6 @@ def build() -> tuple[Api, AuthoringStore]:
             raise SystemExit(f"QA_USER_ROLES의 역할은 {', '.join(ROLES)} 중 하나여야 한다")
         user_roles[uid.strip()] = role
     if not dev:
-        # 운영 구성 검사(전수 점검 P6): 설정을 빠뜨렸는데 조용히 빈 임시 DB나 아무도 못 쓰는 서비스로 뜨지 않게 한다
-        if not read_secret("QA_DATABASE_URL"):
-            raise SystemExit("QA_DATABASE_URL(_FILE)이 없다. 개발·시험이면 QA_DEV_MODE=1을 준다")
-        if not tokens and not gateway_tokens:
-            raise SystemExit("저자 토큰이 없다(QA_AUTHOR_TOKENS 또는 QA_GATEWAY_TOKENS). 개발·시험이면 QA_DEV_MODE=1을 준다")
         if gateway_tokens and not user_roles:
             raise SystemExit("QA_GATEWAY_TOKENS가 있는데 QA_USER_ROLES가 비어 있다")
     store = open_store()
@@ -141,6 +150,7 @@ def purge_once(store: AuthoringStore, now: datetime | None = None) -> dict:
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["purge"]:
+        _require_production_config(need_tokens=False)   # 정리 잡에는 저자 토큰이 필요 없어 DB URL과 개발 플래그만 본다
         store = open_store()
         print(purge_once(store), flush=True)
         store.close()
@@ -150,14 +160,22 @@ def main(argv=None) -> int:
                       request_timeout=_seconds("QA_REQUEST_TIMEOUT_SECONDS", 30.0),
                       max_concurrent=int(_seconds("QA_MAX_CONCURRENT_REQUESTS", 32)))
 
-    def stop(signum, frame):   # PID 1의 Python은 SIGTERM을 기본으로 무시한다. 진행 중 요청을 마치고 멈춘다
-        print("종료 신호를 받았다. 멈춘다", flush=True)
+    def stop(signum, frame):   # PID 1의 Python은 SIGTERM을 기본으로 무시한다. 새 연결을 받지 않고, 아래에서 진행 중 요청을 유예 시간까지 기다린다
+        print("종료 신호를 받았다. 새 요청을 받지 않고 진행 중 요청을 기다린다", flush=True)
         threading.Thread(target=srv.shutdown, daemon=True).start()
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     print("question-authoring 시작", flush=True)
     srv.serve_forever()
+    # 진행 중 요청을 유예 시간까지 기다린다. 기본 8초: docker stop의 기본 대기(10초) 뒤 SIGKILL보다 짧게 끝내려는 값이다(근거: Docker 문서, 측정 안 함)
+    grace = _seconds("QA_SHUTDOWN_GRACE_SECONDS", 8.0)
+    end = time.monotonic() + grace
+    while srv.inflight() > 0 and time.monotonic() < end:
+        time.sleep(0.05)
+    left = srv.inflight()
     srv.server_close()
+    if left:
+        print(f"유예 시간 {grace}초가 지나 처리 중인 요청 {left}개를 두고 종료한다", flush=True)
     return 0
 
 

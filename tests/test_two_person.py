@@ -185,3 +185,13 @@ def test_non_utf8_is_not_silently_accepted(s2):
     assert code(s2.ingest_material, KIM, "qs-u", "f.txt", data) == "FAILED_PRECONDITION"
     out = s2.ingest_material(KIM, "qs-u", "f.txt", data, accept_phi_warning=True)
     assert out["status"] == "FALLBACK"
+
+
+@pytest.mark.parametrize("text", ["2024-01-02 1234567", "2024.01.02 1234567", "20240102 1234567", "작성일 2026/10/28 1234567"])
+def test_dates_do_not_trigger_phone_warnings(text):
+    assert AuthoringService._phi_warnings(text.encode()) == []
+
+
+def test_date_exclusion_keeps_real_detections():
+    for t in ("2001011234567", "홍길동900101-1234567", "010 1234 5678", "2024-01-02 연락처 010-1234-5678", "+82-10-1234-5678"):
+        assert AuthoringService._phi_warnings(t.encode()), t

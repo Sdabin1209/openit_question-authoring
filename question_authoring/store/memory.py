@@ -105,15 +105,18 @@ class MemoryQuestionStore(AuthoringStore):
         with self._lock:
             if source_hash not in self._blobs:
                 self._blobs[source_hash] = (filename, bytes(data))
-                self._blob_times[source_hash] = _now_ts()
+            self._blob_times[source_hash] = _now_ts()      # 같은 자료를 다시 올리면 보존 기간이 새로 센다
 
     def get_source(self, source_hash):
         with self._lock:
             return self._blobs.get(source_hash)
 
-    def _delete_draft(self, draft_id):
+    def _delete_draft_if_unchanged(self, draft):
         with self._lock:
-            self._drafts.pop(draft_id, None)
+            if self._drafts.get(draft["draft_id"]) == draft:
+                del self._drafts[draft["draft_id"]]
+                return True
+            return False
 
     def _version_source_hashes(self):
         with self._lock:
@@ -129,10 +132,17 @@ class MemoryQuestionStore(AuthoringStore):
                 if self._blob_times.get(h) is None:
                     self._blob_times[h] = now
 
-    def _delete_blob(self, source_hash):
+    def _delete_blob_if_stale(self, source_hash, before):
         with self._lock:
-            self._blobs.pop(source_hash, None)
+            t = self._blob_times.get(source_hash)
+            if source_hash not in self._blobs or t is None or not t < before:
+                return False
+            if source_hash in self._version_source_hashes() or any(
+                    (d.get("source") or {}).get("source_hash") == source_hash for d in self._drafts.values()):
+                return False
+            del self._blobs[source_hash]
             self._blob_times.pop(source_hash, None)
+            return True
 
     # 시험용: 저장된 내용을 일부러 망가뜨린다(무결성 시험). 운영 코드는 부르지 않는다.
     def _corrupt_for_test(self, qsid: str, n: int, bank: dict) -> None:

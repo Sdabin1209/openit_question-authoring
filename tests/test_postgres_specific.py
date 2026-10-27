@@ -421,3 +421,23 @@ def test_postgres_purge_retention(validators):
         assert s.get_source(next(iter(h))) is not None and s.latest("qs-main") == ref
         assert purge_once(s) == {"drafts_removed": 0, "sources_removed": 0}
         s.close()
+
+
+def test_postgres_purge_conditional_delete(validators):
+    from datetime import datetime, timedelta, timezone
+    old = (datetime.now(timezone.utc) - timedelta(days=40)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    h = "sha256:" + "9" * 64
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema)
+        svc = AuthoringService(s, validators, require_two_person=False)
+        s.put_source(h, "f", b"x")
+        s._write(lambda c: c.execute("UPDATE blobs SET created_at=%s", (old,)))
+        d = svc.create_draft(AUTHOR_FOR_PG, "qs-n"); d["source"] = {"kind": "material", "source_hash": h}; s.save_draft(d)
+        assert s._delete_blob_if_stale(h, cutoff) is False and s.get_source(h) is not None      # 초안이 참조한다
+        s.put_source(h, "f", b"x")                                                                 # 재업로드: 저장 시각 갱신
+        s._delete_draft_if_unchanged(d)
+        assert s._delete_blob_if_stale(h, cutoff) is False and s.get_source(h) is not None      # 새 자료로 보인다
+        s._write(lambda c: c.execute("UPDATE blobs SET created_at=%s", (old,)))
+        assert s._delete_blob_if_stale(h, cutoff) is True and s.get_source(h) is None
+        s.close()
