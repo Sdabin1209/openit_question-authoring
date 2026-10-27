@@ -58,6 +58,39 @@
 - 확인한 것(이 PC, 일회용 PostgreSQL 컨테이너 한 대, 이 영역 시험): `docker pause` 중 `/readyz` 확인 2.0초에 실패, 열려 있던 연결로 읽기 4.0초 `UNAVAILABLE`, 새 접속 3.0초 `UNAVAILABLE`, 응답 없는 주소(10.255.255.1)도 상한 안에 503, 해제 뒤 즉시 복구. 이전 코드는 같은 `docker pause`에서 120초 넘게 돌아오지 않았다(중단하고 되돌림). 시험은 `tests/test_postgres_specific.py`.
 - 확인하지 못한 것: 컨테이너 조합(gateway, 다른 영역과 함께)에서의 재측정은 deploy E2E 5p에서 헤드가 한다. 호출자(이웃 영역)가 이 영역의 HTTP 응답을 기다리는 시간과의 맞물림, 진짜 네트워크 단절(패킷 손실)과 느린 디스크는 시험하지 않았다. 문장 하나가 길게 걸리는 큰 쓰기의 실제 분포는 측정하지 않았다.
 
+## 저자 클라이언트와 개선 신호 읽기의 장애 (FAULT_MATRIX E2, D5)
+
+기대 동작은 FAULT_POLICY 원칙 1·4·9·10·12를 이 영역에 적용한 것이다. 운영 구성에서 저자 경로(E2)를 열지 말지는 사용자 결정이라 이 영역은 포트·경로·설정을 열지 않았다(아래 표는 이 서비스의 동작이지 운영 노출 여부가 아니다).
+
+**E2 저자 클라이언트 -> 저작 API (코드와 시험으로 확인한 것)**
+
+| 칸 | 동작 | 시험 |
+| --- | --- | --- |
+| F1 서버 중지 / F8 분리 | 클라이언트 쪽 일이다. 서버가 돌아오면 같은 요청을 다시 보내면 된다(아래 멱등) | F4 시험 |
+| F2 무응답 / F3 느림 (업로드가 멈춤) | 요청 소켓이 `QA_REQUEST_TIMEOUT_SECONDS`(기본 30초) 멈추면 연결을 끊고 처리하지 않는다. 이전에는 상한이 없어 멈춘 업로드가 스레드를 계속 쥐었다 | `test_stalled_upload_is_cut_and_nothing_is_saved` |
+| 업로드 도중 연결 끊김 | 본문이 `Content-Length`보다 짧으면 처리하지 않는다(초안·원본 자료 저장 없음). 이전에는 짧게 온 본문을 그대로 처리했다 | `test_client_disconnect_mid_upload_saves_nothing` |
+| F4 서비스 재시작 | 초안·확정 버전은 저장소(PostgreSQL/SQLite)에 있어 재시작 뒤에도 미리보기와 확인을 이어 갈 수 있다. 확인을 두 번 보내면 같은 `ref`, 다른 미리보기 해시면 409 `CONFLICT` | `test_restart_keeps_drafts...`(SQLite), `test_postgres_restart_keeps_draft...` |
+| F5 5xx | 저장소 장애는 503 `UNAVAILABLE`(재시도 가능). **예상 밖의 오류는 이전에 연결을 끊고 응답이 없었으나 이제 JSON 500(`UNAVAILABLE`, 원문 메시지 없음)이다** | `test_unexpected_error_is_json_500...` |
+| F6 깨진 요청 | JSON이 아니면 400, `Content-Length`가 숫자가 아니거나 음수면 400(이전에는 연결이 끊김), 8MiB 초과 413 | `test_bad_content_length_is_400`, `test_oversize_is_413...` |
+| F7 인증 실패 | 403 `PERMISSION_DENIED`, `retryable=false`(401이 아니라 403이 이 서비스의 기존 규약이다). 실패를 세어 `/readyz`에 보이는 것은 하지 않았다 | `test_auth_failures_are_not_retryable` |
+
+- **원자성(원칙 1)**: 문항 세트 버전, 검수, 변경 분류는 한 트랜잭션이다. 트랜잭션 도중(삽입이 끝난 뒤 커밋 직전) 서버 쪽에서 연결이 죽는 상황을 PostgreSQL에서 흉내 내 보면, 두 번 다 죽으면 버전·검수 모두 남지 않고(`UNAVAILABLE`), 첫 시도만 죽으면 재시도가 끝까지 가서 정확히 한 번 저장된다(`test_commit_is_atomic_when_connection_dies_mid_transaction`). 원본 자료(`blobs`)는 초안 생성 전에 따로 저장되므로 업로드가 중간에 실패하면 주인 없는 원본이 남을 수 있다(내용 해시로 식별되고 같은 자료를 다시 올리면 그대로 쓴다. 해가 없지만 청소하는 도구는 없다).
+- **멱등(원칙 2에 해당)**: 같은 버전·같은 내용의 `commit_version`, 같은 `review_id`·같은 내용의 `add_review`는 조용히 성공하고, 같은 ID에 다른 내용이면 `CONFLICT`다(세 저장소 구현 모두, `test_resend_same_ok_different_conflict`). **한계**: `POST /v1/materials`를 같은 파일로 다시 보내면 새 초안이 하나 더 생긴다(문항 세트 버전이 아니라 가변 작업 영역이라 값이 이중 저장되는 일은 없지만 초안이 중복된다).
+- **큰 자료(원본 자료, 초안, 문항 세트 버전 쓰기)의 문장 상한**: 일반 문장 상한(3초)과 별도로 `QA_DB_LARGE_STATEMENT_TIMEOUT_SECONDS`(기본 30)를 쓴다. 서버가 받는 최대 본문(`MAX_BODY` 8MiB)을 이 PC의 일회용 PostgreSQL(메모리 디스크, 루프백)에서 `blobs`에 넣는 데 걸린 시간은 최대 0.09초였다(무작위 8MiB 0.09초, 반복 텍스트 8MiB 0.05초, 1/4MiB는 더 짧다). 즉 이 환경에서는 3초가 정상 업로드를 끊지 않았다. 그래도 별도 상한을 둔 이유: 이 측정은 빠른 디스크·루프백 한 환경이고, 실제 서버의 디스크·네트워크 DB에서 3초 안이라는 보장이 없으며 정상 업로드가 `UNAVAILABLE`로 실패하는 것이 더 나쁘기 때문이다[제안, 이 영역이 정한 값]. 락 대기는 이 상한을 받지 않는다(락을 얻은 뒤에만 늘린다). 실제 저자 자료의 크기 분포는 모른다.
+- **처리 시간(DB가 아닌 CPU)**: 환자 정보 경고용 이메일 패턴이 긴 한 줄에서 제곱으로 느려져 64KB 한 줄에 7초가 걸렸다. 길이를 묶어 고쳤다(1MB 한 줄 0.27초). 그 밖의 추출기·검증의 시간은 8MiB 규모로 측정하지 않았다.
+
+**D5 question-authoring -> ops-feedback(I7 읽기)**
+
+| 상황 | 동작 | 시험 |
+| --- | --- | --- |
+| 상류 느림 | 호출 하나의 읽기 상한 `QA_FAILURES_TIMEOUT_SECONDS`(기본 5초; 이전에는 클라이언트 기본 10초). 목록·trace를 여러 번 부르는 한 번의 `GET /v1/signals`에는 총 마감 `QA_SIGNALS_DEADLINE_SECONDS`(기본 20초)를 걸었다(이전에는 최대 수십 번 × 10초). 넘으면 부분 결과 없이 503 | `test_d5_slow_upstream...`, `test_d5_total_deadline...` |
+| 상류 5xx | 503 `UNAVAILABLE`(재시도 가능). 저작·I1 읽기는 영향 없음 | `test_d5_upstream_5xx...` |
+| 깨진 응답(JSON 아님, 형식 틀림) | 성공으로 취급하지 않고 503 `UNAVAILABLE` | 같은 시험 |
+| trace 읽기 실패 | `NOT_FOUND`처럼 그 사례만 못 읽는 경우는 건너뛰고 세지만, 상류 장애(`UNAVAILABLE`)·인증 실패는 이제 건너뛰지 않고 전체를 실패시킨다(이전에는 "trace 없음"으로 조용히 세어 OK 응답이 나갔다) | `test_d5_trace_upstream_failure...` |
+| 상류 인증 실패(토큰 불일치) | 403 `PERMISSION_DENIED`로 나간다. 호출한 저자의 인증 실패와 구별되지 않는다(메시지로만 구분). `/readyz`에 건수로 드러내는 것은 하지 않았다 | `test_i7_failure_maps_to_boundary_error` |
+
+확인하지 못한 것: 컨테이너 조합(gateway, 실제 ops-feedback 이미지)에서의 측정은 deploy E2E에서 헤드가 한다. 실제 네트워크 단절·패킷 손실, 매우 큰(수 MB) 실제 저자 자료로 한 PDF·Word 추출(미구현), 실제 서버의 디스크 속도에서의 삽입 시간, HTTP 서버가 동시에 받을 수 있는 업로드 수의 상한(스레드당 한 연결, 상한 없음)은 시험하지 않았다.
+
 ## 변경 요청
 
 `docs/change-requests/` 참고: CR-0001 출처 위치, CR-0002 QuestionBank.version 의미, CR-0003 SlotRef 문자열, CR-0004 의미 해석(reviewed_only, 후속 작업 매핑), CR-0005 계약 패키지 배포(스키마 포함, 태그). 헤드가 모두 승인했다(CR 파일 상단 참고).

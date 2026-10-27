@@ -66,6 +66,8 @@ scripts/smoke.sh
 
 ## 현재 상태
 
+저자 경로·개선 신호의 장애 동작(0.6.3, 2026-10-28, FAULT_MATRIX E2·D5): 멈춘/끊긴 업로드, 깨진 요청, 예상 밖 오류, 재시작·재전송 멱등, 큰 자료 쓰기 상한, 개선 신호의 느림·5xx·깨진 응답. 칸별 표와 한계는 docs/boundary.md. 확인한 것(이 PC, 일회용 PostgreSQL 한 대): `python -m pytest -q`는 `TEST_DATABASE_URL` 설정 시 283개 통과, 미설정 시 206개 통과 + 77개 SKIP. 운영에서 저자 경로를 열지 말지는 사용자 결정이라 열지 않았다. 컨테이너 조합 재측정은 deploy E2E에서 헤드가 한다.
+
 PostgreSQL 대기 상한(0.6.2, 2026-10-28, FAULT_MATRIX P0-3/E1): 접속 3초, 문장 3초, `/readyz` DB 확인 2초(설정 가능, 근거는 docs/boundary.md "DB 대기 상한"). 확인한 것(이 PC, 일회용 PostgreSQL 컨테이너): `python -m pytest -q`는 `TEST_DATABASE_URL` 설정 시 218개 통과, 미설정 시 160개 통과 + 58개 SKIP. `SMOKE_DB=postgres scripts/smoke.sh`와 기본(SQLite) `scripts/smoke.sh` 모두 SMOKE OK. `docker pause`에서 `/readyz`는 2.0초에 503, 해제 뒤 즉시 200. 확인하지 못한 것: 컨테이너 조합(gateway, 다른 영역)에서의 재측정은 deploy E2E 5p에서 헤드가 한다. 아래 "153개" 줄은 이전 세션의 기록이다.
 
 확인된 것(출처 docs/STATUS.md, docs/CHANGELOG.md):

@@ -11,6 +11,8 @@
 
 - 0.6.2: PostgreSQL 접속·문장·`/readyz` 대기 상한(FAULT_MATRIX P0-3/E1). pytest 218개 통과(`TEST_DATABASE_URL` 설정), 미설정 시 160 통과 + 58 SKIP. 스모크 SQLite·PostgreSQL 모두 SMOKE OK. 컨테이너 조합 재측정은 deploy E2E 5p(헤드).
 
+- 0.6.3: E2·D5 장애 동작(docs/boundary.md), 큰 자료 쓰기 상한, 이메일 패턴 제곱 지연 수정. pytest 283개 통과(`TEST_DATABASE_URL` 설정), 미설정 206 통과 + 77 SKIP. 운영 구성에서 저자 경로를 열지는 사용자 결정(E2)이라 손대지 않았다.
+
 ## 남은 일
 - 관리자 콘솔 UI, 화면 입력용 템플릿(필드 목록)과 코드·단위 사전(내용은 저자가 정한다).
 - 소비 계약: I4 판정 조회, I8 규칙 미리보기 연동. (I7 개선 신호는 구현함. 문항 ID를 trace의 planner_output.directive에서 읽는다는 가정은 ops-feedback과 확인 필요.)
