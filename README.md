@@ -22,7 +22,7 @@
 | 경로 | 역할 |
 | --- | --- |
 | `question_authoring/service.py` | 저작 로직: 초안, 편집, 자료 등록, 미리보기, 확인, 이후 검수. 저장소에 쓰는 유일한 길 |
-| `question_authoring/store/` | 문항 저장소. `sqlite.py`(운영, 단일 파일), `memory.py`(이웃이 시험에 쓰는 가짜 구현), `base.py`(읽기 논리) |
+| `question_authoring/store/` | 문항 저장소. `postgres.py`(운영), `sqlite.py`(개발·시험 기본, 단일 파일), `memory.py`(이웃이 시험에 쓰는 가짜 구현), `base.py`(읽기 논리) |
 | `question_authoring/extractors/` | 자료를 초안으로 바꾸는 추출기. 현재 텍스트 양식(`textform.py`)뿐 |
 | `question_authoring/preview.py` | 사람이 읽는 미리보기와 해시 |
 | `question_authoring/classify.py` | 버전 사이 변경 분류(`ChangeClassification`) |
@@ -50,8 +50,9 @@
 설치와 시험(docs/runbook.md):
 ```
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e ../boundary-contracts -e ../survey-service/schema jsonschema pytest && pip install -e . --no-deps
+pip install -e ../boundary-contracts -e ../survey-service/schema jsonschema pytest "psycopg[binary]==3.3.6" && pip install -e . --no-deps
 python -m pytest -q
+# PostgreSQL 시험(선택): scripts/dev-postgres.sh up; export TEST_DATABASE_URL="$(scripts/dev-postgres.sh url)"  (없으면 해당 시험은 SKIP)
 ```
 이미지 스모크(빌드, 기동, `/healthz`, `/readyz`, 등록-미리보기-확인, 인증 거부, 비root, 라벨 확인. 포트는 Docker가 배정):
 ```
@@ -59,7 +60,7 @@ scripts/smoke.sh
 ```
 서비스 실행: `python -m question_authoring`. 기본 DB 경로가 `/data/questions.sqlite3`라 로컬에서는 `QA_DB_PATH`를 쓰기 가능한 경로로 줘야 한다(이 세션에서 `--help`로 시도했더니 `/data` 권한 오류로 멈췄고, `--help` 옵션은 없다).
 비밀(`QA_AUTHOR_TOKENS`, `QA_READ_TOKENS`, `QA_FAILURES_TOKEN`)은 값을 환경 변수로 주지 않고 파일 경로를 `NAME_FILE`로 준다(D84). 예: `-e QA_AUTHOR_TOKENS_FILE=/run/secrets/author_tokens`. 환경 변수 전체 목록은 docs/runbook.md.
-
+이 세션에서 실제로 돌린 것은 docs/STATUS.md와 CHANGELOG 0.6.0 참고(수치는 그때그때 `python -m pytest -q -rs`로 확인).
 이 세션에서 실제로 돌린 것: `python -m pytest --collect-only -q`(153개 수집), `python -m pytest -q`(153개 통과, 21.41초, 이 PC의 기존 `.venv` 한 환경), `python -m question_authoring --help`(위 오류).
 돌리지 않은 것: 의존 설치, `scripts/smoke.sh`(이미지 빌드), 서버 기동, 깨끗한 두 번째 환경에서의 확인.
 

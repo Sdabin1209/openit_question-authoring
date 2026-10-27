@@ -1,5 +1,12 @@
 # 변경 이력
 
+## 0.6.0 (2026-10-27) PostgreSQL 저장소 (표준 서버 DB)
+
+- `PostgresQuestionStore` 추가(`psycopg[binary]` 3.3.6 고정, lock·pyproject). 선택은 `QA_DATABASE_URL`(비밀, `_FILE` 우선)이 있으면 PostgreSQL, 없으면 `QA_DB_PATH` SQLite. 표준을 고른 이유: 서비스별 데이터베이스·계정과 표준 백업·접근 제어를 쓰려고.
+- 쓰기는 advisory lock 아래 한 트랜잭션(SQLite의 BEGIN IMMEDIATE와 같은 의미), 불변 트리거, 멱등 스키마 생성. 접속 문자열은 오류·로그·`/readyz`에 쓰지 않는다. `/readyz`에 `db` 종류만 표시.
+- 적합성 시험을 `store` 픽스처로 매개변수화(memory, sqlite, sqlite-file, postgres). `TEST_DATABASE_URL`이 없으면 postgres는 SKIP. 동시 쓰기 시험, PostgreSQL 전용 시험, 비밀 비노출 시험 추가.
+- `compose.dev.yaml`, `scripts/dev-postgres.sh`, `SMOKE_DB=postgres` 스모크 추가.
+
 ## 0.5.0 (2026-10-27) 비밀은 파일로 (D84)
 
 - boundary-contracts v2.0.2로 올림(`pipeline_schema_version` 2.0). 토큰 3종을 `boundary_contracts.read_secret`으로 읽는다(`NAME_FILE` 우선, 없으면 `NAME`). 스모크는 비밀을 파일로 주입하고 `inspect`/`exec env`에 평문이 없음을 확인한다. `tests/test_secrets.py` 추가(로그·/readyz·오류 본문·예외 메시지에 값 없음). 개선 신호 시험 데이터를 v2.0으로 갱신.

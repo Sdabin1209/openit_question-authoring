@@ -1,6 +1,7 @@
 """서비스 진입점. 환경 변수를 읽는 곳은 여기뿐이다.
 
-QA_DB_PATH            SQLite 파일 경로(기본 /data/questions.sqlite3)
+QA_DATABASE_URL       PostgreSQL 접속 문자열(운영). 비밀 값: QA_DATABASE_URL_FILE 우선. 있으면 PostgreSQL을 쓴다
+QA_DB_PATH            QA_DATABASE_URL이 없을 때 쓰는 SQLite 파일 경로(개발·시험, 기본 /data/questions.sqlite3)
 비밀(QA_AUTHOR_TOKENS, QA_READ_TOKENS, QA_FAILURES_TOKEN)은 `boundary_contracts.read_secret`으로 읽는다:
 NAME_FILE(파일 경로)이 우선이고, 없을 때만 NAME 환경 변수(개발용)를 쓴다. 운영에서는 NAME_FILE을 쓴다.
 QA_AUTHOR_TOKENS      '토큰:actor-id:역할' 쉼표 목록. 비밀 값이므로 이미지에 넣지 않는다
@@ -16,17 +17,24 @@ from boundary_contracts import read_secret
 
 from .http_api import Api, make_server
 from .service import Actor, AuthoringService
-from .store import SqliteQuestionStore
+from .store import AuthoringStore, PostgresQuestionStore, SqliteQuestionStore
 from .validation import Validators
 
 
-def build() -> tuple[Api, SqliteQuestionStore]:
+def open_store() -> AuthoringStore:
+    url = read_secret("QA_DATABASE_URL")
+    if url:
+        return PostgresQuestionStore(url)
+    return SqliteQuestionStore(os.environ.get("QA_DB_PATH", "/data/questions.sqlite3"))
+
+
+def build() -> tuple[Api, AuthoringStore]:
     env = os.environ
     tokens = {}
     for item in filter(None, (read_secret("QA_AUTHOR_TOKENS") or "").split(",")):
         tok, aid, role = item.split(":")
         tokens[tok] = Actor(aid, role)
-    store = SqliteQuestionStore(env.get("QA_DB_PATH", "/data/questions.sqlite3"))
+    store = open_store()
     v = Validators()
     read_tokens = {}
     for item in filter(None, (read_secret("QA_READ_TOKENS") or "").split(",")):
@@ -37,7 +45,7 @@ def build() -> tuple[Api, SqliteQuestionStore]:
     if env.get("QA_FAILURES_URL"):
         from boundary_contracts.clients import HttpFailureStore
         signals = HttpFailureStore(env["QA_FAILURES_URL"], read_secret(env.get("QA_FAILURES_TOKEN_ENV", "QA_FAILURES_TOKEN")) or "")
-    return Api(svc, tokens, read_tokens=read_tokens, signals=signals, ready=store.is_ready), store
+    return Api(svc, tokens, read_tokens=read_tokens, signals=signals, ready=store.is_ready, db_kind=getattr(store, "kind", None)), store
 
 
 def main() -> int:

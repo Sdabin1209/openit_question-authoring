@@ -1,0 +1,18 @@
+# 개발·시험용 PostgreSQL 하나. 앱은 컨테이너 밖에서 돌린다(D22). scripts/dev-postgres.sh가 쓴다.
+# 호스트 포트는 Docker가 배정한다(고정 포트 금지). 암호는 스크립트가 만든 .dev/pg.env에서 온다(커밋하지 않음).
+name: question-authoring-dev
+services:
+  postgres:
+    image: postgres:16
+    container_name: question-authoring-dev-postgres
+    environment:
+      POSTGRES_USER: qa
+      POSTGRES_DB: question_authoring
+      POSTGRES_PASSWORD: ${QA_DEV_PG_PASSWORD:?scripts/dev-postgres.sh로 실행하라}
+    ports:
+      - "127.0.0.1::5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qa -d question_authoring"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

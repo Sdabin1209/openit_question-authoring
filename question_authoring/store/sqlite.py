@@ -45,6 +45,8 @@ class SqliteQuestionStore(AuthoringStore):
     """path가 None이면 ':memory:'가 아니라 임시 파일 없이 메모리 DB(시험용)를 쓴다.
     read_only=True면 읽기 전용으로 연다(이웃 영역에 주는 읽기 계정에 해당)."""
 
+    kind = "sqlite"
+
     def __init__(self, path: str | Path | None = None, *, read_only: bool = False):
         self._lock = threading.RLock()
         self._read_only = read_only

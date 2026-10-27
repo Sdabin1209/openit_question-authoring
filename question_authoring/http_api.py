@@ -38,12 +38,14 @@ def _need(d: dict, key: str):
 
 class Api:
     def __init__(self, service: AuthoringService, tokens: Mapping[str, Actor], *,
-                 read_tokens: Optional[Mapping[str, str]] = None, signals=None, ready: Callable[[], bool] = lambda: True):
+                 read_tokens: Optional[Mapping[str, str]] = None, signals=None, ready: Callable[[], bool] = lambda: True,
+                 db_kind: Optional[str] = None):
         self.svc = service
         self.tokens = dict(tokens)
         self.read_tokens = dict(read_tokens or {})    # 토큰 -> 역할(읽기 전용)
         self.signals = signals                         # FailureSource | None (I7 미설정이면 None)
         self.ready = ready
+        self.db_kind = db_kind                         # 'sqlite' | 'postgres' (종류만. 접속 정보는 절대 쓰지 않는다)
 
     def handle(self, method: str, url: str, headers: Mapping[str, str], body: bytes = b"") -> tuple[int, dict]:
         u = urlparse(url)
@@ -53,7 +55,10 @@ class Api:
                 return 200, {"status": "ok"}
             if method == "GET" and path == "/readyz":
                 ok = self.ready()
-                return (200 if ok else 503), {"status": "ready" if ok else "not-ready"}
+                body = {"status": "ready" if ok else "not-ready"}
+                if self.db_kind:
+                    body["db"] = self.db_kind
+                return (200 if ok else 503), body
             if path == "/v1/question-sets" or path.startswith("/v1/question-sets/"):
                 self._reader_auth(headers)          # 읽기 토큰 또는 저작 토큰
                 if method != "GET":

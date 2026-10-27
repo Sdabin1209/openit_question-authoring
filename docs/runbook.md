@@ -27,14 +27,19 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 
 | 이름 | 뜻 | 기본 |
 | --- | --- | --- |
-| QA_DB_PATH | SQLite 파일 | /data/questions.sqlite3 |
+| QA_DATABASE_URL(`_FILE` 권장) | PostgreSQL 접속 문자열(`postgresql://계정:암호@호스트:5432/데이터베이스`). 있으면 PostgreSQL을 쓴다. 암호가 들어 있으므로 비밀 값이다 | 없음 |
+| QA_DB_PATH | QA_DATABASE_URL이 없을 때만 쓰는 SQLite 파일(개발·시험) | /data/questions.sqlite3 |
 | QA_READ_TOKENS(`_FILE` 가능) | `역할=토큰` 쉼표 목록. I1 읽기 전용 토큰(저작 경로는 403). 비밀 값 | 없음(읽기 면 모두 403) |
 | QA_FAILURES_URL | ops-feedback(I7) URL. 비우면 `/v1/signals`는 DISABLED | 없음 |
 | QA_FAILURES_TOKEN_ENV | I7 토큰의 비밀 이름. 이 이름의 `_FILE`(또는 개발용 환경 변수)을 읽는다 | QA_FAILURES_TOKEN |
 | QA_AUTHOR_TOKENS(`_FILE` 가능) | `토큰:actor-id:역할` 쉼표 목록. 비밀 값 | 없음(모든 요청 403) |
 | QA_HOST, QA_PORT | 바인드 | 0.0.0.0, 8080 |
 
-로그는 표준 출력. 데이터는 `/data` 볼륨 하나.
+로그는 표준 출력. 운영 데이터는 PostgreSQL 서버에 있다(서비스별 데이터베이스·계정, 이 서비스 계정에는 이 데이터베이스만 준다). SQLite 경로를 쓸 때만 `/data` 볼륨이 필요하다. `/readyz`는 DB 종류(`"db": "sqlite"|"postgres"`)만 보여주고 접속 정보는 절대 쓰지 않는다. 시작 시 스키마를 멱등하게 만든다(`CREATE TABLE IF NOT EXISTS`, advisory lock 아래). 버전·검수·변경 분류는 DB 트리거가 UPDATE/DELETE를 막는다.
+
+## PostgreSQL 시험
+
+`scripts/dev-postgres.sh up`(compose.dev.yaml의 postgres:16, 빈 포트, 암호는 `.dev/pg.env`에 생성·커밋 안 함) 후 `export TEST_DATABASE_URL="$(scripts/dev-postgres.sh url)"; python -m pytest -q -rs`. `TEST_DATABASE_URL`이 없으면 PostgreSQL 시험은 SKIP이며 통과로 세지 않는다. 시험마다 임시 스키마를 만들고 지운다. 이미지 스모크의 PostgreSQL 경로: `SMOKE_DB=postgres bash scripts/smoke.sh`(임시 네트워크에 postgres를 띄움). 끝나면 `scripts/dev-postgres.sh down`.
 
 ## 흔한 상황
 
@@ -42,7 +47,8 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 - 확인이 `FAILED_PRECONDITION`: (a) 열린 플래그가 남음(응답 `details.flag_ids`), (b) 미리보기 이후 초안이 바뀜(미리보기를 다시 받는다), (c) 초안을 만든 뒤 새 버전이 생김(최신에서 다시 초안), (d) 이전 버전과 내용이 같음.
 - `INTEGRITY_ERROR`: 해당 버전의 저장 내용이 기록된 해시와 다르다. 파일을 변조했거나 손상된 것이다. 백업에서 복원한다. 버전을 고쳐 쓰지 않는다.
 - 승인 철회: `POST /v1/reviews`로 REJECTED 또는 CHANGES_REQUESTED(사유 필수)를 덧붙인다. 그 버전은 `reviewed_only`에서 빠진다. 다시 승인하려면 APPROVED + clinical_basis_approved를 덧붙인다.
-- 백업: 서비스를 멈추거나 `sqlite3 questions.sqlite3 ".backup out.sqlite3"`로 복사한다. 복원 후 `SqliteQuestionStore`로 열어 각 버전을 `get_question_bank`로 읽어 해시를 확인한다.
+- 백업(PostgreSQL): `pg_dump`로 이 서비스의 데이터베이스를 덤프한다. 복원 후 `PostgresQuestionStore`로 열어 각 버전을 `get_question_bank`로 읽어 해시를 확인한다.
+- 백업(SQLite): 서비스를 멈추거나 `sqlite3 questions.sqlite3 ".backup out.sqlite3"`로 복사한다. 복원 후 `SqliteQuestionStore`로 열어 각 버전을 `get_question_bank`로 읽어 해시를 확인한다.
 - 새 추출기 추가: `extractors/base.py`의 `Extractor` 인터페이스를 구현하고 `default_registry()`에 등록한다. 시험은 `tests/test_extractor.py`를 본뜬다. 새 추출기는 추정하지 않는다는 규칙(UNSURE/MISSING/UNPARSED)을 지켜야 한다.
 
 ## 이미지 점검

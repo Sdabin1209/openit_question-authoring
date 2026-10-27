@@ -1,4 +1,7 @@
+import contextlib
 import itertools
+import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -17,12 +20,35 @@ def validators():
     return Validators()
 
 
-@pytest.fixture(params=["memory", "sqlite", "sqlite-file"])
+@contextlib.contextmanager
+def pg_schema():
+    """TEST_DATABASE_URL이 없으면 SKIP(PASS로 세지 않는다). 있으면 시험마다 빈 스키마를 만들고 끝나면 지운다."""
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL 없음: PostgreSQL 시험 건너뜀")
+    import psycopg
+    schema = "t_" + uuid.uuid4().hex[:12]
+    with psycopg.connect(url, autocommit=True) as admin:
+        admin.execute(f"CREATE SCHEMA {schema}")
+        try:
+            yield url, schema
+        finally:
+            admin.execute(f"DROP SCHEMA {schema} CASCADE")
+
+
+@pytest.fixture(params=["memory", "sqlite", "sqlite-file", "postgres"])
 def store(request, tmp_path):
     if request.param == "memory":
         s = MemoryQuestionStore()
     elif request.param == "sqlite":
         s = SqliteQuestionStore()
+    elif request.param == "postgres":
+        with pg_schema() as (url, schema):
+            from question_authoring.store import PostgresQuestionStore
+            s = PostgresQuestionStore(url, schema=schema)
+            yield s
+            s.close()
+        return
     else:
         s = SqliteQuestionStore(tmp_path / "q.sqlite3")
     yield s

@@ -95,3 +95,52 @@ def test_malformed_secret_exception_does_not_contain_value(tmp_path, monkeypatch
     with pytest.raises(Exception) as e:
         build()
     assert READ_SECRET not in str(e.value) and READ_SECRET not in repr(e.value)
+
+
+DB_SECRET = "SECRET-dbpw-5e1f"
+
+
+def test_database_url_secret_not_leaked_and_readyz_shows_kind(tmp_path, monkeypatch, capsys):
+    """QA_DATABASE_URL_FILE이 우선이고, 접속할 수 없을 때도 암호가 오류에 나오지 않는다. /readyz에는 종류만 나온다."""
+    _files(tmp_path, monkeypatch)
+    # 1) 기본(SQLite): readyz에 db 종류만
+    api, store = build()
+    st, body = api.handle("GET", "/readyz", {})[:2]
+    assert st == 200 and body == {"status": "ready", "db": "sqlite"}
+    store.close()
+    # 2) PostgreSQL URL이 있으면 PostgreSQL을 고른다. 서버가 없으면 시작이 UNAVAILABLE로 실패하되 값은 없다
+    uf = tmp_path / "dburl"; uf.write_text(f"postgresql://qa:{DB_SECRET}@127.0.0.1:1/q\n")
+    monkeypatch.setenv("QA_DATABASE_URL_FILE", str(uf))
+    from boundary_contracts.errors import BoundaryError
+    with pytest.raises(BoundaryError) as e:
+        build()
+    out = capsys.readouterr()
+    for text in (str(e.value), repr(e.value), out.out, out.err):
+        assert DB_SECRET not in text
+
+
+def test_postgres_selected_by_env_and_readyz(tmp_path, monkeypatch, capsys):
+    import os
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL 없음: PostgreSQL 시험 건너뜀")
+    from conftest import pg_schema
+    with pg_schema() as (u, schema):
+        _files(tmp_path, monkeypatch)
+        uf = tmp_path / "dburl"
+        uf.write_text(u + ("&" if "?" in u else "?") + f"options=-csearch_path%3D{schema}\n")
+        monkeypatch.setenv("QA_DATABASE_URL_FILE", str(uf))
+        api, store = build()
+        assert store.kind == "postgres"
+        srv = make_server(api, "127.0.0.1", 0)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+        try:
+            st, b = _call(base, "/readyz"); assert st == 200 and json.loads(b) == {"status": "ready", "db": "postgres"}
+            st, b2 = _call(base, "/v1/drafts", AUTH_SECRET); assert st == 200
+        finally:
+            srv.shutdown(); srv.server_close()
+            store.close()
+        out = capsys.readouterr()
+        pw = u.split("@")[0].split(":")[-1]
+        assert pw not in b + b2 + out.out + out.err
