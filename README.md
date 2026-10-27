@@ -66,6 +66,8 @@ scripts/smoke.sh
 
 ## 현재 상태
 
+PostgreSQL 대기 상한(0.6.2, 2026-10-28, FAULT_MATRIX P0-3/E1): 접속 3초, 문장 3초, `/readyz` DB 확인 2초(설정 가능, 근거는 docs/boundary.md "DB 대기 상한"). 확인한 것(이 PC, 일회용 PostgreSQL 컨테이너): `python -m pytest -q`는 `TEST_DATABASE_URL` 설정 시 218개 통과, 미설정 시 160개 통과 + 58개 SKIP. `SMOKE_DB=postgres scripts/smoke.sh`와 기본(SQLite) `scripts/smoke.sh` 모두 SMOKE OK. `docker pause`에서 `/readyz`는 2.0초에 503, 해제 뒤 즉시 200. 확인하지 못한 것: 컨테이너 조합(gateway, 다른 영역)에서의 재측정은 deploy E2E 5p에서 헤드가 한다. 아래 "153개" 줄은 이전 세션의 기록이다.
+
 확인된 것(출처 docs/STATUS.md, docs/CHANGELOG.md):
 - 0.5.0(2026-10-27) 비밀 파일 방식(D84)과 boundary-contracts v2.0.2 적용. STATUS 기록은 "153개 통과"이고 이 세션의 실행 결과와 같다.
 - STATUS는 스모크 `SMOKE OK`를 기록하고 있으나 이 세션에서 다시 확인하지 않았다.

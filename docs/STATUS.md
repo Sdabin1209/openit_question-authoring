@@ -9,6 +9,8 @@
 - `python -m pytest -q`: PostgreSQL 포함 전체 통과(0.6.0, `TEST_DATABASE_URL` 설정 시). 미설정 시 PostgreSQL 항목은 SKIP.
 - turn-engine·model-runtime: 이 영역은 둘을 설치하지 않고 코드에서도 쓰지 않는다. 이미지 라벨 `io.openit.turn-engine`, `io.openit.model-runtime`은 `none`이다(Dockerfile). turn-engine은 I8 규칙 미리보기를 붙일 때 처음 필요해진다(미구현).
 
+- 0.6.2: PostgreSQL 접속·문장·`/readyz` 대기 상한(FAULT_MATRIX P0-3/E1). pytest 218개 통과(`TEST_DATABASE_URL` 설정), 미설정 시 160 통과 + 58 SKIP. 스모크 SQLite·PostgreSQL 모두 SMOKE OK. 컨테이너 조합 재측정은 deploy E2E 5p(헤드).
+
 ## 남은 일
 - 관리자 콘솔 UI, 화면 입력용 템플릿(필드 목록)과 코드·단위 사전(내용은 저자가 정한다).
 - 소비 계약: I4 판정 조회, I8 규칙 미리보기 연동. (I7 개선 신호는 구현함. 문항 ID를 trace의 planner_output.directive에서 읽는다는 가정은 ops-feedback과 확인 필요.)
