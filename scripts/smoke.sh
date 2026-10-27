@@ -25,7 +25,8 @@ printf '%s' "smoke=read-token" > "$SECDIR/read_tokens"
 if [ "$SMOKE_DB" = postgres ]; then
   PGPW=$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')
   "$DOCKER" network create "$NET" >/dev/null
-  "$DOCKER" run -d --name "$PGNAME" --network "$NET" -e POSTGRES_USER=qa -e POSTGRES_DB=qa -e POSTGRES_PASSWORD="$PGPW" postgres:16 >/dev/null
+  printf '%s' "$PGPW" > "$SECDIR/pg_password"; chmod 644 "$SECDIR/pg_password"
+  "$DOCKER" run -d --name "$PGNAME" --network "$NET" -e POSTGRES_USER=qa -e POSTGRES_DB=qa -e POSTGRES_PASSWORD_FILE=/run/secrets/pg_password -v "$SECDIR/pg_password:/run/secrets/pg_password:ro" postgres:16 >/dev/null
   for i in $(seq 1 60); do "$DOCKER" exec "$PGNAME" pg_isready -U qa -d qa >/dev/null 2>&1 && break; sleep 1; done
   sleep 2
   printf '%s' "postgresql://qa:$PGPW@$PGNAME:5432/qa" > "$SECDIR/database_url"

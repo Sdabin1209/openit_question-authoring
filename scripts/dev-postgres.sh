@@ -7,12 +7,13 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$here/.dev"; chmod 700 "$here/.dev"
-envf="$here/.dev/pg.env"
-if [ ! -f "$envf" ]; then
+pwf="$here/.dev/pg_password"
+if [ ! -f "$pwf" ]; then
   umask 077
-  printf 'QA_DEV_PG_PASSWORD=%s\n' "$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')" > "$envf"
+  head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' > "$pwf"
 fi
-set -a; . "$envf"; set +a
+chmod 644 "$pwf"   # 컨테이너 안 postgres 사용자가 읽는다. 디렉터리(.dev)가 700이라 다른 사용자는 못 읽는다
+QA_DEV_PG_PASSWORD="$(cat "$pwf")"
 dc() { docker compose -f "$here/compose.dev.yaml" "$@"; }
 case "${1:-}" in
   up)

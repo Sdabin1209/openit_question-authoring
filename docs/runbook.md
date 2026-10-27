@@ -39,7 +39,7 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 
 ## PostgreSQL 시험
 
-`scripts/dev-postgres.sh up`(compose.dev.yaml의 postgres:16, 빈 포트, 암호는 `.dev/pg.env`에 생성·커밋 안 함) 후 `export TEST_DATABASE_URL="$(scripts/dev-postgres.sh url)"; python -m pytest -q -rs`. `TEST_DATABASE_URL`이 없으면 PostgreSQL 시험은 SKIP이며 통과로 세지 않는다. 시험마다 임시 스키마를 만들고 지운다. 이미지 스모크의 PostgreSQL 경로: `SMOKE_DB=postgres bash scripts/smoke.sh`(임시 네트워크에 postgres를 띄움). 끝나면 `scripts/dev-postgres.sh down`.
+`scripts/dev-postgres.sh up`(compose.dev.yaml의 postgres:16, 빈 포트, 암호는 `.dev/pg_password`에 생성·커밋 안 함) 후 `export TEST_DATABASE_URL="$(scripts/dev-postgres.sh url)"; python -m pytest -q -rs`. `TEST_DATABASE_URL`이 없으면 PostgreSQL 시험은 SKIP이며 통과로 세지 않는다. 시험마다 임시 스키마를 만들고 지운다. 이미지 스모크의 PostgreSQL 경로: `SMOKE_DB=postgres bash scripts/smoke.sh`(임시 네트워크에 postgres를 띄움). 끝나면 `scripts/dev-postgres.sh down`.
 
 ## 흔한 상황
 
