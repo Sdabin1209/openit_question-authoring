@@ -20,7 +20,8 @@ NET=question-authoring-smoke-net-$$; PGNAME=question-authoring-smoke-pg-$$
 trap '"$DOCKER" rm -fv "$NAME" "$PGNAME" >/dev/null 2>&1 || true; "$DOCKER" network rm "$NET" >/dev/null 2>&1 || true; rm -rf "$SECDIR"' EXIT
 EXTRA=()
 # 비밀은 파일로 주입한다(D84): NAME_FILE. 환경 변수에는 경로만 있다.
-printf '%s' "$TOKEN:smoke-author:question-author" > "$SECDIR/author_tokens"
+REVTOKEN=smoke-reviewer-token
+printf '%s' "$TOKEN:smoke-author:question-author,$REVTOKEN:smoke-reviewer:clinical-reviewer" > "$SECDIR/author_tokens"
 printf '%s' "smoke=read-token" > "$SECDIR/read_tokens"
 if [ "$SMOKE_DB" = postgres ]; then
   PGPW=$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')
@@ -31,6 +32,8 @@ if [ "$SMOKE_DB" = postgres ]; then
   sleep 2
   printf '%s' "postgresql://qa:$PGPW@$PGNAME:5432/qa" > "$SECDIR/database_url"
   EXTRA=(--network "$NET" -e QA_DATABASE_URL_FILE=/run/secrets/database_url)
+else
+  EXTRA=(-e QA_DEV_MODE=1)   # SQLite는 개발·시험 구성이다. 운영 구성(PostgreSQL URL과 토큰)이 아니면 서비스가 시작을 거부한다
 fi
 chmod 755 "$SECDIR"; chmod 644 "$SECDIR"/*
 "$DOCKER" run -d --name "$NAME" "${EXTRA[@]}" -p 127.0.0.1::8080 -v "$SECDIR:/run/secrets:ro" -e QA_AUTHOR_TOKENS_FILE=/run/secrets/author_tokens -e QA_READ_TOKENS_FILE=/run/secrets/read_tokens "$IMG" >/dev/null
@@ -54,7 +57,11 @@ AUTH="Authorization: Bearer $TOKEN"
 did=$(curl -fsS -X POST -H "$AUTH" --data-binary @"$here/examples/question_form.txt" \
   "http://127.0.0.1:$PORT/v1/materials?question_set_id=qs-smoke&filename=form.txt" | python3 -c 'import sys,json;print(json.load(sys.stdin)["draft_id"])')
 ph=$(curl -fsS -H "$AUTH" "http://127.0.0.1:$PORT/v1/drafts/$did/preview" | python3 -c 'import sys,json;d=json.load(sys.stdin);assert d["ready_to_confirm"];print(d["preview_hash"])')
-curl -fsS -X POST -H "$AUTH" -d "{\"preview_hash\":\"$ph\"}" "http://127.0.0.1:$PORT/v1/drafts/$did/confirm"; echo
+ref=$(curl -fsS -X POST -H "$AUTH" -d "{\"preview_hash\":\"$ph\"}" "http://127.0.0.1:$PORT/v1/drafts/$did/confirm"); echo "$ref"
+# 4-eyes(D88): 저자의 확인만으로는 검수 완료가 아니다. 같은 저자가 스스로 임상 승인하면 거부되고, 검수 역할의 다른 주체가 승인해야 한다
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "$AUTH" -d "{\"question_set\":$ref,\"decision\":\"APPROVED\",\"clinical_basis_approved\":true}" "http://127.0.0.1:$PORT/v1/reviews")
+[ "$code" = "403" ] || { echo "저자의 자기 승인이 거부되지 않음: $code"; exit 1; }
+curl -fsS -X POST -H "Authorization: Bearer $REVTOKEN" -d "{\"question_set\":$ref,\"decision\":\"APPROVED\",\"clinical_basis_approved\":true}" "http://127.0.0.1:$PORT/v1/reviews" >/dev/null
 code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/v1/drafts")
 [ "$code" = "403" ] || { echo "인증 없는 요청이 거부되지 않음: $code"; exit 1; }
 curl -fsS -H "$AUTH" "http://127.0.0.1:$PORT/v1/signals" | grep -q DISABLED || { echo "신호 비활성 응답 실패"; exit 1; }

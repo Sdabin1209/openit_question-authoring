@@ -28,21 +28,27 @@ class FailureSource(Protocol):
 
 
 def question_ids_from_trace(trace: Any) -> set[str]:
-    """비식별 trace에서 이 턴이 가리킨 문항 ID. 구조(열거값, 식별자)만 읽는다."""
+    """비식별 trace에서 이 턴이 가리킨 문항 ID. 구조(열거값, 식별자)만 읽는다.
+
+    v2 TurnTrace(문진 스키마 D74): `extract_input.question_id`가 이 턴에서 묻고 있던 문항이다(ExtractionInputRecord의 필수 필드).
+    v1 모양(`planner_output.directive`)은 옛 trace를 위해 남겨 둔다. 이전 구현은 v1 필드만 읽어 v2에서는 문항 단위 신호가 항상 비었다(M-6).
+    """
     out: set[str] = set()
     if not isinstance(trace, dict):
         return out
+    ei = trace.get("extract_input")
+    if isinstance(ei, dict) and isinstance(ei.get("question_id"), str) and ei["question_id"]:
+        out.add(ei["question_id"])
     po = trace.get("planner_output")
     d = po.get("directive") if isinstance(po, dict) else None
-    if not isinstance(d, dict):
-        return out
-    groups = [d.get("targets")]
-    if isinstance(d.get("awaiting"), dict):
-        groups.append(d["awaiting"].get("targets"))
-    for g in groups:
-        for t in g if isinstance(g, list) else []:
-            if isinstance(t, dict) and isinstance(t.get("question_id"), str) and t["question_id"]:
-                out.add(t["question_id"])
+    if isinstance(d, dict):
+        groups = [d.get("targets")]
+        if isinstance(d.get("awaiting"), dict):
+            groups.append(d["awaiting"].get("targets"))
+        for g in groups:
+            for t in g if isinstance(g, list) else []:
+                if isinstance(t, dict) and isinstance(t.get("question_id"), str) and t["question_id"]:
+                    out.add(t["question_id"])
     return out
 
 

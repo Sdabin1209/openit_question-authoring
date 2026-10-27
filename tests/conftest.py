@@ -15,6 +15,12 @@ ROOT = Path(__file__).resolve().parent.parent
 AUTHOR = Actor("dr-kim", "question-author")
 
 
+@pytest.fixture(autouse=True)
+def _dev_mode(monkeypatch):
+    """build()는 운영 구성(DB URL, 토큰)이 아니면 시작을 거부한다. 기존 시험은 개발 모드로 돈다. 거부 시험은 이 값을 지운다."""
+    monkeypatch.setenv("QA_DEV_MODE", "1")
+
+
 @pytest.fixture(scope="session")
 def validators():
     return Validators()

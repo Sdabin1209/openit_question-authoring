@@ -14,11 +14,22 @@ QA_DB_STATEMENT_TIMEOUT_SECONDS  PostgreSQL 문장 하나의 상한(초, 기본 
 QA_READYZ_DB_TIMEOUT_SECONDS     /readyz의 DB 확인 상한(초, 기본 2)
 QA_DB_LARGE_STATEMENT_TIMEOUT_SECONDS  큰 자료(원본 자료, 초안, 문항 세트 버전) 쓰기의 문장 상한(초, 기본 30)
 QA_REQUEST_TIMEOUT_SECONDS       HTTP 요청 소켓의 무응답 상한(초, 기본 30). 업로드가 이 시간 동안 멈추면 끊는다
+QA_DEV_MODE                      1이면 개발·시험 구성을 허용한다(SQLite, 토큰 없이 기동). 없으면 운영 구성이어야 시작한다:
+                                 QA_DATABASE_URL(_FILE)과 토큰(QA_AUTHOR_TOKENS 또는 QA_GATEWAY_TOKENS)이 없으면 시작을 거부한다
+QA_REQUIRE_TWO_PERSON            기본 true. 저자 != 검수자(4-eyes, D88 U9). false로 두면 이전 동작이고 /readyz에 경고가 뜬다
+QA_GATEWAY_TOKENS                비밀. gateway가 쓰는 서비스 토큰 쉼표 목록. 이 토큰의 요청은 X-Openit-User 헤더의 사용자를 쓴다
+QA_USER_ROLES                    '사용자ID=역할' 쉼표 목록(역할: question-author, clinical-reviewer). gateway 경유 사용자의 역할표
+QA_MAX_CONCURRENT_REQUESTS       동시 처리 요청 상한(기본 32). 넘으면 503 + Retry-After
+QA_DRAFT_RETENTION_DAYS          처리되지 않은(OPEN, DISCARDED) 초안의 보존 일수(기본 30, 양의 정수만). `python -m question_authoring purge`가 쓴다
+QA_SOURCE_RETENTION_DAYS         어떤 버전·초안도 참조하지 않는 원본 자료의 보존 일수(기본 30, 양의 정수만)
 QA_FAILURES_TIMEOUT_SECONDS      I7(ops-feedback) 호출 하나의 읽기 상한(초, 기본 5)
 QA_SIGNALS_DEADLINE_SECONDS      GET /v1/signals 한 번의 총 마감(초, 기본 20)
 """
 import os
+import signal
 import sys
+import threading
+from datetime import datetime, timedelta, timezone
 
 from boundary_contracts import read_secret
 
@@ -52,34 +63,101 @@ def open_store() -> AuthoringStore:
     return SqliteQuestionStore(os.environ.get("QA_DB_PATH", "/data/questions.sqlite3"))
 
 
+ROLES = ("question-author", "clinical-reviewer")
+
+
+def _bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    v = raw.strip().lower()
+    if v in ("1", "true"):
+        return True
+    if v in ("0", "false"):
+        return False
+    raise SystemExit(f"{name}은 true 또는 false여야 한다")
+
+
+def _days(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    if not raw.strip().isdigit() or int(raw) < 1:
+        raise SystemExit(f"{name}은 1 이상의 정수(일)여야 한다. 보존 기간 없음(무기한)은 허용하지 않는다")
+    return int(raw)
+
+
 def build() -> tuple[Api, AuthoringStore]:
     env = os.environ
+    dev = _bool("QA_DEV_MODE", False)
     tokens = {}
     for item in filter(None, (read_secret("QA_AUTHOR_TOKENS") or "").split(",")):
         tok, aid, role = item.split(":")
+        if role not in ROLES:
+            raise SystemExit(f"QA_AUTHOR_TOKENS의 역할은 {', '.join(ROLES)} 중 하나여야 한다")
         tokens[tok] = Actor(aid, role)
+    gateway_tokens = {t for t in (read_secret("QA_GATEWAY_TOKENS") or "").split(",") if t}
+    user_roles = {}
+    for item in filter(None, (env.get("QA_USER_ROLES") or "").split(",")):
+        uid, _, role = item.partition("=")
+        if role not in ROLES:
+            raise SystemExit(f"QA_USER_ROLES의 역할은 {', '.join(ROLES)} 중 하나여야 한다")
+        user_roles[uid.strip()] = role
+    if not dev:
+        # 운영 구성 검사(전수 점검 P6): 설정을 빠뜨렸는데 조용히 빈 임시 DB나 아무도 못 쓰는 서비스로 뜨지 않게 한다
+        if not read_secret("QA_DATABASE_URL"):
+            raise SystemExit("QA_DATABASE_URL(_FILE)이 없다. 개발·시험이면 QA_DEV_MODE=1을 준다")
+        if not tokens and not gateway_tokens:
+            raise SystemExit("저자 토큰이 없다(QA_AUTHOR_TOKENS 또는 QA_GATEWAY_TOKENS). 개발·시험이면 QA_DEV_MODE=1을 준다")
+        if gateway_tokens and not user_roles:
+            raise SystemExit("QA_GATEWAY_TOKENS가 있는데 QA_USER_ROLES가 비어 있다")
     store = open_store()
     v = Validators()
     read_tokens = {}
     for item in filter(None, (read_secret("QA_READ_TOKENS") or "").split(",")):
         role, tok = item.split("=", 1)
         read_tokens[tok] = role
-    svc = AuthoringService(store, v, author_roles={a.role for a in tokens.values()} or {"question-author"})
+    two = _bool("QA_REQUIRE_TWO_PERSON", True)
+    svc = AuthoringService(store, v, author_roles={"question-author"}, require_two_person=two)
+    warnings = ([] if two else ["two_person_disabled"])
     signals = None
     if env.get("QA_FAILURES_URL"):
         from boundary_contracts.clients import HttpFailureStore
         signals = HttpFailureStore(env["QA_FAILURES_URL"], read_secret(env.get("QA_FAILURES_TOKEN_ENV", "QA_FAILURES_TOKEN")) or "",
                                    timeout=_seconds("QA_FAILURES_TIMEOUT_SECONDS", 5.0))
     return Api(svc, tokens, read_tokens=read_tokens, signals=signals, ready=store.is_ready, db_kind=getattr(store, "kind", None),
-               signals_deadline=_seconds("QA_SIGNALS_DEADLINE_SECONDS", 20.0)), store
+               signals_deadline=_seconds("QA_SIGNALS_DEADLINE_SECONDS", 20.0), gateway_tokens=gateway_tokens,
+               user_roles=user_roles, warnings=warnings), store
 
 
-def main() -> int:
+def purge_once(store: AuthoringStore, now: datetime | None = None) -> dict:
+    """보존 기간이 지난 것을 지운다(멱등, 여러 번 돌려도 안전). 스케줄은 deploy가 정한다(D39)."""
+    now = now or datetime.now(timezone.utc)
+    ts = lambda d: d.strftime("%Y-%m-%dT%H:%M:%SZ")   # noqa: E731
+    return store.purge(now=ts(now), draft_before=ts(now - timedelta(days=_days("QA_DRAFT_RETENTION_DAYS", 30))),
+                       source_before=ts(now - timedelta(days=_days("QA_SOURCE_RETENTION_DAYS", 30))))
+
+
+def main(argv=None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["purge"]:
+        store = open_store()
+        print(purge_once(store), flush=True)
+        store.close()
+        return 0
     api, _ = build()
     srv = make_server(api, os.environ.get("QA_HOST", "0.0.0.0"), int(os.environ.get("QA_PORT", "8080")),
-                      request_timeout=_seconds("QA_REQUEST_TIMEOUT_SECONDS", 30.0))
+                      request_timeout=_seconds("QA_REQUEST_TIMEOUT_SECONDS", 30.0),
+                      max_concurrent=int(_seconds("QA_MAX_CONCURRENT_REQUESTS", 32)))
+
+    def stop(signum, frame):   # PID 1의 Python은 SIGTERM을 기본으로 무시한다. 진행 중 요청을 마치고 멈춘다
+        print("종료 신호를 받았다. 멈춘다", flush=True)
+        threading.Thread(target=srv.shutdown, daemon=True).start()
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
     print("question-authoring 시작", flush=True)
     srv.serve_forever()
+    srv.server_close()
     return 0
 
 
