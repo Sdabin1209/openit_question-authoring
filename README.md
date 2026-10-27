@@ -52,7 +52,7 @@
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e ../boundary-contracts -e ../survey-service/schema jsonschema pytest "psycopg[binary]==3.3.6" && pip install -e . --no-deps
 python -m pytest -q
-# PostgreSQL 시험(선택): scripts/dev-postgres.sh up; export TEST_DATABASE_URL="$(scripts/dev-postgres.sh url)"  (없으면 해당 시험은 SKIP)
+# PostgreSQL 시험(선택): export TEST_DATABASE_URL="$(bash ../deploy/scripts/dev-postgres.sh up qa)"; 끝나면 ... down qa  (없으면 해당 시험은 SKIP)
 ```
 이미지 스모크(빌드, 기동, `/healthz`, `/readyz`, 등록-미리보기-확인, 인증 거부, 비root, 라벨 확인. 포트는 Docker가 배정):
 ```

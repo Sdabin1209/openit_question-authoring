@@ -1,5 +1,10 @@
 # 변경 이력
 
+## 0.6.1 (2026-10-27) PostgreSQL 연결 끊김 복구
+
+- 끊김 오류(클라이언트 쪽, 08류, 57P01~03)만 연결을 다시 열고 같은 호출을 한 번 재시도. 쓰기 재시도는 advisory lock 트랜잭션을 처음부터 다시 열며, 모든 쓰기가 멱등이라 커밋 응답을 잃은 경우에도 중복이 없다. 복구 불가면 `UNAVAILABLE`, 접속 정보 비노출 유지.
+- 중복이던 `compose.dev.yaml`, `scripts/dev-postgres.sh` 삭제. 시험용 DB는 `../deploy/scripts/dev-postgres.sh up qa`.
+
 ## 0.6.0 (2026-10-27) PostgreSQL 저장소 (표준 서버 DB)
 
 - `PostgresQuestionStore` 추가(`psycopg[binary]` 3.3.6 고정, lock·pyproject). 선택은 `QA_DATABASE_URL`(비밀, `_FILE` 우선)이 있으면 PostgreSQL, 없으면 `QA_DB_PATH` SQLite. 표준을 고른 이유: 서비스별 데이터베이스·계정과 표준 백업·접근 제어를 쓰려고.

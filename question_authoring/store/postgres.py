@@ -117,33 +117,55 @@ class PostgresQuestionStore(AuthoringStore):
                 finally:
                     self._db = None
 
-    def _drop_if_broken(self, e: psycopg.Error) -> None:
-        if isinstance(e, psycopg.OperationalError) and self._db is not None:
+    @staticmethod
+    def _lost(e: BaseException) -> bool:
+        """연결 끊김만 가려낸다: 클라이언트 쪽 끊김(SQLSTATE 없음), 08류(연결 예외), 57P01~03(서버 종료·크래시·재시작).
+        제약 위반·문법 오류·취소·잠금 시간 초과 같은 오류는 재시도하지 않는다."""
+        if not isinstance(e, psycopg.OperationalError):
+            return False
+        st = getattr(e, "sqlstate", None)
+        return st is None or st.startswith("08") or st in ("57P01", "57P02", "57P03")
+
+    def _drop(self) -> None:
+        if self._db is not None:
             try:
                 self._db.close()
-            finally:
-                self._db = None
+            except Exception:
+                pass
+            self._db = None
+
+    def _run(self, op, what: str):
+        """op(conn)을 실행한다. 연결이 끊겼으면 연결을 버리고 다시 열어 한 번만 같은 호출을 재시도한다.
+        재시도가 안전한 근거: 쓰기는 모두 한 트랜잭션이고(커밋 전 끊기면 서버가 롤백) 커밋 응답만 잃은 경우에도
+        모든 쓰기 연산이 멱등이다(같은 버전·같은 해시, 같은 review_id·같은 내용은 조용히 성공, 초안은 삭제 후 삽입,
+        원본 자료는 ON CONFLICT DO NOTHING). 재시도는 같은 advisory lock 트랜잭션을 처음부터 다시 연다.
+        두 번째도 실패하면 UNAVAILABLE."""
+        with self._lock:
+            err = None
+            for attempt in (1, 2):
+                try:
+                    return op(self._conn())
+                except psycopg.Error as e:
+                    if self._lost(e) or (self._db is not None and (self._db.closed or self._db.broken)):
+                        self._drop()
+                        if attempt == 1:
+                            continue
+                    err = f"저장소 {what} 실패: {_why(e)}"
+                    break
+            raise BoundaryError("UNAVAILABLE", err)  # except 밖에서 올린다(문맥에 접속 정보가 남지 않게)
 
     def _q(self, sql, args=()):
-        with self._lock:
-            try:
-                return self._conn().execute(sql, args).fetchall()
-            except psycopg.Error as e:
-                self._drop_if_broken(e)
-                raise BoundaryError("UNAVAILABLE", f"저장소 읽기 실패: {_why(e)}") from None
+        return self._run(lambda c: c.execute(sql, args).fetchall(), "읽기")
 
     def _write(self, fn):
         if self._read_only:
             raise BoundaryError("PERMISSION_DENIED", "읽기 전용 연결이다")
-        with self._lock:
-            c = self._conn()
-            try:
-                with c.transaction():
-                    c.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
-                    return fn(c)
-            except psycopg.Error as e:
-                self._drop_if_broken(e)
-                raise BoundaryError("UNAVAILABLE", f"저장소 쓰기 실패: {_why(e)}") from None
+
+        def op(c):
+            with c.transaction():
+                c.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
+                return fn(c)
+        return self._run(op, "쓰기")
 
     # ---- 원시 연산 ----
     def _version_rows(self, qsid):

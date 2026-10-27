@@ -39,10 +39,11 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 
 ## PostgreSQL 시험
 
-`scripts/dev-postgres.sh up`(compose.dev.yaml의 postgres:16, 빈 포트, 암호는 `.dev/pg_password`에 생성·커밋 안 함) 후 `export TEST_DATABASE_URL="$(scripts/dev-postgres.sh url)"; python -m pytest -q -rs`. `TEST_DATABASE_URL`이 없으면 PostgreSQL 시험은 SKIP이며 통과로 세지 않는다. 시험마다 임시 스키마를 만들고 지운다. 이미지 스모크의 PostgreSQL 경로: `SMOKE_DB=postgres bash scripts/smoke.sh`(임시 네트워크에 postgres를 띄움). 끝나면 `scripts/dev-postgres.sh down`.
+`export TEST_DATABASE_URL="$(bash ../deploy/scripts/dev-postgres.sh up qa)"`(deploy의 일회용 postgres, 빈 포트, `qa` 계정·데이터베이스, 암호는 일회용 임의값) 후 `python -m pytest -q -rs`. `TEST_DATABASE_URL`이 없으면 PostgreSQL 시험은 SKIP이며 통과로 세지 않는다. 시험마다 임시 스키마를 만들고 지운다. 연결 끊김 복구 시험은 `pg_terminate_backend`로 서버 프로세스를 끊어 확인한다. 이미지 스모크의 PostgreSQL 경로: `SMOKE_DB=postgres bash scripts/smoke.sh`(임시 네트워크에 postgres를 띄움). 끝나면 `bash ../deploy/scripts/dev-postgres.sh down qa`.
 
 ## 흔한 상황
 
+- DB 서버 재시작/연결 끊김: 서비스 재시작이 필요 없다. 끊김 오류(클라이언트 쪽 끊김, SQLSTATE 08류, 57P01~03)만 연결을 다시 열고 같은 호출을 한 번 재시도한다. 쓰기는 한 트랜잭션이고 모든 쓰기 연산이 멱등이라(커밋 응답만 잃어도 재시도가 중복을 만들지 않는다) 안전하다. 재연결도 실패하면 `UNAVAILABLE`(`/readyz` 503)이고 DB가 돌아오면 다음 호출에서 회복된다.
 - 저자가 자료를 올렸는데 FALLBACK: 응답의 `reason`을 보고, 원본이 텍스트 양식인지 확인한다. 화면 입력(`/edits`)으로 이어서 등록할 수 있다. 원본 해시는 출처로 남는다.
 - 확인이 `FAILED_PRECONDITION`: (a) 열린 플래그가 남음(응답 `details.flag_ids`), (b) 미리보기 이후 초안이 바뀜(미리보기를 다시 받는다), (c) 초안을 만든 뒤 새 버전이 생김(최신에서 다시 초안), (d) 이전 버전과 내용이 같음.
 - `INTEGRITY_ERROR`: 해당 버전의 저장 내용이 기록된 해시와 다르다. 파일을 변조했거나 손상된 것이다. 백업에서 복원한다. 버전을 고쳐 쓰지 않는다.

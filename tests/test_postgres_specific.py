@@ -68,3 +68,65 @@ def test_failure_messages_have_no_url_or_password():
     with pytest.raises(BoundaryError) as e2:
         PostgresQuestionStore(f"postgres://qa:{pw}@[bad/db")  # 형식 오류
     assert pw not in str(e2.value) and e2.value.__context__ is None
+
+
+def _kill_backend(url, s):
+    """다른 연결에서 이 저장소의 서버 프로세스를 강제 종료한다(DB 서버 재시작과 같은 끊김)."""
+    pid = s._db.info.backend_pid
+    with psycopg.connect(url, autocommit=True) as admin:
+        assert admin.execute("SELECT pg_terminate_backend(%s)", (pid,)).fetchone()[0]
+
+
+def test_recovers_after_backend_terminated_read_and_write(validators):
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema)
+        svc = AuthoringService(s, validators)
+        ref = publish(svc)
+        _kill_backend(url, s)
+        assert s.latest("qs-main") == ref                       # 읽기: 재연결 후 한 번 재시도
+        _kill_backend(url, s)
+        ref2 = publish(svc, edits=[{"op": "set", "path": "/questions/0/name", "value": "체온 측정"}])  # 쓰기 여러 번
+        assert ref2["version"] == "2"
+        assert [v for v, _ in s._version_rows("qs-main")] == [1, 2]   # 중복 없이 정확히 한 번
+        s.close()
+
+
+def test_write_retry_after_lost_commit_ack_is_idempotent(validators):
+    """커밋은 됐는데 응답을 잃은 경우를 흉내 낸다: 같은 commit_version을 다시 불러도 조용히 성공하고 중복이 없다."""
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema)
+        svc = AuthoringService(s, validators)
+        ref = publish(svc)
+        bank = s.get_question_bank(ref)
+        rv = s.get_reviews(ref)[0]
+        s.commit_version(bank, ref, rv, None, None)
+        assert len(s.get_reviews(ref)) == 1 and len(s._version_rows("qs-main")) == 1
+        s.close()
+
+
+def test_unrecoverable_is_unavailable_without_secret(validators):
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema)
+        s._url = "postgresql://qa:SECRET-dbpw-5e1f@127.0.0.1:1/q"   # 서버가 사라진 상황
+        _kill_backend(url, s)
+        with pytest.raises(BoundaryError) as e:
+            s.latest("qs-main")
+        assert e.value.code == "UNAVAILABLE" and "SECRET-dbpw-5e1f" not in repr(e.value) + str(e.value.to_record())
+        assert e.value.__context__ is None
+        assert s.is_ready() is False
+        s.close()
+
+
+def test_non_connection_errors_are_not_retried(validators):
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema)
+        publish(AuthoringService(s, validators))
+        n = []
+        orig = s._conn
+        def counting():
+            n.append(1); return orig()
+        s._conn = counting
+        with pytest.raises(BoundaryError) as e:
+            s._q("SELECT * FROM no_such_table")
+        assert e.value.code == "UNAVAILABLE" and len(n) == 1
+        s.close()
