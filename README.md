@@ -61,7 +61,7 @@ scripts/smoke.sh
 서비스 실행: `python -m question_authoring`. 기본 DB 경로가 `/data/questions.sqlite3`라 로컬에서는 `QA_DB_PATH`를 쓰기 가능한 경로로 줘야 한다(이 세션에서 `--help`로 시도했더니 `/data` 권한 오류로 멈췄고, `--help` 옵션은 없다).
 비밀(`QA_AUTHOR_TOKENS`, `QA_READ_TOKENS`, `QA_FAILURES_TOKEN`)은 값을 환경 변수로 주지 않고 파일 경로를 `NAME_FILE`로 준다(D84). 예: `-e QA_AUTHOR_TOKENS_FILE=/run/secrets/author_tokens`. 환경 변수 전체 목록은 docs/runbook.md.
 이 세션에서 실제로 돌린 것은 docs/STATUS.md와 CHANGELOG 0.6.0 참고(수치는 그때그때 `python -m pytest -q -rs`로 확인).
-이 세션에서 실제로 돌린 것: `python -m pytest --collect-only -q`(153개 수집), `python -m pytest -q`(153개 통과, 21.41초, 이 PC의 기존 `.venv` 한 환경), `python -m question_authoring --help`(위 오류).
+이 세션에서 실제로 돌린 것: `python -m pytest --collect-only -q`(153개 수집, 이전 세션 값), `python -m pytest -q -rs`(2026-10-28, PostgreSQL 없음: 294개 통과, 81개 건너뜀, 0 실패, 67.64초, 이 PC의 기존 `.venv` 한 환경. 건너뜀 81건은 모두 `TEST_DATABASE_URL` 없음으로 PostgreSQL 시험을 건너뜀), `python -m question_authoring --help`(위 오류).
 돌리지 않은 것: 의존 설치, `scripts/smoke.sh`(이미지 빌드), 서버 기동, 깨끗한 두 번째 환경에서의 확인.
 
 ## 설계 결정 기록(ADR)
@@ -77,7 +77,7 @@ scripts/smoke.sh
 PostgreSQL 대기 상한(0.6.2, 2026-10-28, FAULT_MATRIX P0-3/E1): 접속 3초, 문장 3초, `/readyz` DB 확인 2초(설정 가능, 근거는 docs/boundary.md "DB 대기 상한"). 확인한 것(이 PC, 일회용 PostgreSQL 컨테이너): `python -m pytest -q`는 `TEST_DATABASE_URL` 설정 시 218개 통과, 미설정 시 160개 통과 + 58개 SKIP. `SMOKE_DB=postgres scripts/smoke.sh`와 기본(SQLite) `scripts/smoke.sh` 모두 SMOKE OK. `docker pause`에서 `/readyz`는 2.0초에 503, 해제 뒤 즉시 200. 확인하지 못한 것: 컨테이너 조합(gateway, 다른 영역)에서의 재측정은 deploy E2E 5p에서 헤드가 한다. 아래 "153개" 줄은 이전 세션의 기록이다.
 
 확인된 것(출처 docs/STATUS.md, docs/CHANGELOG.md):
-- 0.5.0(2026-10-27) 비밀 파일 방식(D84)과 boundary-contracts v2.0.2 적용. STATUS 기록은 "153개 통과"이고 이 세션의 실행 결과와 같다.
+- 0.5.0(2026-10-27) 비밀 파일 방식(D84)과 boundary-contracts v2.0.2 적용. STATUS 기록은 "153개 통과"이고 그 시점 값이다(현재 실측은 위 실행 결과).
 - STATUS는 스모크 `SMOKE OK`를 기록하고 있으나 이 세션에서 다시 확인하지 않았다.
 - 구현: I1 읽기(SQLite, 메모리, HTTP), 저작 서비스, 텍스트 양식 추출기, 변경 분류, 개선 신호 수신함(I7).
 미구현(docs/STATUS.md, docs/design.md 12절): 관리자 콘솔 UI, 화면 입력 템플릿과 코드·단위 사전, PDF·Word 추출기, I4·I8 연동, 저자 인증의 실제 방식(지금은 정적 토큰 표), I1 SDK의 별도 패키지·태그 배포.
