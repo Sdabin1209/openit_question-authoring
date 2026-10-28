@@ -29,10 +29,10 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 | --- | --- | --- |
 | QA_DATABASE_URL(`_FILE` 권장) | PostgreSQL 접속 문자열(`postgresql://계정:암호@호스트:5432/데이터베이스`). 있으면 PostgreSQL을 쓴다. 암호가 들어 있으므로 비밀 값이다 | 없음 |
 | QA_DB_PATH | QA_DATABASE_URL이 없을 때만 쓰는 SQLite 파일(개발·시험) | /data/questions.sqlite3 |
-| QA_READ_TOKENS(`_FILE` 가능) | `역할=토큰` 쉼표 목록. I1 읽기 전용 토큰(저작 경로는 403). 비밀 값 | 없음(읽기 면 모두 403) |
+| QA_READ_TOKENS(`_FILE` 가능) | `역할=토큰` 쉼표 목록. I1 읽기 전용 토큰(저작 경로는 403, 토큰이 틀리면 401). 비밀 값 | 없음(읽기 면 토큰 없음·틀림은 401) |
 | QA_FAILURES_URL | ops-feedback(I7) URL. 비우면 `/v1/signals`는 DISABLED | 없음 |
 | QA_FAILURES_TOKEN_ENV | I7 토큰의 비밀 이름. 이 이름의 `_FILE`(또는 개발용 환경 변수)을 읽는다 | QA_FAILURES_TOKEN |
-| QA_AUTHOR_TOKENS(`_FILE` 가능) | `토큰:actor-id:역할` 쉼표 목록. 비밀 값 | 없음(모든 요청 403) |
+| QA_AUTHOR_TOKENS(`_FILE` 가능) | `토큰:actor-id:역할` 쉼표 목록. 비밀 값 | 없음(모든 요청 401) |
 | QA_HOST, QA_PORT | 바인드 | 0.0.0.0, 8080 |
 | QA_DB_CONNECT_TIMEOUT_SECONDS | PostgreSQL 접속 상한(초). 근거와 의미는 docs/boundary.md "DB 대기 상한" | 3 |
 | QA_DB_STATEMENT_TIMEOUT_SECONDS | 문장 하나의 상한(초). 호출 하나는 이 값 + 1초 안에 끝난다 | 3 |

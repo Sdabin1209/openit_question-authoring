@@ -150,7 +150,7 @@ bytes + filename
 | POST | /v1/reviews | add_review |
 | GET | /healthz, /readyz | 살아 있음, 저장소 준비됨 |
 
-오류는 `BoundaryError` 레코드(JSON)이고 HTTP 상태는 코드에서 정한다(NOT_FOUND 404, INVALID_RECORD 400, CONFLICT 409, FAILED_PRECONDITION 412, PERMISSION_DENIED 403, UNAVAILABLE 503). 콘솔은 이 API만 쓰며 저장소에 직접 쓰지 않는다.
+오류는 `BoundaryError` 레코드(JSON)이고 HTTP 상태는 코드에서 정한다(NOT_FOUND 404, INVALID_RECORD 400, CONFLICT 409, FAILED_PRECONDITION 412, PERMISSION_DENIED 401(자격 없음·틀림, `WWW-Authenticate: Bearer`) 또는 403(권한 없음, CONVENTIONS 6절), UNAVAILABLE 503). 콘솔은 이 API만 쓰며 저장소에 직접 쓰지 않는다.
 
 ## 9. I1 구현과 적합성 (구현)
 
