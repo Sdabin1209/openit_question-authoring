@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from boundary_contracts.errors import BoundaryError
 
+from . import contract
 from .service import Actor, AuthoringService
 
 STATUS = {"NOT_FOUND": 404, "INVALID_RECORD": 400, "UNSUPPORTED_VERSION": 422, "CONFLICT": 409,
@@ -42,10 +43,11 @@ def _json(body: bytes) -> dict:
     return v
 
 
-def _need(d: dict, key: str):
-    if key not in d:
-        raise BoundaryError("INVALID_RECORD", f"필수 항목이 없다: {key}")
-    return d[key]
+def _body(def_name: str, body: bytes) -> dict:
+    """요청 본문을 읽고 계약 AuthoringRequests의 $defs로 검사한다(필수 키, 형식, 모르는 키 거부). 이 뒤의 코드는 키가 있다고 믿는다(R7)."""
+    b = _json(body)
+    contract.check_request(def_name, b)
+    return b
 
 
 # gateway 사용자 ID: 일반 ID 또는 이메일형(local@domain). 문자 집합과 길이를 제한한다(총 길이가 계약 Id의 128자 안에 들도록 local 60, domain 60).
@@ -105,6 +107,7 @@ class Api:
                     body["db"] = self.db_kind
                 if self.warnings:
                     body["warnings"] = list(self.warnings)     # 200을 막지 않는다(경고만)
+                contract.check_response("QuestionAuthoringDeployInterface", "ReadyzResponse", body)
                 return (200 if ok else 503), body
             if path == "/v1/question-sets" or path.startswith("/v1/question-sets/"):
                 self._reader_auth(headers)          # 읽기 토큰 또는 저작 토큰
@@ -113,6 +116,9 @@ class Api:
                 return 200, self._read(path, q)
             actor = self._actor(headers)            # 저작 경로: 읽기 토큰은 여기서 403
             return 200, self._route(method, path, q, headers, body, actor)
+        except contract.ResponseContractError as e:   # 서버 결함: 계약을 어긴 응답은 내보내지 않는다. 메시지는 위치와 규칙 이름뿐이다
+            print(f"응답 계약 위반: {e}", flush=True)
+            return 503, BoundaryError("UNAVAILABLE", "내부 오류").to_record()
         except AuthError as e:
             return e.status, e.to_record()
         except BoundaryError as e:
@@ -225,58 +231,60 @@ class Api:
 
     def _route(self, method, path, q, headers, body, actor):
         s = self.svc
+        # 응답은 계약 스키마로 자기 검사를 거쳐 나간다(AuthoringResponses, SignalsResponse). 서버가 키를 늘리면 여기서 먼저 깨진다
+        out = lambda d, v: contract.check_response("AuthoringResponses", d, v)   # noqa: E731
         if method == "GET" and path == "/v1/signals":
             s.require_reader(actor)                    # 저자 또는 검수자. 읽기 토큰은 여기 오기 전에 403
             if self.signals is None:
-                return {"status": "DISABLED", "reason": "I7(ops-feedback)가 설정되지 않았다(QA_FAILURES_URL)"}
-            try:
-                mx = int(q.get("max_cases", 2000))
-            except ValueError:
-                raise BoundaryError("INVALID_RECORD", "max_cases는 정수여야 한다")
-            if not 1 <= mx <= 20000:
+                return contract.check_response("SignalsResponse", None, {
+                    "status": "DISABLED", "reason": "I7(ops-feedback)가 설정되지 않았다(QA_FAILURES_URL)"})
+            contract.check_request("SignalsQuery", q)
+            mx = int(q.get("max_cases", 2000))
+            if not 1 <= mx <= 20000:                   # 형식(숫자)은 스키마가, 범위는 여기서(스키마 설명: 1~20000)
                 raise BoundaryError("INVALID_RECORD", "max_cases는 1~20000이어야 한다")
             from .signals import build_signals
             try:
-                return build_signals(self.signals, question_set_id=q.get("question_set_id"),
-                                     review_status=q.get("review_status"), max_cases=mx,
-                                     deadline_seconds=self.signals_deadline)
+                res = build_signals(self.signals, question_set_id=q.get("question_set_id"),
+                                    review_status=q.get("review_status"), max_cases=mx,
+                                    deadline_seconds=self.signals_deadline)
             except BoundaryError as e:
                 if e.code in ("INTEGRITY_ERROR", "INVALID_RECORD", "UNSUPPORTED_VERSION"):   # 상류의 깨진 응답은 성공으로 취급하지 않는다(FAULT_POLICY 10)
                     raise BoundaryError("UNAVAILABLE", "ops-feedback의 응답이 올바르지 않다") from None
                 raise
+            return contract.check_response("SignalsResponse", None, res)
         if method == "POST" and path == "/v1/drafts":
-            b = _json(body)
-            return s.create_draft(actor, _need(b, "question_set_id"), base_version=b.get("base_version", "latest"))
+            b = _body("CreateDraftRequest", body)
+            return out("Draft", s.create_draft(actor, b["question_set_id"], base_version=b.get("base_version", "latest")))
         if method == "GET" and path == "/v1/drafts":
             s.require_reader(actor)
-            return {"drafts": s.list_drafts(q.get("question_set_id"))}
+            return out("DraftList", {"drafts": s.list_drafts(q.get("question_set_id"))})
         if method == "POST" and path == "/v1/materials":
-            return s.ingest_material(actor, _need(q, "question_set_id"), _need(q, "filename"), body,
-                                     base_version=q.get("base_version", "latest"), extractor=q.get("extractor"),
-                                     accept_phi_warning=q.get("accept_phi_warning") == "true")
+            contract.check_request("MaterialQuery", q)
+            return out("MaterialIngested", s.ingest_material(
+                actor, q["question_set_id"], q["filename"], body, base_version=q.get("base_version", "latest"),
+                extractor=q.get("extractor"), accept_phi_warning=q.get("accept_phi_warning") == "true"))
         if method == "POST" and path == "/v1/reviews":
-            b = _json(body)
-            return s.add_review(actor, _need(b, "question_set"), decision=_need(b, "decision"),
-                                clinical_basis_approved=_need(b, "clinical_basis_approved"),
-                                reason=b.get("reason"), review_id=b.get("review_id"))
+            b = _body("AddReviewRequest", body)
+            return out("AddReviewResponse", s.add_review(
+                actor, b["question_set"], decision=b["decision"], clinical_basis_approved=b["clinical_basis_approved"],
+                reason=b.get("reason"), review_id=b.get("review_id")))
         m = re.match(r"^/v1/drafts/([^/]+)(?:/(preview|edits|acknowledge|confirm|discard))?$", path)
         if m:
             did, act = m.groups()
             if method == "GET" and act is None:
                 s.require_reader(actor)
-                return s.get_draft(did)
+                return out("Draft", s.get_draft(did))
             if method == "GET" and act == "preview":
                 s.require_reader(actor)
-                return s.get_preview(did)
-            b = _json(body) if method == "POST" else {}
+                return out("Preview", s.get_preview(did))
             if method == "POST" and act == "edits":
-                return s.apply_edits(actor, did, _need(b, "edits"))
+                return out("Draft", s.apply_edits(actor, did, _body("EditsRequest", body)["edits"]))
             if method == "POST" and act == "acknowledge":
-                return s.acknowledge_flags(actor, did, _need(b, "flag_ids"))
+                return out("Draft", s.acknowledge_flags(actor, did, _body("AcknowledgeRequest", body)["flag_ids"]))
             if method == "POST" and act == "confirm":
-                return s.confirm(actor, did, _need(b, "preview_hash"))
+                return out("ConfirmResponse", s.confirm(actor, did, _body("ConfirmRequest", body)["preview_hash"]))
             if method == "POST" and act == "discard":
-                return s.discard_draft(actor, did, _need(b, "reason"))
+                return out("Draft", s.discard_draft(actor, did, _body("DiscardRequest", body)["reason"]))
         raise BoundaryError("NOT_FOUND", f"없는 경로: {method} {path}")
 
 

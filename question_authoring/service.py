@@ -20,6 +20,7 @@ from boundary_contracts import canonical
 from boundary_contracts.errors import BoundaryError
 
 from . import classify, preview as pv
+from . import contract
 from .extractors import ExtractionFailure, ExtractorRegistry, default_registry
 from .store.base import AuthoringStore, bank_hash
 from .validation import PIPELINE_SCHEMA_VERSION, Validators, semantic_errors
@@ -312,7 +313,7 @@ class AuthoringService:
             d["source"].update(extractor=ex.name, extractor_version=ex.version)
             res = ex.extract(bytes(data), filename)
         except ExtractionFailure as e:
-            d["source"].update(extractor=d["source"].get("extractor"))
+            # 왜 extractor를 넣지 않나: 추출기를 고르기 전에 실패하면 이름이 없다. 계약 Source.extractor는 문자열이라 None을 쓰면 ReviewExt 검사가 거부한다
             d["fallback"] = {"reason": str(e),
                              "guidance": "자료를 읽지 못했다. 화면 입력으로 이어서 작성할 수 있다. 원본 해시는 출처로 남는다."}
             self._touch(d)
@@ -419,6 +420,7 @@ class AuthoringService:
         else:
             change = {k: v for k, v in change.items() if v is not None}
             change["ext"] = {EXT_KEY: {"draft_id": draft_id}}
+            contract.check_ext("ChangeExt", change["ext"][EXT_KEY])
             self.v.check("ChangeClassification", change)
         source = d["source"] or {"kind": "screen"}
         review = {
@@ -434,6 +436,7 @@ class AuthoringService:
             }},
         }
         self._check_id("review_id", review["review_id"])
+        contract.check_ext("ReviewExt", review["ext"][EXT_KEY])
         self.v.check("ReviewRecord", review)
         try:
             self.store.commit_version(bank, ref, review, change, source)
@@ -456,10 +459,6 @@ class AuthoringService:
         # 엄격 파싱: 불리언만(문자열 "false"가 승인으로 저장되던 문제, 전수 점검 P2)
         if not isinstance(clinical_basis_approved, bool):
             raise BoundaryError("INVALID_RECORD", "clinical_basis_approved는 true 또는 false여야 한다")
-        if decision not in ("APPROVED", "REJECTED", "CHANGES_REQUESTED"):
-            raise BoundaryError("INVALID_RECORD", "decision이 올바르지 않다")
-        if reason is not None and not isinstance(reason, str):
-            raise BoundaryError("INVALID_RECORD", "reason은 문자열이어야 한다")
         if self.require_two_person and clinical_basis_approved:
             # 임상 근거 승인: 검수 역할이고, 이 버전을 만든(확인한) 주체와 달라야 한다
             if actor.role != REVIEWER_ROLE:
@@ -477,7 +476,8 @@ class AuthoringService:
         }
         if reason:
             rec["reason"] = reason
-        self.v.check("ReviewRecord", rec)
+        contract.check_ext("ReviewExt", rec["ext"][EXT_KEY])
+        self.v.check("ReviewRecord", rec)      # decision 열거와 reason 문자열은 여기서 검사한다(AddReviewRequest가 HTTP 앞단에서 이미 보증)
         if review_id:  # 재시도 멱등: 같은 review_id에 같은 판단이면 기존 것을 돌려준다
             for old in self.store.get_reviews(ref):
                 if old["review_id"] == review_id:

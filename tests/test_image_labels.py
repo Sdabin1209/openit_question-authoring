@@ -8,7 +8,7 @@ import re
 import pytest
 
 DOCKERFILE = pathlib.Path(__file__).resolve().parent.parent / "Dockerfile"
-SAMPLE_ARGS = {"COMMIT": "85b3552", "BOUNDARY_TAG": "v2.2.0", "SURVEY_SCHEMA_TAG": "1"}
+SAMPLE_ARGS = {"COMMIT": "85b3552", "BOUNDARY_TAG": "v2.2.1", "SURVEY_SCHEMA_TAG": "1"}
 
 
 def dockerfile_labels() -> dict:
@@ -37,11 +37,21 @@ def test_required_labels_present_and_well_formed():
     assert not {"none", "unknown"} & set(labels.values())
 
 
-def test_labels_validate_against_contract_schema_if_installed():
-    jsonschema = pytest.importorskip("jsonschema")
-    try:
-        from boundary_contracts import load_schema
-        schema = load_schema("ImageLabels")
-    except Exception:
-        pytest.skip("설치된 계약 패키지에 ImageLabels 스키마가 아직 없다")
-    assert list(jsonschema.Draft202012Validator(schema).iter_errors(dockerfile_labels())) == []
+def test_labels_validate_against_contract_schema():
+    """계약 v2.2.1부터 ImageLabels가 패키지에 있다. 없으면 시험이 실패해야 한다(건너뛰지 않는다)."""
+    from boundary_contracts import validator
+    assert list(validator("ImageLabels").iter_errors(dockerfile_labels())) == []
+
+
+def test_arg_defaults_are_na_not_none_unknown_unset():
+    """ARG 기본값은 계약이 값 없음으로 인정하는 `n/a`뿐이다(`none`·`unknown`·`unset` 불가). 실제 값은 빌드가 넘긴다."""
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    defaults = dict(re.findall(r"^ARG (\w+)=(\S+)$", text, re.M))
+    assert set(defaults) == {"COMMIT", "BOUNDARY_TAG", "SURVEY_SCHEMA_TAG"}
+    assert set(defaults.values()) == {"n/a"}
+
+
+def test_bad_labels_are_rejected_by_contract():
+    from boundary_contracts import validator
+    bad = dict(dockerfile_labels(), **{"io.openit.turn-engine": "none"})
+    assert list(validator("ImageLabels").iter_errors(bad))

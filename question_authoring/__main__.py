@@ -26,6 +26,7 @@ QA_SOURCE_RETENTION_DAYS         어떤 버전·초안도 참조하지 않는 �
 QA_FAILURES_TIMEOUT_SECONDS      I7(ops-feedback) 호출 하나의 읽기 상한(초, 기본 5)
 QA_SIGNALS_DEADLINE_SECONDS      GET /v1/signals 한 번의 총 마감(초, 기본 20)
 """
+import json
 import os
 import signal
 import sys
@@ -35,20 +36,29 @@ from datetime import datetime, timedelta, timezone
 
 from boundary_contracts import read_secret
 
+from . import contract
 from .http_api import Api, make_server
 from .service import Actor, AuthoringService
 from .store import AuthoringStore, PostgresQuestionStore, SqliteQuestionStore
 from .validation import Validators
 
 
+def check_environment(environ=None) -> None:
+    """QA_ 환경 변수를 계약 QuestionAuthoringDeployInterface.Environment로 검사한다(형식: 숫자, 열거, 역할 목록).
+    왜 여기서 한 번: 변수마다 손으로 파싱하면 스키마와 어긋나도 깨지지 않는다(예: 보존 일수 0이 build()에서는 통과). 값은 오류에 쓰지 않는다(비밀이 섞일 수 있다).
+    빈 문자열은 "설정 안 함"으로 본다(compose가 비어 있는 변수를 넘기는 경우). 범위(0 < 초 <= 600)는 스키마 설명대로 _seconds가 검사한다."""
+    environ = os.environ if environ is None else environ
+    env = {k: v for k, v in environ.items() if k.startswith("QA_") and v.strip() != ""}
+    errs = contract.environment_problems(env)
+    if errs:
+        raise SystemExit("환경 변수가 계약(QuestionAuthoringDeployInterface.Environment)을 어긴다: " + "; ".join(errs[:5]))
+
+
 def _seconds(name: str, default: float) -> float:
     raw = os.environ.get(name)
     if raw is None or raw.strip() == "":
         return default
-    try:
-        v = float(raw)
-    except ValueError:
-        raise SystemExit(f"{name}은 초 단위 숫자여야 한다")
+    v = float(raw)           # 형식은 check_environment가 보증했다
     if not 0 < v <= 600:
         raise SystemExit(f"{name}은 0보다 크고 600 이하여야 한다")
     return v
@@ -72,21 +82,14 @@ def _bool(name: str, default: bool) -> bool:
     raw = os.environ.get(name)
     if raw is None or raw.strip() == "":
         return default
-    v = raw.strip().lower()
-    if v in ("1", "true"):
-        return True
-    if v in ("0", "false"):
-        return False
-    raise SystemExit(f"{name}은 true 또는 false여야 한다")
+    return raw in ("1", "true")   # 열거(1/0/true/false)는 check_environment가 보증했다
 
 
 def _days(name: str, default: int) -> int:
     raw = os.environ.get(name)
     if raw is None or raw.strip() == "":
         return default
-    if not raw.strip().isdigit() or int(raw) < 1:
-        raise SystemExit(f"{name}은 1 이상의 정수(일)여야 한다. 보존 기간 없음(무기한)은 허용하지 않는다")
-    return int(raw)
+    return int(raw)           # 양의 정수 형식은 check_environment가 보증했다. 보존 기간 없음(무기한)은 스키마가 거부한다
 
 
 def _require_production_config(*, need_tokens: bool) -> None:
@@ -102,6 +105,7 @@ def _require_production_config(*, need_tokens: bool) -> None:
 
 def build() -> tuple[Api, AuthoringStore]:
     env = os.environ
+    check_environment()
     dev = _bool("QA_DEV_MODE", False)
     _require_production_config(need_tokens=True)
     tokens = {}
@@ -113,9 +117,7 @@ def build() -> tuple[Api, AuthoringStore]:
     gateway_tokens = {t for t in (read_secret("QA_GATEWAY_TOKENS") or "").split(",") if t}
     user_roles = {}
     for item in filter(None, (env.get("QA_USER_ROLES") or "").split(",")):
-        uid, _, role = item.partition("=")
-        if role not in ROLES:
-            raise SystemExit(f"QA_USER_ROLES의 역할은 {', '.join(ROLES)} 중 하나여야 한다")
+        uid, _, role = item.partition("=")   # 역할 열거는 check_environment(QA_USER_ROLES 패턴)가 보증했다
         user_roles[uid.strip()] = role
     if not dev:
         if gateway_tokens and not user_roles:
@@ -150,15 +152,16 @@ def purge_once(store: AuthoringStore, now: datetime | None = None) -> dict:
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["purge"]:
+        check_environment()
         _require_production_config(need_tokens=False)   # 정리 잡에는 저자 토큰이 필요 없어 DB URL과 개발 플래그만 본다
         store = open_store()
-        print(purge_once(store), flush=True)
+        print(json.dumps(purge_once(store)), flush=True)   # 왜 JSON: deploy가 한 줄을 읽는다. 계약 PurgeResult(파이썬 dict 표기는 JSON이 아니다)
         store.close()
         return 0
     api, _ = build()
-    srv = make_server(api, os.environ.get("QA_HOST", "0.0.0.0"), int(os.environ.get("QA_PORT", "8080")),
+    srv = make_server(api, os.environ.get("QA_HOST", "0.0.0.0"), int(os.environ.get("QA_PORT") or 8080),
                       request_timeout=_seconds("QA_REQUEST_TIMEOUT_SECONDS", 30.0),
-                      max_concurrent=int(_seconds("QA_MAX_CONCURRENT_REQUESTS", 32)))
+                      max_concurrent=int(os.environ.get("QA_MAX_CONCURRENT_REQUESTS") or 32))
 
     def stop(signum, frame):   # PID 1의 Python은 SIGTERM을 기본으로 무시한다. 새 연결을 받지 않고, 아래에서 진행 중 요청을 유예 시간까지 기다린다
         print("종료 신호를 받았다. 새 요청을 받지 않고 진행 중 요청을 기다린다", flush=True)

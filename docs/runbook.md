@@ -42,7 +42,9 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 | QA_GATEWAY_TOKENS(`_FILE`) | gateway가 쓰는 서비스 토큰 목록. 이 토큰의 요청만 `X-Openit-User`를 신뢰한다 | 없음 |
 | QA_USER_ROLES | `사용자ID=역할` 쉼표 목록(gateway 경유 사용자의 역할표) | 없음 |
 | QA_MAX_CONCURRENT_REQUESTS | 동시 처리 요청 상한. 넘으면 503 + Retry-After | 32 |
-| QA_DRAFT_RETENTION_DAYS, QA_SOURCE_RETENTION_DAYS | `python -m question_authoring purge`의 보존 일수. 양의 정수만(무기한 불가) | 30, 30 |
+| QA_DRAFT_RETENTION_DAYS, QA_SOURCE_RETENTION_DAYS | `python -m question_authoring purge`의 보존 일수. 양의 정수만(무기한 불가). 표준 출력은 JSON 한 줄 `{"drafts_removed": N, "sources_removed": M}`(계약 PurgeResult) | 30, 30 |
+
+환경 변수의 형식(숫자, 열거, `QA_USER_ROLES` 역할 목록)은 시작 때 계약 `QuestionAuthoringDeployInterface.Environment`로 검사하고, 어기면 변수 이름과 규칙만 말하고(값은 말하지 않는다) 시작을 거부한다. 빈 문자열은 설정 안 함으로 본다. 불리언은 `1/0/true/false` 소문자만 받는다(이전에는 `TRUE`도 받았다).
 | QA_DB_LARGE_STATEMENT_TIMEOUT_SECONDS | 큰 자료(원본 자료, 초안, 문항 세트 버전) 쓰기의 문장 상한(초) | 30 |
 | QA_REQUEST_TIMEOUT_SECONDS | HTTP 요청 소켓이 이 시간 멈추면 끊는다(멈춘 업로드) | 30 |
 | QA_FAILURES_TIMEOUT_SECONDS | I7 호출 하나의 읽기 상한(초) | 5 |

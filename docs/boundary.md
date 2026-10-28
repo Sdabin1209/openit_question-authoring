@@ -19,7 +19,7 @@
 
 ## 소비하는 것과 지원 버전
 
-- 문진 스키마 `QuestionBank`: `openit-survey-schema`(태그 survey-schema-v1.0.0)의 정수 버전 1만 지원한다. 설치되어 있지 않거나 다르면 `UNSUPPORTED_VERSION`.
+- 문진 스키마 `QuestionBank`: `openit-survey-schema`(태그는 `requirements.lock`이 정본)의 정수 버전 1만 지원한다. 설치되어 있지 않거나 다르면 `UNSUPPORTED_VERSION`.
 - 사용하는 비밀(D84, `NAME_FILE`로 파일 경로를 받는다; deploy `compose.yaml`의 이 서비스 환경과 같은 이름): `QA_AUTHOR_TOKENS_FILE`, `QA_GATEWAY_TOKENS_FILE`, `QA_READ_TOKENS_FILE`, `QA_FAILURES_TOKEN_FILE`, `QA_DATABASE_URL_FILE`. 값은 어디에도 적지 않는다.
 - 경계 계약: `ReviewRecord`, `ChangeClassification`, `ArtifactRef`, `BoundaryError`를 `boundary_contracts.PIPELINE_SCHEMA_VERSION`으로 쓴다(버전 정본은 `requirements.lock`). 해시는 `boundary_contracts.canonical`로만 계산한다.
 - I7 FailureStore(ops-feedback): HTTP로 읽기만 한다(`list_cases`, `get_trace`). 설정 시에만 켜진다. 장애 시 개선 신호 조회만 실패하고 저작·I1 읽기는 영향이 없다. 비식별 trace의 구조 정보만 쓰며 발화는 저장·반환하지 않는다.

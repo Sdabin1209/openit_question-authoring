@@ -13,7 +13,7 @@ TOKEN=smoke-token
 "$DOCKER" build -q -t "$IMG" \
   --build-arg COMMIT="$(git -C "$here" rev-parse --short HEAD)" \
   --build-arg BOUNDARY_TAG="$(cat "$here/build/contracts.tag")" \
-  --build-arg SURVEY_SCHEMA_TAG="$(cat "$here/build/survey-schema.tag")" "$here" >/dev/null
+  --build-arg SURVEY_SCHEMA_TAG="$(sed -E 's/^survey-schema-v([0-9]+)\..*/\1/' "$here/build/survey-schema.tag")" "$here" >/dev/null   # 왜 주 버전만: 계약 ImageLabels의 survey-schema 라벨은 정수 주 버전이다
 SECDIR="$(mktemp -d)"
 SMOKE_DB="${SMOKE_DB:-sqlite}"
 NET=question-authoring-smoke-net-$$; PGNAME=question-authoring-smoke-pg-$$
@@ -75,7 +75,14 @@ for i in $(seq 1 20); do
   st=$("$DOCKER" inspect -f '{{.State.Health.Status}}' "$NAME"); [ "$st" = healthy ] && break; sleep 2
 done
 echo "HEALTHCHECK: $st"; [ "$st" = healthy ] || exit 1
-"$DOCKER" image inspect "$IMG" --format '{{json .Config.Labels}}'
+"$DOCKER" image inspect "$IMG" --format '{{json .Config.Labels}}' | tee "$SECDIR/labels.json"
+# 라벨을 계약 ImageLabels로 검사한다. 계약 패키지가 있는 파이썬(.venv 또는 PYTHON)이 없으면 검사하지 못했다고 밝힌다
+LPY="${PYTHON:-$here/.venv/bin/python}"
+if "$LPY" -c "import boundary_contracts" >/dev/null 2>&1; then
+  "$LPY" -c "import json,sys,boundary_contracts as b; e=list(b.validator('ImageLabels').iter_errors(json.load(open(sys.argv[1])))); print('ImageLabels 검사:', 'OK' if not e else e); sys.exit(1 if e else 0)" "$SECDIR/labels.json"
+else
+  echo "ImageLabels 검사 못 함: boundary_contracts가 있는 파이썬이 없다(PYTHON 지정)"
+fi
 if [ "$SMOKE_DB" = postgres ]; then
   # 컨테이너를 다시 띄워도 데이터가 남는다(서버 쪽 저장소)
   "$DOCKER" restart "$NAME" >/dev/null

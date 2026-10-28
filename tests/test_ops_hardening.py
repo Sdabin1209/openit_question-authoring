@@ -14,7 +14,7 @@ import pytest
 
 from conftest import example_text
 from helpers import AUTHOR
-from question_authoring.__main__ import build, main, purge_once
+from question_authoring.__main__ import build, check_environment, main, purge_once
 from question_authoring.http_api import Api, make_server
 from question_authoring.service import Actor, AuthoringService
 from question_authoring.signals import question_ids_from_trace
@@ -168,7 +168,7 @@ def test_retention_rejects_indefinite(monkeypatch):
     for bad in ("0", "-1", "none", "null", "abc"):
         monkeypatch.setenv("QA_DRAFT_RETENTION_DAYS", bad)
         with pytest.raises(SystemExit):
-            purge_once(MemoryQuestionStore())
+            check_environment()   # 진입점이 purge 전에 하는 검사(계약 Environment)
 
 
 # ---- M-6 ----

@@ -74,7 +74,7 @@ def render_text(draft: dict) -> str:
         L.append("기반 버전: 없음(새 문항 세트)")
     src = draft.get("source")
     if src:
-        L.append(f"출처 자료: {src['filename']} ({src['source_hash'][:19]}...) 추출기 {src['extractor']}")
+        L.append(f"출처 자료: {src['filename']} ({src['source_hash'][:19]}...) 추출기 {src.get('extractor', '없음')}")
     else:
         L.append("출처 자료: 화면 입력")
     L.append("")

@@ -1,4 +1,6 @@
-# STATUS (2026-10-27, 0.6.0 기준)
+# STATUS (2026-10-29, 패키지 버전은 pyproject.toml이 정본: 0.1.0)
+
+> 문서에 남은 0.5.0~0.7.0은 날짜순 작업 묶음의 이름이고 패키지 버전이 아니다. 패키지 버전은 `pyproject.toml`과 `question_authoring/__init__.py`의 0.1.0 하나다.
 
 ## 한 일
 - design.md, boundary.md, runbook.md, CHANGELOG.md, 변경 요청 5건.
@@ -12,6 +14,8 @@
 - 0.6.2: PostgreSQL 접속·문장·`/readyz` 대기 상한(FAULT_MATRIX P0-3/E1). pytest 218개 통과(`TEST_DATABASE_URL` 설정), 미설정 시 160 통과 + 58 SKIP. 스모크 SQLite·PostgreSQL 모두 SMOKE OK. 컨테이너 조합 재측정은 deploy E2E 5p(헤드).
 
 - 0.6.3: E2·D5 장애 동작(docs/boundary.md), 큰 자료 쓰기 상한, 이메일 패턴 제곱 지연 수정. pytest 283개 통과(`TEST_DATABASE_URL` 설정), 미설정 206 통과 + 77 SKIP. 운영 구성에서 저자 경로를 열지는 사용자 결정(E2)이라 손대지 않았다.
+
+- 2026-10-29 단위 3: 계약 v2.2.1 핀(`requirements.lock`, `scripts/build_wheels.sh`), 문진 스키마 survey-schema-v1.1.0 핀(태그는 헤드가 단다). 저작 API 요청은 `AuthoringRequests`로 검사하고 **모르는 키를 거부**한다(동작 변경: 이전에는 무시). 응답은 `AuthoringResponses`·`SignalsResponse`·`ReadyzResponse`로 자기 검사(어기면 503). 환자 확인·검수의 `ext`는 `QuestionAuthoringExt`로 쓰기 전에 검사. 환경 변수는 `QuestionAuthoringDeployInterface.Environment`로 시작 때 검사. `purge` 출력은 JSON 한 줄(`PurgeResult`). 결함 수정: 추출기 선택 전에 실패한 자료의 출처에 `extractor: null`이 들어가 계약을 어기던 것. 시험 개수는 README "시험 상태"(이번 실행 값은 그곳에 갱신).
 
 ## 남은 일
 - 관리자 콘솔 UI, 화면 입력용 템플릿(필드 목록)과 코드·단위 사전(내용은 저자가 정한다).

@@ -1,5 +1,18 @@
 # 변경 이력
 
+## 미배포 (2026-10-29) 단위 3: 계약 스키마로 경계 검증 (boundary-contracts v2.2.1)
+
+- 핀: boundary-contracts v2.2.1, openit-survey-schema survey-schema-v1.1.0(헤드가 태그를 단다). turn-engine·model-runtime은 코드·설치 의존이 없다(이미지 라벨 `n/a`). Dockerfile ARG 기본값 `unknown` -> `n/a`.
+- **동작 변경:** 저작 API 요청 본문과 쿼리(`POST /v1/drafts`, `/materials`, `/reviews`, `/drafts/{id}/edits|acknowledge|confirm|discard`, `GET /v1/signals`)가 계약 `AuthoringRequests`를 어기면 400 `INVALID_RECORD`. 모르는 키(오타 포함)를 더는 무시하지 않는다. 호출자(콘솔)가 보내는 키가 스키마와 같은지는 이웃 쪽 미확인.
+- 응답을 `AuthoringResponses`, `SignalsResponse`, `ReadyzResponse`로 보내기 전에 검사한다. 어기면 503 `UNAVAILABLE`(서버 결함, 본문은 내보내지 않고 위치만 로그).
+- `ReviewRecord.ext`/`ChangeClassification.ext`의 question-authoring 값을 `QuestionAuthoringExt`(ReviewExt, ChangeExt)로 쓰기 전에 검사한다.
+- 환경 변수를 `QuestionAuthoringDeployInterface.Environment`로 시작 때 검사한다(`build()`와 `purge`). 이전에는 `build()`가 보존 일수 0 같은 값을 받았다. 손으로 쓴 형식 검사(`_bool`/`_days`의 형식 부분, `QA_USER_ROLES` 역할)는 지웠다.
+- `purge` 표준 출력이 파이썬 dict 표기에서 JSON 한 줄이 됐다(계약 PurgeResult).
+- 결함 수정: 추출기를 고르기 전에 실패한 자료(FALLBACK)의 출처에 `extractor: null`이 들어가 `QuestionAuthoringExt.Source`를 어겼다. 키를 넣지 않는다. 미리보기는 추출기 이름이 없으면 `없음`으로 쓴다(FALLBACK 초안의 preview_hash가 이전과 달라진다).
+- 중복 검사 제거(R7): `add_review`의 decision·reason 손 검사(요청 스키마와 `ReviewRecord` 검사가 보증). `clinical_basis_approved`의 bool 검사는 4-eyes 판정이 `ReviewRecord` 검사보다 앞서므로 남겼다.
+- 버전 표기: 패키지 버전은 pyproject의 0.1.0이 정본이다. 문서의 0.5.0~0.7.0은 작업 묶음 이름이었다(STATUS 머리말).
+- 시험: `tests/test_contract_u3.py` 추가, `tests/test_image_labels.py`는 ImageLabels 검사를 건너뛰지 않는다.
+
 ## 미배포 (2026-10-28) L24 PostgreSQL 업로드·purge 경쟁
 
 - 결함 수정: 보존 기간을 넘겨 방치된 초안을 확인(confirm)하는 중에 purge가 초안과 원본을 지우면, 원본이 없는 출처를 가리키는 불변 버전이 만들어졌다. `commit_version`이 같은 락(트랜잭션) 안에서 원본 존재를 확인하고 없으면 FAILED_PRECONDITION으로 거절한다(세 저장소 구현 모두). 같은 자료를 다시 올리면 확인이 이어진다. 근거: ADR 0011.
