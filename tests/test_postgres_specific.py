@@ -44,7 +44,7 @@ def test_read_only_connection(validators):
             ro.add_review({"question_set": ref, "review_id": "rv-z"})
         assert e.value.code == "PERMISSION_DENIED"
         with pytest.raises(psycopg.Error):
-            ro._db.execute("INSERT INTO meta(k, v) VALUES('x','y')")
+            ro._db.execute("INSERT INTO drafts(draft_id, qsid, record) VALUES('x','y','z')")
         ro.close(); s.close()
 
 

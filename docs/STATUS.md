@@ -17,6 +17,8 @@
 
 - 2026-10-29 단위 3: 계약 v2.2.1 핀(`requirements.lock`, `scripts/build_wheels.sh`), 문진 스키마 survey-schema-v1.1.0 핀(태그는 헤드가 단다). 저작 API 요청은 `AuthoringRequests`로 검사하고 **모르는 키를 거부**한다(동작 변경: 이전에는 무시). 응답은 `AuthoringResponses`·`SignalsResponse`·`ReadyzResponse`로 자기 검사(어기면 503). 환자 확인·검수의 `ext`는 `QuestionAuthoringExt`로 쓰기 전에 검사. 환경 변수는 `QuestionAuthoringDeployInterface.Environment`로 시작 때 검사. `purge` 출력은 JSON 한 줄(`PurgeResult`). 결함 수정: 추출기 선택 전에 실패한 자료의 출처에 `extractor: null`이 들어가 계약을 어기던 것. 시험 개수는 README "시험 상태"(이번 실행 값은 그곳에 갱신).
 
+- 2026-10-29 단위 4a: HTTP 서버를 WSGI+waitress로(ADR 0016), 스키마를 yoyo 마이그레이션으로(ADR 0017), 계약 핀 v2.2.2. 동작 변경은 docs/CHANGELOG.md의 해당 두 항목.
+
 ## 남은 일
 - 관리자 콘솔 UI, 화면 입력용 템플릿(필드 목록)과 코드·단위 사전(내용은 저자가 정한다).
 - 소비 계약: I4 판정 조회, I8 규칙 미리보기 연동. (I7 개선 신호는 구현함. 문항 ID를 trace의 planner_output.directive에서 읽는다는 가정은 ops-feedback과 확인 필요.)

@@ -2,39 +2,18 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
+import tempfile
 import threading
 from pathlib import Path
 from typing import Optional
 
 from boundary_contracts.errors import BoundaryError
 from .base import AuthoringStore, bank_hash
+from .migrate import migrate_sqlite, schema_matches
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS versions(
-  qsid TEXT NOT NULL, version_no INTEGER NOT NULL, content_hash TEXT NOT NULL, bank TEXT NOT NULL,
-  source TEXT, PRIMARY KEY(qsid, version_no));
-CREATE TABLE IF NOT EXISTS reviews(
-  seq INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT NOT NULL UNIQUE, qsid TEXT NOT NULL,
-  version_no INTEGER NOT NULL, record TEXT NOT NULL);
-CREATE INDEX IF NOT EXISTS reviews_ver ON reviews(qsid, version_no);
-CREATE TABLE IF NOT EXISTS changes(
-  qsid TEXT NOT NULL, version_no INTEGER NOT NULL, record TEXT NOT NULL, PRIMARY KEY(qsid, version_no));
-CREATE TABLE IF NOT EXISTS drafts(draft_id TEXT PRIMARY KEY, qsid TEXT NOT NULL, record TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS blobs(source_hash TEXT PRIMARY KEY, filename TEXT NOT NULL, data BLOB NOT NULL, created_at TEXT);
-"""
-IMMUTABLE = ["versions", "reviews", "changes"]
-SCHEMA_VERSION = "1"
-
-
-def _triggers() -> str:
-    out = []
-    for t in IMMUTABLE:
-        for op in ("UPDATE", "DELETE"):
-            out.append(f"CREATE TRIGGER IF NOT EXISTS {t}_no_{op.lower()} BEFORE {op} ON {t} "
-                       f"BEGIN SELECT RAISE(ABORT, '{t}는 불변이다'); END;")
-    return "\n".join(out)
+# 스키마는 question_authoring/migrations/sqlite/ 의 yoyo 마이그레이션이 만든다(ADR 0017)
 
 
 def _now_ts() -> str:
@@ -47,7 +26,7 @@ def _dump(o) -> str:
 
 
 class SqliteQuestionStore(AuthoringStore):
-    """path가 None이면 ':memory:'가 아니라 임시 파일 없이 메모리 DB(시험용)를 쓴다.
+    """path가 None이면 닫을 때 지우는 임시 파일 DB(시험용)를 쓴다.
     read_only=True면 읽기 전용으로 연다(이웃 영역에 주는 읽기 계정에 해당)."""
 
     kind = "sqlite"
@@ -55,28 +34,34 @@ class SqliteQuestionStore(AuthoringStore):
     def __init__(self, path: str | Path | None = None, *, read_only: bool = False):
         self._lock = threading.RLock()
         self._read_only = read_only
+        self._tmpdir = None
         if path is None:
-            self._db = sqlite3.connect(":memory:", check_same_thread=False, isolation_level=None)
-        elif read_only:
+            # 왜 임시 파일: yoyo는 별도 연결로 마이그레이션을 적용하는데 ':memory:'는 연결마다 다른 DB다. 닫을 때 지운다
+            self._tmpdir = tempfile.mkdtemp(prefix="qa-mem-")
+            path = Path(self._tmpdir) / "mem.sqlite3"
+        if not read_only:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            migrate_sqlite(str(Path(path).resolve()))
+            self._db = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
+            self._db.execute("PRAGMA journal_mode=WAL")
+        else:
             self._db = sqlite3.connect(f"file:{Path(path).resolve()}?mode=ro", uri=True,
                                        check_same_thread=False, isolation_level=None)
-        else:
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
-            self._db = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
         self._db.execute("PRAGMA foreign_keys=ON")
-        if not read_only:
-            self._db.execute("PRAGMA journal_mode=WAL") if path is not None else None
-            self._db.executescript(SCHEMA + _triggers())
-            if "created_at" not in [r[1] for r in self._db.execute("PRAGMA table_info(blobs)").fetchall()]:
-                self._db.execute("ALTER TABLE blobs ADD COLUMN created_at TEXT")   # 보존 기간(D88 U4) 이전에 만든 DB
-            self._db.execute("INSERT OR IGNORE INTO meta(k, v) VALUES('schema_version', ?)", (SCHEMA_VERSION,))
-        row = self._db.execute("SELECT v FROM meta WHERE k='schema_version'").fetchone()
-        if row is None or row[0] != SCHEMA_VERSION:
+        try:
+            hashes = [r[0] for r in self._db.execute("SELECT migration_hash FROM qa_migration")]
+        except sqlite3.Error:
+            hashes = None            # 마이그레이션 표가 없다 = 도입 이전 DB를 읽기 전용으로 열었다
+        if hashes is None or not schema_matches("sqlite", hashes):
+            self._db.close()
             raise BoundaryError("UNAVAILABLE", "문항 저장소 DB 형식을 알 수 없다")
 
     def close(self):
         with self._lock:
             self._db.close()
+        if self._tmpdir:
+            shutil.rmtree(self._tmpdir, ignore_errors=True)
+            self._tmpdir = None
 
     def _q(self, sql, args=()):
         with self._lock:

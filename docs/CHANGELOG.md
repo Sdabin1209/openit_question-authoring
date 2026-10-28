@@ -1,5 +1,13 @@
 # 변경 이력
 
+## 미배포 (2026-10-29) 단위 4a-B: 스키마를 yoyo 마이그레이션으로 (D111, ADR 0017)
+
+- 계약 핀 boundary-contracts v2.2.2(서버가 앱 전에 내는 413/414/431을 계약 클라이언트가 INVALID_RECORD로 읽는다).
+- 시작 때 DDL(`CREATE IF NOT EXISTS`, 코드 안 `ALTER TABLE`, `meta.schema_version`)을 지우고 `question_authoring/migrations/`의 yoyo 마이그레이션 2개(0001 최초, 0002 `blobs.created_at`)로 바꿨다. 도입 이전 DB는 그대로 받아들인다.
+- 동작 변경: 이력 표 `qa_migration`이 코드가 아는 목록과 다르면(미래 DB, 또는 읽기 전용으로 연 미적용 DB) `UNAVAILABLE`. 새 DB에는 `meta` 표를 만들지 않는다. PostgreSQL 스키마 준비는 advisory lock 대신 yoyo 잠금을 쓴다(쓰기 직렬화용 advisory lock은 그대로).
+- SQLite `path=None`(시험)은 닫을 때 지우는 임시 파일 DB다.
+- 의존: yoyo-migrations 9.0.0(+ sqlparse, tabulate, importlib_metadata, zipp), `requirements.lock`.
+
 ## 미배포 (2026-10-29) 단위 4a-A: HTTP 서버를 WSGI + waitress로 (D111, ADR 0016)
 
 - 직접 만든 서버 코드 삭제: `ThreadingHTTPServer` 핸들러, 동시 요청 세마포어, 소켓 timeout, 본문 크기·Content-Length 검사. `Api.handle()`은 그대로이고 `wsgi_app()`이 감싼다.

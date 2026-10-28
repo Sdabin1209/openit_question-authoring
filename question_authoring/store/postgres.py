@@ -3,7 +3,7 @@
 - 버전·검수·변경 분류 테이블은 삽입만 허용한다(UPDATE/DELETE는 트리거가 막는다, D25).
 - 쓰기는 트랜잭션 하나 안에서, 트랜잭션 수준 advisory lock으로 직렬화한다(SQLite의 BEGIN IMMEDIATE에 해당).
   그래서 "다음 버전 번호는 마지막 + 1" 검사와 삽입 사이에 다른 쓰기가 끼어들지 못한다(여러 프로세스 포함).
-- 시작 시 스키마를 멱등하게 만든다(IF NOT EXISTS, 같은 lock 아래). 읽기 전용 연결은 만들지 않고 형식만 확인한다.
+- 시작 시 yoyo 마이그레이션을 적용한다(ADR 0017). 읽기 전용 연결은 적용하지 않고 적용 상태만 확인한다.
 - 접속 문자열(암호 포함)은 로그·오류·예외 메시지에 쓰지 않는다. 오류에는 예외 종류와 SQLSTATE만 낸다.
 - 대기 상한(docs/boundary.md "DB 대기 상한"): 접속은 connect_timeout, 문장은 서버 쪽 statement_timeout. 서버가 얼어 응답이 없으면
   서버 쪽 값은 소용없으므로 호출 하나가 statement_timeout + 1초 안에 안 끝나면 클라이언트가 소켓을 닫아 끝낸다(UNAVAILABLE).
@@ -23,28 +23,9 @@ import psycopg.conninfo
 
 from boundary_contracts.errors import BoundaryError
 from .base import AuthoringStore, bank_hash
+from .migrate import migrate_postgres, schema_matches
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS versions(
-  qsid TEXT NOT NULL, version_no INTEGER NOT NULL, content_hash TEXT NOT NULL, bank TEXT NOT NULL,
-  source TEXT, PRIMARY KEY(qsid, version_no));
-CREATE TABLE IF NOT EXISTS reviews(
-  seq BIGSERIAL PRIMARY KEY, review_id TEXT NOT NULL UNIQUE, qsid TEXT NOT NULL,
-  version_no INTEGER NOT NULL, record TEXT NOT NULL);
-CREATE INDEX IF NOT EXISTS reviews_ver ON reviews(qsid, version_no);
-CREATE TABLE IF NOT EXISTS changes(
-  qsid TEXT NOT NULL, version_no INTEGER NOT NULL, record TEXT NOT NULL, PRIMARY KEY(qsid, version_no));
-CREATE TABLE IF NOT EXISTS drafts(
-  seq BIGSERIAL, draft_id TEXT PRIMARY KEY, qsid TEXT NOT NULL, record TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS blobs(source_hash TEXT PRIMARY KEY, filename TEXT NOT NULL, data BYTEA NOT NULL, created_at TEXT);
-ALTER TABLE blobs ADD COLUMN IF NOT EXISTS created_at TEXT;
-CREATE OR REPLACE FUNCTION qa_immutable() RETURNS trigger AS $$
-BEGIN RAISE EXCEPTION '% 는 불변이다', TG_TABLE_NAME USING ERRCODE = 'integrity_constraint_violation'; END;
-$$ LANGUAGE plpgsql;
-"""
-IMMUTABLE = ["versions", "reviews", "changes"]
-SCHEMA_VERSION = "1"
+# 스키마는 question_authoring/migrations/postgres/ 의 yoyo 마이그레이션이 만든다(ADR 0017)
 # 기본 상한(초). 근거는 docs/boundary.md "DB 대기 상한".
 # 값의 근거와 측정 여부는 docs/adr/0007-요청-한도와-timeout-값.md. 정상 문장은 수 ms(이 PC 측정), 3초는 느린 디스크·잠깐의 락 대기를 견디는 여유값[제안]
 DEFAULT_CONNECT_TIMEOUT = 3.0
@@ -52,7 +33,7 @@ DEFAULT_STATEMENT_TIMEOUT = 3.0
 DEFAULT_PROBE_TIMEOUT = 2.0
 DEFAULT_LARGE_STATEMENT_TIMEOUT = 30.0   # 8MiB 삽입 실측 0.09초(이 PC)의 약 300배 여유. 실제 환경 값은 측정 안 함. ADR 0003, 0007
 #  # 큰 자료(원본 자료, 초안, 문항 세트 버전)를 쓰는 쓰기 전용 문장 상한
-_INIT_STATEMENT_MS = 30000   # 시작 때 스키마 생성은 다른 인스턴스의 advisory lock을 기다릴 수 있어 더 길게 준다(그래도 무한은 아니다)
+_INIT_STATEMENT_MS = 30000   # 시작 때 마이그레이션 문장 상한. 다른 인스턴스의 yoyo 잠금을 기다릴 수 있어 더 길게 준다(그래도 무한은 아니다), 측정 안 함
 _LOCK_KEY = 0x71A07E5  # 이 서비스의 쓰기 직렬화 키(데이터베이스 안에서만 의미가 있다)
 
 
@@ -99,8 +80,7 @@ class PostgresQuestionStore(AuthoringStore):
             self._conn()
             if not read_only:
                 self._init_schema()
-            row = self._q("SELECT v FROM meta WHERE k='schema_version'")
-            if not row or row[0][0] != SCHEMA_VERSION:
+            if not self._schema_current():
                 self.close()
                 raise BoundaryError("UNAVAILABLE", "문항 저장소 DB 형식을 알 수 없다")
 
@@ -146,19 +126,17 @@ class PostgresQuestionStore(AuthoringStore):
             pass
 
     def _init_schema(self) -> None:
-        c = self._conn()
         try:
-            with c.transaction():
-                c.execute(f"SET LOCAL statement_timeout = {_INIT_STATEMENT_MS}")
-                c.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
-                c.execute(SCHEMA)
-                for t in IMMUTABLE:
-                    c.execute(f"DROP TRIGGER IF EXISTS {t}_immutable ON {t}")
-                    c.execute(f"CREATE TRIGGER {t}_immutable BEFORE UPDATE OR DELETE ON {t} "
-                              f"FOR EACH ROW EXECUTE FUNCTION qa_immutable()")
-                c.execute("INSERT INTO meta(k, v) VALUES('schema_version', %s) ON CONFLICT DO NOTHING", (SCHEMA_VERSION,))
-        except psycopg.Error as e:
+            migrate_postgres(self._params(self.connect_timeout, _INIT_STATEMENT_MS / 1000))
+        except Exception as e:   # 원문에 접속 문자열이 있을 수 있어 종류만 남긴다
             raise BoundaryError("UNAVAILABLE", f"저장소 스키마 준비 실패: {_why(e)}") from None
+
+    def _schema_current(self) -> bool:
+        try:
+            rows = self._q("SELECT migration_hash FROM qa_migration")
+        except BoundaryError:
+            return False             # 마이그레이션 표가 없다 = 도입 이전 DB를 읽기 전용으로 열었다
+        return schema_matches("postgres", [r[0] for r in rows])
 
     def close(self):
         with self._lock:
@@ -368,7 +346,7 @@ class PostgresQuestionStore(AuthoringStore):
 
     def is_ready(self) -> bool:
         """/readyz용 DB 확인. **주 연결도 self._lock도 쓰지 않는다**: 쓰기가 연결을 쥐고 기다리는 중이어도 막히지 않는다.
-        별도 짧은 연결로 접속하고(connect_timeout·statement_timeout = probe_timeout) 형식 표지를 읽는다.
+        별도 짧은 연결로 접속하고(connect_timeout·statement_timeout = probe_timeout) 마이그레이션 적용 상태를 읽는다.
         접속 뒤 서버가 얼어도 probe_timeout 안에 호출자가 돌아온다(작업 스레드를 기다리다 포기하고 그 소켓을 닫는다).
         실패 원인은 돌려주지 않는다(접속 정보가 섞일 수 있다)."""
         done = threading.Event()
@@ -380,8 +358,8 @@ class PostgresQuestionStore(AuthoringStore):
                     box["conn"] = c
                     if box.get("giveup"):
                         return
-                    row = c.execute("SELECT v FROM meta WHERE k='schema_version'").fetchone()
-                    box["ok"] = bool(row) and row[0] == SCHEMA_VERSION
+                    rows = c.execute("SELECT migration_hash FROM qa_migration").fetchall()
+                    box["ok"] = schema_matches("postgres", [r[0] for r in rows])
             except Exception:
                 box["ok"] = False
             finally:

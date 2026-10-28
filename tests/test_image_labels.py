@@ -8,7 +8,7 @@ import re
 import pytest
 
 DOCKERFILE = pathlib.Path(__file__).resolve().parent.parent / "Dockerfile"
-SAMPLE_ARGS = {"COMMIT": "85b3552", "BOUNDARY_TAG": "v2.2.1", "SURVEY_SCHEMA_TAG": "1"}
+SAMPLE_ARGS = {"COMMIT": "85b3552", "BOUNDARY_TAG": "v2.2.2", "SURVEY_SCHEMA_TAG": "1"}
 
 
 def dockerfile_labels() -> dict:
@@ -38,7 +38,7 @@ def test_required_labels_present_and_well_formed():
 
 
 def test_labels_validate_against_contract_schema():
-    """계약 v2.2.1부터 ImageLabels가 패키지에 있다. 없으면 시험이 실패해야 한다(건너뛰지 않는다)."""
+    """계약 v2.2.2부터 ImageLabels가 패키지에 있다. 없으면 시험이 실패해야 한다(건너뛰지 않는다)."""
     from boundary_contracts import validator
     assert list(validator("ImageLabels").iter_errors(dockerfile_labels())) == []
 
