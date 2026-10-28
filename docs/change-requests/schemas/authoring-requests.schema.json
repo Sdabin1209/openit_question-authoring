@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openit.example/question-authoring/authoring-requests.schema.json",
+  "title": "question-authoring 저작 API 요청 본문(JSON)과 쿼리",
+  "description": "사람(저자·검수자)·콘솔·gateway가 이 영역에 보내는 요청. 방향: 호출자 -> question-authoring. 각 $defs가 엔드포인트 하나의 요청이다. 모르는 키는 거부한다(additionalProperties:false): 오타 난 필드가 조용히 무시되어 저자가 보낸 값이 저장되지 않는 일을 막으려는 것이다.",
+  "$defs": {
+    "CreateDraftRequest": {
+      "description": "POST /v1/drafts",
+      "type": "object",
+      "required": [
+        "question_set_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "question_set_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "base_version": {
+          "description": "'latest'(기본) 또는 버전 Id. 새 문항 세트면 'latest'는 기반 없음",
+          "type": "string",
+          "default": "latest"
+        }
+      }
+    },
+    "MaterialQuery": {
+      "description": "POST /v1/materials 의 쿼리 매개변수(본문은 자료 파일 바이트, 최대 8MiB). 값은 모두 문자열로 온다",
+      "type": "object",
+      "required": [
+        "question_set_id",
+        "filename"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "question_set_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "filename": {
+          "type": "string",
+          "minLength": 1
+        },
+        "base_version": {
+          "type": "string"
+        },
+        "extractor": {
+          "type": "string"
+        },
+        "accept_phi_warning": {
+          "enum": [
+            "true",
+            "false"
+          ]
+        }
+      }
+    },
+    "EditsRequest": {
+      "description": "POST /v1/drafts/{id}/edits",
+      "type": "object",
+      "required": [
+        "edits"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "edits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Edit"
+          }
+        }
+      }
+    },
+    "Edit": {
+      "description": "초안(QuestionBank 모양)에 대한 JSON 포인터 편집",
+      "type": "object",
+      "required": [
+        "op",
+        "path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "enum": [
+            "set",
+            "remove",
+            "append"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "value": {}
+      }
+    },
+    "AcknowledgeRequest": {
+      "description": "POST /v1/drafts/{id}/acknowledge",
+      "type": "object",
+      "required": [
+        "flag_ids"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "flag_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^fl-[0-9a-f]+(-[0-9]+)?$"
+          }
+        }
+      }
+    },
+    "ConfirmRequest": {
+      "description": "POST /v1/drafts/{id}/confirm",
+      "type": "object",
+      "required": [
+        "preview_hash"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "preview_hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "DiscardRequest": {
+      "description": "POST /v1/drafts/{id}/discard",
+      "type": "object",
+      "required": [
+        "reason"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "AddReviewRequest": {
+      "description": "POST /v1/reviews (검수 역할이 만들어진 버전에 검수를 덧붙인다)",
+      "type": "object",
+      "required": [
+        "question_set",
+        "decision",
+        "clinical_basis_approved"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "question_set": {
+          "type": "object",
+          "required": [
+            "id",
+            "version",
+            "content_hash"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "content_hash": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        },
+        "decision": {
+          "enum": [
+            "APPROVED",
+            "REJECTED",
+            "CHANGES_REQUESTED"
+          ]
+        },
+        "clinical_basis_approved": {
+          "type": "boolean",
+          "description": "불리언만. 문자열 'false'는 거부한다"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "review_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        }
+      }
+    },
+    "SignalsQuery": {
+      "description": "GET /v1/signals 의 쿼리 매개변수",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "question_set_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "review_status": {
+          "type": "string"
+        },
+        "max_cases": {
+          "type": "string",
+          "pattern": "^[0-9]+$",
+          "description": "정수 1~20000(기본 2000)"
+        }
+      }
+    }
+  }
+}
