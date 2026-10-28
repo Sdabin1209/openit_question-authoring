@@ -1,5 +1,11 @@
 # 변경 이력
 
+## 미배포 (2026-10-29) 단위 4a-A: HTTP 서버를 WSGI + waitress로 (D111, ADR 0016)
+
+- 직접 만든 서버 코드 삭제: `ThreadingHTTPServer` 핸들러, 동시 요청 세마포어, 소켓 timeout, 본문 크기·Content-Length 검사. `Api.handle()`은 그대로이고 `wsgi_app()`이 감싼다.
+- 동작 변경(ADR 0016): 본문 상한 초과 400 -> 413(헤더 단계), 요청 한도 초과 503 -> 대기, 인증 전 본문 미수신 없음(waitress가 본문을 받은 뒤 앱 호출), 종료는 처리 중 요청만 기다림, 지원 안 하는 메서드 501 -> JSON 404.
+- 의존 추가: waitress 3.0.2(`requirements.lock`). `Api.has_credentials` 삭제(`auth_failure`로 대체).
+
 ## 미배포 (2026-10-29) 단위 3: 계약 스키마로 경계 검증 (boundary-contracts v2.2.1)
 
 - 핀: boundary-contracts v2.2.1, openit-survey-schema survey-schema-v1.1.0(헤드가 태그를 단다). turn-engine·model-runtime은 코드·설치 의존이 없다(이미지 라벨 `n/a`). Dockerfile ARG 기본값 `unknown` -> `n/a`.

@@ -15,6 +15,7 @@ import pytest
 from conftest import example_text
 from helpers import AUTHOR
 from question_authoring.__main__ import build, check_environment, main, purge_once
+from helpers import stop_http
 from question_authoring.http_api import Api, make_server
 from question_authoring.service import Actor, AuthoringService
 from question_authoring.signals import question_ids_from_trace
@@ -76,31 +77,6 @@ def raw(port, data, wait=3):
         out += b"<TIMEOUT>"
     s.close()
     return out
-
-
-def test_unauthenticated_body_is_not_read_and_concurrency_is_capped(svc):
-    api = Api(svc, {"tok": AUTHOR})
-    srv = make_server(api, "127.0.0.1", 0, request_timeout=5, max_concurrent=1)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    port = srv.server_address[1]
-    try:
-        t = time.monotonic()
-        # 인증 없이 8MiB를 보내겠다고 하고 본문은 보내지 않는다: 본문을 기다리지 않고 바로 401
-        out = raw(port, b"POST /v1/materials?question_set_id=q&filename=f.txt HTTP/1.1\r\nHost: x\r\nContent-Length: 8000000\r\n\r\n")
-        assert b" 401 " in out.split(b"\r\n")[0] and time.monotonic() - t < 2
-        # 요청 하나가 자리를 쥐고(본문을 기다리는 중) 있으면 다음 인증된 요청은 503 + Retry-After, healthz는 그대로 응답
-        holder = socket.create_connection(("127.0.0.1", port), timeout=5)
-        holder.sendall(b"POST /v1/drafts HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer tok\r\nContent-Length: 100\r\n\r\n")
-        time.sleep(0.5)
-        out = raw(port, b"GET /v1/drafts HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer tok\r\n\r\n")
-        assert b" 503 " in out.split(b"\r\n")[0] and b"Retry-After" in out
-        assert urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=3).status == 200
-        holder.close()
-        time.sleep(0.5)
-        out = raw(port, b"GET /v1/drafts HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer tok\r\nConnection: close\r\n\r\n")
-        assert b" 200 " in out.split(b"\r\n")[0]
-    finally:
-        srv.shutdown(); srv.server_close()
 
 
 def test_sigterm_stops_the_server_promptly(tmp_path):
@@ -262,64 +238,6 @@ def test_purge_threaded_with_uploads_never_loses_a_referenced_source(validators)
     stop.set(); t.join()
     assert not lost
     store.close()
-
-
-def _start_server(tmp_path, grace="8"):
-    env = dict(os.environ, QA_DEV_MODE="1", QA_DB_PATH=str(tmp_path / "q.db"), QA_PORT="0", QA_HOST="127.0.0.1",
-               QA_AUTHOR_TOKENS="t:dr-kim:question-author", QA_SHUTDOWN_GRACE_SECONDS=grace, QA_REQUEST_TIMEOUT_SECONDS="30")
-    # 포트를 알려면 QA_PORT=0이 아니라 빈 포트를 고른다
-    sk = socket.socket(); sk.bind(("127.0.0.1", 0)); port = sk.getsockname()[1]; sk.close()
-    env["QA_PORT"] = str(port)
-    p = subprocess.Popen([sys.executable, "-m", "question_authoring"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    assert "시작" in p.stdout.readline()
-    for _ in range(50):
-        try:
-            urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=1)
-            break
-        except OSError:
-            time.sleep(0.1)
-    return p, port
-
-
-def test_sigterm_waits_for_in_flight_request(tmp_path):
-    p, port = _start_server(tmp_path)
-    try:
-        body = example_text()
-        c = socket.create_connection(("127.0.0.1", port), timeout=15)
-        c.sendall((f"POST /v1/materials?question_set_id=qs-s&filename=f.txt HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer t\r\n"
-                   f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n").encode() + body[:100])
-        time.sleep(0.5)                                    # 요청이 처리 중(본문을 받는 중)일 때
-        p.send_signal(signal.SIGTERM)
-        time.sleep(0.5)
-        assert p.poll() is None                            # 기다리고 있다
-        c.sendall(body[100:])
-        out = b""
-        while True:
-            chunk = c.recv(65536)
-            if not chunk:
-                break
-            out += chunk
-        assert b" 200 " in out.split(b"\r\n")[0] and b"PARSED" in out     # 진행 중이던 요청이 정상 응답을 받았다
-        assert p.wait(timeout=10) == 0
-    finally:
-        if p.poll() is None:
-            p.kill()
-
-
-def test_sigterm_gives_up_after_grace(tmp_path):
-    p, port = _start_server(tmp_path, grace="1")
-    try:
-        c = socket.create_connection(("127.0.0.1", port), timeout=15)
-        c.sendall(b"POST /v1/drafts HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer t\r\nContent-Length: 50\r\n\r\n{")
-        time.sleep(0.5)
-        t = time.monotonic()
-        p.send_signal(signal.SIGTERM)
-        assert p.wait(timeout=10) == 0
-        assert 0.8 < time.monotonic() - t < 5
-        c.close()
-    finally:
-        if p.poll() is None:
-            p.kill()
 
 
 def test_gateway_email_style_user_ids(validators):

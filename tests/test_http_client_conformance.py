@@ -8,6 +8,7 @@ from boundary_contracts.clients import HttpQuestionReader
 from boundary_contracts.errors import BoundaryError
 from boundary_contracts.sdk import QuestionReader
 
+from helpers import stop_http
 from question_authoring.http_api import Api, make_server
 from question_authoring.service import Actor
 from helpers import AUTHOR, publish
@@ -19,15 +20,11 @@ READ = "read-tok"
 def served(svc):
     api = Api(svc, {"auth-tok": Actor("dr-kim", "question-author")}, read_tokens={READ: "synthetic-data"})
     srv = make_server(api, "127.0.0.1", 0)
-    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t = threading.Thread(target=srv.run, daemon=True)
     t.start()
-    url = f"http://127.0.0.1:{srv.server_address[1]}"
+    url = f"http://127.0.0.1:{srv.effective_port}"
     yield svc, url, srv
-    try:
-        srv.shutdown()
-    except Exception:
-        pass
-    srv.server_close()
+    stop_http(srv)
 
 
 def err(code, fn, *a, **k):
@@ -120,7 +117,7 @@ def test_server_down_is_unavailable(served):
     publish(svc)
     c = HttpQuestionReader(url, READ, timeout=2)
     assert c.list_ids()[0] == ["qs-main"]
-    srv.shutdown(); srv.server_close()
+    stop_http(srv)
     e = err("UNAVAILABLE", c.list_ids)
     assert e.retryable
     s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()   # 아무도 듣지 않는 포트

@@ -9,6 +9,7 @@ import threading
 
 import pytest
 
+from helpers import stop_http
 from question_authoring.http_api import Api, make_server
 from question_authoring.service import Actor
 
@@ -21,9 +22,9 @@ def base(svc):
               read_tokens={READ: "synthetic-data"}, gateway_tokens={GW},
               user_roles={"u-kim": "question-author", "u-rev": "clinical-reviewer"})
     srv = make_server(api, "127.0.0.1", 0)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    yield srv.server_address[1]
-    srv.shutdown(); srv.server_close()
+    threading.Thread(target=srv.run, daemon=True).start()
+    yield srv.effective_port
+    stop_http(srv)
 
 
 def raw(port, method, path, headers=None, body=None):

@@ -15,6 +15,7 @@ from boundary_contracts.errors import BoundaryError
 
 from conftest import example_text
 from helpers import publish
+from helpers import stop_http
 from question_authoring.http_api import Api, make_server, MAX_BODY
 from question_authoring.service import Actor
 
@@ -24,11 +25,11 @@ AUTH = {"Authorization": "Bearer tok-a"}
 @contextlib.contextmanager
 def serving(api, **kw):
     srv = make_server(api, "127.0.0.1", 0, **kw)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    threading.Thread(target=srv.run, daemon=True).start()
     try:
-        yield srv.server_address[1]
+        yield srv.effective_port
     finally:
-        srv.shutdown(); srv.server_close()
+        stop_http(srv)
 
 
 def api_of(svc, **kw):
@@ -92,12 +93,15 @@ def test_bad_content_length_is_400(svc, cl):
     assert out.startswith(b"HTTP/1.0 400") or out.startswith(b"HTTP/1.1 400"), out[:60]
 
 
-def test_oversize_and_non_json_are_400(svc):
-    api = api_of(svc)
-    assert api.handle("POST", "/v1/drafts", AUTH, b"not json")[0] == 400
-    with serving(api, request_timeout=2) as port:
-        out = raw(port, post_head(MAT, MAX_BODY + 1))
-    assert b" 400 " in out.split(b"\r\n")[0]
+def test_non_json_is_400(svc):
+    assert api_of(svc).handle("POST", "/v1/drafts", AUTH, b"not json")[0] == 400
+
+
+def test_oversize_is_413_before_the_body_is_sent(svc):
+    """동작 변경(단위 4a): 본문 상한 초과는 waitress가 헤더 단계에서 413(RFC 9110 15.5.14)으로 거절한다. 이전에는 앱이 400(계약 CONVENTIONS 9절 표)을 냈다. ADR 0016"""
+    with serving(api_of(svc), request_timeout=2) as port:
+        out = raw(port, post_head(MAT, MAX_BODY + 1))      # 본문은 보내지 않는다
+    assert b" 413 " in out.split(b"\r\n")[0], out[:80]
 
 
 # ---- E2 F5: 예상 밖의 서버 오류도 JSON으로 답한다(연결을 끊지 않는다) ----

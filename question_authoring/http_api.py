@@ -1,6 +1,6 @@
 """저작 API의 HTTP 계층(얇게). 로직은 service.py에 있다. 관리자 콘솔은 이 API의 클라이언트로만 붙는다(D08).
 
-handle()은 소켓 없이 시험할 수 있는 순수 함수 형태이고, make_server()가 표준 라이브러리 서버로 감싼다.
+handle()은 소켓 없이 시험할 수 있는 순수 함수 형태이고, wsgi_app()이 WSGI 앱으로, make_server()가 waitress로 감싼다.
 인증은 `Authorization: Bearer <토큰>`이고 토큰 -> (actor id, 역할) 표는 서비스 진입점이 환경 변수에서 만들어 넘긴다.
 """
 from __future__ import annotations
@@ -8,20 +8,19 @@ from __future__ import annotations
 import hmac
 import json
 import re
-import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import time
+from http import HTTPStatus
 from typing import Callable, Iterable, Mapping, Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
 from boundary_contracts.errors import BoundaryError
+from waitress import create_server
 
 from . import contract
 from .service import Actor, AuthoringService
 
 STATUS = {"NOT_FOUND": 404, "INVALID_RECORD": 400, "UNSUPPORTED_VERSION": 422, "CONFLICT": 409,
           "INTEGRITY_ERROR": 422, "FAILED_PRECONDITION": 412, "PERMISSION_DENIED": 403, "UNAVAILABLE": 503}
-# 왜 8MiB: 도입 시 근거 기록 없음. 문항 자료는 작은 텍스트 양식이라 넉넉한 선이고, 동시 요청 상한(32)과 곱해 메모리 상한(256MiB)을 계산할 수 있다. ADR 0007
-MAX_BODY = 8 * 1024 * 1024
 
 
 class AuthError(BoundaryError):
@@ -217,10 +216,6 @@ class Api:
     def _principal(self, headers) -> Optional[Actor]:
         return self._classify(headers)[0]
 
-    def has_credentials(self, headers) -> bool:
-        """본문을 읽기 전의 빠른 검사: 받아들일 자격인가. 8MiB를 받은 뒤에야 거절하지 않으려는 것이다."""
-        return self.auth_failure(headers) is None
-
     def _actor(self, headers) -> Actor:
         actor, _, f = self._classify(headers)
         if actor is not None:
@@ -288,89 +283,45 @@ class Api:
         raise BoundaryError("NOT_FOUND", f"없는 경로: {method} {path}")
 
 
-def make_server(api: Api, host: str, port: int, request_timeout: Optional[float] = 30.0,
-                max_concurrent: int = 32) -> ThreadingHTTPServer:
-    # 동시에 처리하는 요청 수의 상한(8MiB 본문 x N이 메모리를 채우지 않게). /healthz, /readyz는 세지 않는다.
-    # 기본 32: 근거 기록 없음(저자는 관리자 소수라는 가정에서 넉넉하게 잡은 값, 측정 안 함).
-    slots = threading.BoundedSemaphore(max_concurrent)
-    inflight = [0]                      # 처리 중인 요청 수(우아한 종료가 기다린다)
-    inflight_lock = threading.Lock()
-
-    class H(BaseHTTPRequestHandler):
-        timeout = request_timeout   # 소켓 읽기·쓰기가 이 시간 멈추면 끊는다. 멈춘 업로드가 스레드를 영원히 쥐지 못하게 한다
-
-        def _reply(self, status, out, extra=None):
-            data = json.dumps(out, ensure_ascii=False).encode("utf-8")
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(data)))
-            if status == 401:
-                self.send_header("WWW-Authenticate", "Bearer")   # RFC 9110 11.6.1(401은 도전 필수), RFC 6750 3절(Bearer)
-            for k, v in (extra or {}).items():
-                self.send_header(k, v)
-            self.end_headers()
-            self.wfile.write(data)
-
-        def _do(self, method):
-            with inflight_lock:
-                inflight[0] += 1
-            try:
-                self._do_checked(method)
-            finally:
-                with inflight_lock:
-                    inflight[0] -= 1
-
-        def _do_checked(self, method):
-            path = self.path.split("?", 1)[0]
-            if path in ("/healthz", "/readyz"):
-                return self._do_inner(method)
-            f = api.auth_failure(dict(self.headers))
-            if f is not None:
-                self.close_connection = True    # 인증 없는 호출의 본문은 읽지 않는다
-                return self._reply(f, BoundaryError("PERMISSION_DENIED", "인증이 필요하다" if f == 401 else "권한이 없다").to_record())
-            if not slots.acquire(blocking=False):
-                self.close_connection = True
-                return self._reply(503, BoundaryError("UNAVAILABLE", "동시 요청이 너무 많다. 잠시 뒤 다시 시도").to_record(),
-                                   {"Retry-After": "2"})
-            try:
-                return self._do_inner(method)
-            finally:
-                slots.release()
+# 왜 8MiB: 도입 시 근거 기록 없음. 문항 자료는 작은 텍스트 양식이라 넉넉한 선이다. waitress의 max_request_body_size로 강제한다(초과는 헤더 단계에서 413). ADR 0016
+MAX_BODY = 8 * 1024 * 1024
 
 
-        def _do_inner(self, method):
-            try:
-                n = int(self.headers.get("Content-Length") or 0)
-                if n < 0:
-                    raise ValueError
-            except ValueError:
-                n, bad = 0, True
-            else:
-                bad = False
-            body = b""
-            if bad:
-                status, out = 400, BoundaryError("INVALID_RECORD", "Content-Length가 올바르지 않다").to_record()
-            elif n > MAX_BODY:
-                status, out = 400, BoundaryError("INVALID_RECORD", "본문이 너무 크다").to_record()   # 왜 400: CONVENTIONS 9절 표가 INVALID_RECORD=400으로 고정, 413은 표에 없다
-                self.close_connection = True   # 읽지 않은 본문이 남는다
-            else:
-                try:
-                    body = self.rfile.read(n) if n else b""
-                except (OSError, ValueError):  # 읽는 중 멈춤(timeout)·끊김: 반쯤 온 자료는 처리하지 않는다
-                    self.close_connection = True
-                    return
-                if len(body) < n:              # 업로드 도중 연결이 끊김: 처리하지 않는다(저장 없음)
-                    self.close_connection = True
-                    return
-                status, out = api.handle(method, self.path, dict(self.headers), body)
-            self._reply(status, out)
+def wsgi_app(api: Api):
+    """Api.handle()을 WSGI(PEP 3333) 앱으로 감싼다. 서버(waitress)가 소켓·스레드·timeout·본문 상한을 맡는다. ADR 0016"""
+    def app(environ, start_response):
+        headers = {k[5:].replace("_", "-").title(): v for k, v in environ.items() if k.startswith("HTTP_")}
+        n = int(environ.get("CONTENT_LENGTH") or 0)      # waitress가 Content-Length 형식·상한을 이미 검증했다(R7)
+        body = environ["wsgi.input"].read(n) if n else b""
+        status, out = api.handle(environ["REQUEST_METHOD"], environ["REQUEST_URI"], headers, body)
+        data = json.dumps(out, ensure_ascii=False).encode("utf-8")
+        hdrs = [("Content-Type", "application/json; charset=utf-8"), ("Content-Length", str(len(data)))]
+        if status == 401:
+            hdrs.append(("WWW-Authenticate", "Bearer"))   # RFC 9110 11.6.1(401은 도전 필수), RFC 6750 3절(Bearer)
+        start_response(f"{status} {HTTPStatus(status).phrase}", hdrs)
+        return [data]
+    return app
 
-        def do_GET(self): self._do("GET")
-        def do_POST(self): self._do("POST")
 
-        def log_message(self, fmt, *args):  # 표준 출력으로 낸다(개인 정보 없는 요청 줄만)
-            print("%s %s" % (self.address_string(), fmt % args), flush=True)
+def make_server(api: Api, host: str, port: int, request_timeout: float = 30.0, max_concurrent: int = 32):
+    """waitress 서버(단일 프로세스, 다중 스레드). run()으로 돌리고 close()로 닫는다. 값의 출처는 ADR 0016.
+    threads=max_concurrent: 동시에 처리하는 요청 수. 넘는 요청은 줄 서서 기다린다(이전의 503 거절을 대체).
+    channel_timeout=request_timeout: 이 시간 동안 아무 입출력이 없는 연결(멈춘 업로드)을 끊는다.
+    cleanup_interval=1: 기본 30초면 channel_timeout이 최대 30초 늦게 적용된다. 정수 초의 최솟값."""
+    return create_server(
+        wsgi_app(api), host=host, port=port, threads=max_concurrent, channel_timeout=max(1, int(round(request_timeout))),
+        cleanup_interval=1, max_request_body_size=MAX_BODY, clear_untrusted_proxy_headers=True, map={})
 
-    srv = ThreadingHTTPServer((host, port), H)
-    srv.inflight = lambda: inflight[0]  # type: ignore[attr-defined]
-    return srv
+
+def drain(srv, grace: float) -> int:
+    """종료 신호 처리: 새 연결을 받지 않고, 처리 중인 요청과 그 응답 전송을 유예 시간까지 기다린다. 못 끝낸 요청 수를 돌려준다.
+    왜 직접: waitress는 우아한 종료(진행 중 요청 마치기)를 하지 않는다(close가 바로 스레드를 멈춘다)."""
+    srv.accepting = False
+    dispatcher = srv.task_dispatcher
+    end = time.monotonic() + grace
+    while time.monotonic() < end and (dispatcher.active_count or dispatcher.queue):
+        time.sleep(0.05)
+    left = dispatcher.active_count + len(dispatcher.queue)
+    while time.monotonic() < end and any(getattr(c, "total_outbufs_len", 0) for c in list(srv._map.values())):
+        time.sleep(0.05)
+    return left

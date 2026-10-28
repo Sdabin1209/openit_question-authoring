@@ -8,6 +8,7 @@ import pytest
 from boundary_contracts import SecretError
 
 from question_authoring.__main__ import build
+from helpers import stop_http
 from question_authoring.http_api import make_server
 
 AUTH_SECRET = "SECRET-author-tok-9f31"
@@ -43,8 +44,8 @@ def test_secrets_from_files_work_and_do_not_leak(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("QA_FAILURES_URL", "http://127.0.0.1:1")
     api, store = build()
     srv = make_server(api, "127.0.0.1", 0)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    threading.Thread(target=srv.run, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.effective_port}"
     try:
         bodies = []
         st, b = _call(base, "/v1/drafts", AUTH_SECRET); assert st == 200; bodies.append(b)
@@ -57,7 +58,7 @@ def test_secrets_from_files_work_and_do_not_leak(tmp_path, monkeypatch, capsys):
         st, b = _call(base, "/healthz"); bodies.append(b)
         st, b = _call(base, "/v1/nope", AUTH_SECRET, "POST"); bodies.append(b)
     finally:
-        srv.shutdown(); srv.server_close()
+        stop_http(srv)
     out = capsys.readouterr()
     text = "\n".join(bodies) + out.out + out.err
     for s in SECRETS:
@@ -133,13 +134,13 @@ def test_postgres_selected_by_env_and_readyz(tmp_path, monkeypatch, capsys):
         api, store = build()
         assert store.kind == "postgres"
         srv = make_server(api, "127.0.0.1", 0)
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
-        base = f"http://127.0.0.1:{srv.server_address[1]}"
+        threading.Thread(target=srv.run, daemon=True).start()
+        base = f"http://127.0.0.1:{srv.effective_port}"
         try:
             st, b = _call(base, "/readyz"); assert st == 200 and json.loads(b) == {"status": "ready", "db": "postgres"}
             st, b2 = _call(base, "/v1/drafts", AUTH_SECRET); assert st == 200
         finally:
-            srv.shutdown(); srv.server_close()
+            stop_http(srv)
             store.close()
         out = capsys.readouterr()
         pw = u.split("@")[0].split(":")[-1]

@@ -43,7 +43,7 @@ def test_gateway_and_read_tokens_compare_every_candidate(svc, monkeypatch):
     assert api._principal({"Authorization": "Bearer g1", "X-Openit-User": "u1"}).id == "u1"
     assert len(calls) == 3 + 2      # 정적 0 + gateway 3 + 읽기 2: 어느 표에서 맞았는지와 무관하게 모두 비교한다(401/403 분류 도입 뒤)
     calls.clear()
-    assert api.has_credentials({"Authorization": "Bearer r1"}) is True
+    assert (api.auth_failure({"Authorization": "Bearer r1"}) is None) is True
     # 정적 0 + gateway 3 + 읽기 2를 모두 끝까지 비교
     assert len(calls) == 3 + 2
     calls.clear()
@@ -56,9 +56,9 @@ def test_token_semantics_unchanged(svc):
     assert api._principal({"Authorization": "Bearer tok-a"}).id == "dr-kim"
     assert api._principal({"Authorization": "Bearer tok-"}) is None
     assert api._principal({"Authorization": "Bearer tok-aa"}) is None
-    assert api.has_credentials({"Authorization": "Bearer rd"}) is True
-    assert api.has_credentials({"Authorization": "Bearer x"}) is False
-    assert api.has_credentials({}) is False
+    assert (api.auth_failure({"Authorization": "Bearer rd"}) is None) is True
+    assert (api.auth_failure({"Authorization": "Bearer x"}) is None) is False
+    assert (api.auth_failure({}) is None) is False
 
 
 def test_non_ascii_token_does_not_crash(svc):

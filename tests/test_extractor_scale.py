@@ -10,6 +10,7 @@ import pytest
 from conftest import example_text
 from question_authoring.extractors.base import ExtractionFailure
 from question_authoring.extractors.textform import (MAX_LINE_CHARS, MAX_QUESTIONS, TextFormExtractor, _kv_split)
+from helpers import stop_http
 from question_authoring.http_api import MAX_BODY, Api, make_server
 from question_authoring.service import Actor
 
@@ -112,8 +113,8 @@ def test_kv_and_prerequisite_match_the_old_regexes():
 def test_healthz_answers_while_a_large_upload_is_extracted(svc):
     api = Api(svc, {"tok": Actor("dr-kim", "question-author")})
     srv = make_server(api, "127.0.0.1", 0, request_timeout=60)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    port = srv.server_address[1]
+    threading.Thread(target=srv.run, daemon=True).start()
+    port = srv.effective_port
     big = (Q + "".join(f"슬롯 S{i}: 필수\n" for i in range(150)) + "a:b\n" * 1_500_000)[:MAX_BODY].encode()
     done = {}
 
@@ -134,6 +135,6 @@ def test_healthz_answers_while_a_large_upload_is_extracted(svc):
         worst = max(worst, time.monotonic() - t)
         time.sleep(0.05)
     th.join()
-    srv.shutdown(); srv.server_close()
+    stop_http(srv)
     assert worst < 3.0, (worst, done)
     assert done["secs"] < 30, done

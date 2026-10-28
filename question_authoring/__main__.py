@@ -31,13 +31,12 @@ import os
 import signal
 import sys
 import threading
-import time
 from datetime import datetime, timedelta, timezone
 
 from boundary_contracts import read_secret
 
 from . import contract
-from .http_api import Api, make_server
+from .http_api import Api, drain, make_server
 from .service import Actor, AuthoringService
 from .store import AuthoringStore, PostgresQuestionStore, SqliteQuestionStore
 from .validation import Validators
@@ -162,23 +161,23 @@ def main(argv=None) -> int:
     srv = make_server(api, os.environ.get("QA_HOST", "0.0.0.0"), int(os.environ.get("QA_PORT") or 8080),
                       request_timeout=_seconds("QA_REQUEST_TIMEOUT_SECONDS", 30.0),
                       max_concurrent=int(os.environ.get("QA_MAX_CONCURRENT_REQUESTS") or 32))
-
-    def stop(signum, frame):   # PID 1의 Python은 SIGTERM을 기본으로 무시한다. 새 연결을 받지 않고, 아래에서 진행 중 요청을 유예 시간까지 기다린다
-        print("종료 신호를 받았다. 새 요청을 받지 않고 진행 중 요청을 기다린다", flush=True)
-        threading.Thread(target=srv.shutdown, daemon=True).start()
-    signal.signal(signal.SIGTERM, stop)
-    signal.signal(signal.SIGINT, stop)
-    print("question-authoring 시작", flush=True)
-    srv.serve_forever()
-    # 진행 중 요청을 유예 시간까지 기다린다. 기본 8초: docker stop의 기본 대기(10초) 뒤 SIGKILL보다 짧게 끝내려는 값이다(근거: Docker 문서, 측정 안 함)
+    # 왜 기본 8초: docker stop의 기본 대기(10초) 뒤 SIGKILL보다 짧게 끝내려는 값이다(근거: Docker 문서, 측정 안 함)
     grace = _seconds("QA_SHUTDOWN_GRACE_SECONDS", 8.0)
-    end = time.monotonic() + grace
-    while srv.inflight() > 0 and time.monotonic() < end:
-        time.sleep(0.05)
-    left = srv.inflight()
-    srv.server_close()
-    if left:
-        print(f"유예 시간 {grace}초가 지나 처리 중인 요청 {left}개를 두고 종료한다", flush=True)
+
+    def finish():
+        left = drain(srv, grace)
+        if left:
+            print(f"유예 시간 {grace}초가 지나 처리 중인 요청 {left}개를 두고 종료한다", flush=True)
+            os._exit(0)   # 왜: 멈춘 요청 스레드는 못 끊고, waitress의 정상 종료는 스레드를 5초 더 기다린다(유예 8초 + 5초 > docker stop 10초 뒤 SIGKILL)
+        signal.raise_signal(signal.SIGINT)   # 주 스레드의 srv.run()을 끝낸다(waitress는 KeyboardInterrupt에서 스레드를 멈추고 돌아온다)
+
+    def stop(signum, frame):   # PID 1의 Python은 SIGTERM을 기본으로 무시한다. 새 연결을 받지 않고, 진행 중 요청을 유예 시간까지 기다린다
+        print("종료 신호를 받았다. 새 요청을 받지 않고 진행 중 요청을 기다린다", flush=True)
+        threading.Thread(target=finish, daemon=True).start()
+    signal.signal(signal.SIGTERM, stop)
+    print("question-authoring 시작", flush=True)
+    srv.run()
+    srv.close()
     return 0
 
 

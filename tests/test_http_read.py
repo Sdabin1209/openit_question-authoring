@@ -7,6 +7,7 @@ import urllib.request
 import pytest
 from boundary_contracts import canonical, validator
 
+from helpers import stop_http
 from question_authoring.http_api import Api, make_server
 from question_authoring.service import Actor
 from helpers import AUTHOR, publish
@@ -18,10 +19,10 @@ READ, AUTH = "read-tok", "auth-tok"
 def server(svc):
     api = Api(svc, {AUTH: Actor("dr-kim", "question-author")}, read_tokens={READ: "synthetic-data"})
     srv = make_server(api, "127.0.0.1", 0)
-    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t = threading.Thread(target=srv.run, daemon=True)
     t.start()
-    yield f"http://127.0.0.1:{srv.server_address[1]}"
-    srv.shutdown(); srv.server_close()
+    yield f"http://127.0.0.1:{srv.effective_port}"
+    stop_http(srv)
 
 
 def get(base, path, token=READ):

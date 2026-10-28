@@ -21,3 +21,20 @@ def publish(svc, qsid="qs-main", text: bytes = None, edits=None, actor=AUTHOR, r
     if reviewed and svc.require_two_person:      # 4-eyes(D88): 임상 근거 승인은 다른 주체의 검수 역할이 한다
         svc.add_review(REVIEWER, ref, decision="APPROVED", clinical_basis_approved=True)
     return ref
+
+
+def start_server(api, **kw):
+    """HTTP 서버를 스레드로 띄운다. (port, stop)을 돌려준다. 서버 구현이 바뀌어도 시험이 같게 쓰도록 한 곳에 둔다."""
+    import threading
+    from question_authoring.http_api import make_server
+    srv = make_server(api, "127.0.0.1", 0, **kw)
+    threading.Thread(target=srv.run, daemon=True).start()
+
+    def stop():
+        srv.close(); srv.task_dispatcher.shutdown(cancel_pending=True, timeout=2)
+    return srv.effective_port, stop
+
+
+def stop_http(srv):
+    """start_server를 쓰지 않고 make_server로 직접 띄운 waitress 서버를 닫는다."""
+    srv.close(); srv.task_dispatcher.shutdown(cancel_pending=True, timeout=2)
