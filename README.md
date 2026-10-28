@@ -15,7 +15,7 @@
 | 입력(미구현) | turn-engine | 규칙 미리보기 | I8 |
 | 입력 | 사람(저자) | 문항 자료 파일, 화면 입력, 확인 | 저작 API `/v1/drafts`, `/v1/materials` 등(docs/design.md 8절) |
 
-이웃 영역의 코드는 가져오지 않는다. 계약은 `boundary-contracts` v2.0.2, 문진 스키마는 `openit-survey-schema` survey-schema-v1.0.0 패키지로만 쓴다(docs/boundary.md, requirements.lock).
+이웃 영역의 코드는 가져오지 않는다. 계약은 `boundary-contracts`, 문진 스키마는 `openit-survey-schema` 패키지로만(버전은 `requirements.lock`과 `deploy/scripts/lib.sh`가 정본) 쓴다(docs/boundary.md, requirements.lock).
 
 ## 구조
 
@@ -79,7 +79,7 @@ scripts/smoke.sh
 PostgreSQL 대기 상한(0.6.2, 2026-10-28, FAULT_MATRIX P0-3/E1): 접속 3초, 문장 3초, `/readyz` DB 확인 2초(설정 가능, 근거는 docs/boundary.md "DB 대기 상한"). 확인한 것(이 PC, 일회용 PostgreSQL 컨테이너): 시험 개수는 "시험 상태" 문단. `SMOKE_DB=postgres scripts/smoke.sh`와 기본(SQLite) `scripts/smoke.sh` 모두 SMOKE OK. `docker pause`에서 `/readyz`는 2.0초에 503, 해제 뒤 즉시 200. 확인하지 못한 것: 컨테이너 조합(gateway, 다른 영역)에서의 재측정은 deploy E2E 5p에서 헤드가 한다.
 
 확인된 것(출처 docs/STATUS.md, docs/CHANGELOG.md):
-- 0.5.0(2026-10-27) 비밀 파일 방식(D84)과 boundary-contracts v2.0.2 적용. 당시 시험 개수는 STATUS 기록이고 현재 값은 "시험 상태" 문단이다.
+- 0.5.0(2026-10-27) 비밀 파일 방식(D84)과 당시 기준 계약 적용. 당시 시험 개수는 STATUS 기록이고 현재 값은 "시험 상태" 문단이다.
 - STATUS는 스모크 `SMOKE OK`를 기록하고 있으나 이 세션에서 다시 확인하지 않았다.
 - 구현: I1 읽기(SQLite, 메모리, HTTP), 저작 서비스, 텍스트 양식 추출기, 변경 분류, 개선 신호 수신함(I7).
 미구현(docs/STATUS.md, docs/design.md 12절): 관리자 콘솔 UI, 화면 입력 템플릿과 코드·단위 사전, PDF·Word 추출기, I4·I8 연동, 저자 인증의 실제 방식(지금은 정적 토큰 표), I1 SDK의 별도 패키지·태그 배포.

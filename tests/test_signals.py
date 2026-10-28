@@ -14,6 +14,7 @@ from question_authoring.http_api import Api, make_server
 from question_authoring.service import Actor
 from question_authoring.signals import build_signals, question_ids_from_trace
 
+# failure_type은 FailureCase 스키마에서 열거가 아닌 자유 문자열(minLength 1)이다. 시험은 뜻 없는 이름만 쓴다.
 HASH = "sha256:" + "0" * 64
 
 
@@ -28,15 +29,15 @@ def case(i, ftype, qs="qs-main", status="PENDING", trace=None, with_set=True):
 
 
 def trace_for(*qids):
-    t = [{"question_id": q, "repeat_key": "", "slot_id": "s"} for q in qids]
-    return {"session_id": "S", "turn_id": "1", "planner_output": {"directive": {"action": "ASK", "targets": t}},
-            "parser_input": {"utterance": "<MASKED>"}}
+    # 현행 TurnTrace: 한 턴은 문항 하나를 묻는다(extract_input.question_id). 발화는 비식별 처리된 값이다.
+    (q,) = qids
+    return {"session_id": "S", "turn_id": "1", "extract_input": {"question_id": q, "current_question": "", "user_utterance": "<MASKED>", "state": {}}}
 
 
-CASES = [case(1, "PARSE_MISS", trace="tr-a"), case(2, "PARSE_MISS", trace="tr-a2", status="CONFIRMED"),
-         case(3, "RANGE_ERROR", trace="tr-b"), case(4, "PARSE_MISS", trace="tr-none"),
-         case(5, "X", trace="tr-gone"), case(6, "X", with_set=False), case(7, "PARSE_MISS", qs="qs-other", trace="tr-a")]
-TRACES = {"tr-a": trace_for("Q1"), "tr-a2": trace_for("Q1"), "tr-b": trace_for("Q2", "Q1"), "tr-none": {"session_id": "S"}}
+CASES = [case(1, "TYPE_A", trace="tr-a"), case(2, "TYPE_A", trace="tr-a2", status="CONFIRMED"),
+         case(3, "TYPE_B", trace="tr-b"), case(4, "TYPE_A", trace="tr-none"),
+         case(5, "X", trace="tr-gone"), case(6, "X", with_set=False), case(7, "TYPE_A", qs="qs-other", trace="tr-a")]
+TRACES = {"tr-a": trace_for("Q1"), "tr-a2": trace_for("Q1"), "tr-b": trace_for("Q2"), "tr-none": {"session_id": "S"}}
 
 
 @pytest.fixture
@@ -69,9 +70,10 @@ def i7():
 
 
 def test_trace_question_ids():
-    assert question_ids_from_trace(trace_for("Q1", "Q2")) == {"Q1", "Q2"}
-    assert question_ids_from_trace({"planner_output": {"directive": {"targets": [], "awaiting": {"targets": [{"question_id": "Q9"}]}}}}) == {"Q9"}
-    assert question_ids_from_trace({"planner_output": None}) == set()
+    assert question_ids_from_trace(trace_for("Q1")) == {"Q1"}
+    # v1 모양은 읽지 않는다
+    assert question_ids_from_trace({"planner_output": {"directive": {"targets": [{"question_id": "Q9"}]}}}) == set()
+    assert question_ids_from_trace({"extract_input": None}) == set()
     assert question_ids_from_trace("x") == set()
 
 
@@ -81,11 +83,11 @@ def test_build_signals(i7):
     assert out["status"] == "OK" and out["cases_read"] == 7 and not out["truncated"]
     main = next(s for s in out["question_sets"] if s["question_set_id"] == "qs-main")
     assert (main["case_count"], main["confirmed_count"]) == (5, 1)
-    assert main["failure_types"] == {"PARSE_MISS": 3, "X": 1, "RANGE_ERROR": 1}
+    assert main["failure_types"] == {"TYPE_A": 3, "X": 1, "TYPE_B": 1}
     q1 = next(q for q in main["questions"] if q["question_id"] == "Q1")
-    assert (q1["case_count"], q1["confirmed_count"]) == (3, 1)
-    assert q1["failure_types"] == {"PARSE_MISS": 2, "RANGE_ERROR": 1}
-    assert q1["confusions"] == [{"failure_type": "PARSE_MISS", "count": 2}]      # 같은 문항에서 반복
+    assert (q1["case_count"], q1["confirmed_count"]) == (2, 1)
+    assert q1["failure_types"] == {"TYPE_A": 2}
+    assert q1["confusions"] == [{"failure_type": "TYPE_A", "count": 2}]      # 같은 문항에서 반복
     q2 = next(q for q in main["questions"] if q["question_id"] == "Q2")
     assert q2["case_count"] == 1 and q2["confusions"] == []
     assert out["skipped"] == {"NO_QUESTION_ID": 1, "NO_QUESTION_SET": 1, "TRACE_UNREADABLE": 1}

@@ -8,7 +8,7 @@ pip install -e ../boundary-contracts -e ../survey-service/schema jsonschema pyte
 python -m pytest -q
 ```
 
-경계 계약 스키마는 `boundary_contracts`(v2.0.2), 문진 스키마는 `openit-survey-schema`(태그 survey-schema-v1.0.0) 패키지의 것을 쓴다. 복사본은 없다.
+경계 계약 스키마는 `boundary_contracts`, 문진 스키마는 `openit-survey-schema` 패키지의 것을 쓴다(버전 정본은 `requirements.lock`과 `deploy/scripts/lib.sh`). 복사본은 없다.
 
 ## 이미지 스모크 시험 (D22)
 

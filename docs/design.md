@@ -171,7 +171,7 @@ bytes + filename
 ## 11-1. 개선 신호 수신함 (구현, 읽기 전용)
 
 - 입력: ops-feedback의 I7(`HttpFailureStore`). `list_cases(latest_only=True)`로 실패 사례를 쪽별로 읽고(상한 `max_cases`, 기본 2000, 넘으면 `truncated`) `get_trace`로 비식별 trace를 읽는다. I7 클라이언트는 서비스 진입점이 `QA_FAILURES_URL`과 `QA_FAILURES_TOKEN_ENV`(토큰이 든 환경 변수의 이름)로 만든다. 미설정이면 `GET /v1/signals`는 `{"status": "DISABLED", "reason": ...}`를 낸다.
-- 출력(`signals.py`, `GET /v1/signals?question_set_id=&review_status=&max_cases=`, 저자 인증): 문항 세트별 (a) 사례 수, 유형 분포, 버전별 수, (c) CONFIRMED 수. 문항별로 같은 수와 분포, (b) 혼동(같은 문항에서 같은 유형이 `confusion_min`=2회 이상). 문항 세트는 `FailureCase.question_set.id`, 문항은 비식별 trace의 `planner_output.directive.targets`(와 `awaiting.targets`)의 `question_id`에서 읽는다(제안: trace에서 문항을 가리키는 가장 직접적인 구조 필드로 판단했다).
+- 출력(`signals.py`, `GET /v1/signals?question_set_id=&review_status=&max_cases=`, 저자 인증): 문항 세트별 (a) 사례 수, 유형 분포, 버전별 수, (c) CONFIRMED 수. 문항별로 같은 수와 분포, (b) 혼동(같은 문항에서 같은 유형이 `confusion_min`=2회 이상). 문항 세트는 `FailureCase.question_set.id`, 문항은 비식별 TurnTrace의 `extract_input.question_id`에서 읽는다(TurnTrace.json의 필수 필드).
 - 건너뛰기: 사례에 `question_set`이 없으면 `NO_QUESTION_SET`, trace를 읽지 못하면 `TRACE_UNREADABLE`, trace에 문항 ID가 없으면 `NO_QUESTION_ID`(문항 세트 수준에는 계속 센다). 추정하지 않고 건수를 `skipped`에 낸다.
 - 하지 않는 것: 자동 수정, 발화·trace 본문 저장이나 반환(O19 미정). 건수와 ID만 낸다. 신호는 읽을 때마다 계산하며 저장하지 않는다. I7 실패는 `BoundaryError`(PERMISSION_DENIED, UNAVAILABLE 등)로 그대로 전해진다.
 
