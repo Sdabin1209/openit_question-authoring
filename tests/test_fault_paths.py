@@ -92,27 +92,27 @@ def test_bad_content_length_is_400(svc, cl):
     assert out.startswith(b"HTTP/1.0 400") or out.startswith(b"HTTP/1.1 400"), out[:60]
 
 
-def test_oversize_is_413_and_non_json_is_400(svc):
+def test_oversize_and_non_json_are_400(svc):
     api = api_of(svc)
     assert api.handle("POST", "/v1/drafts", AUTH, b"not json")[0] == 400
     with serving(api, request_timeout=2) as port:
         out = raw(port, post_head(MAT, MAX_BODY + 1))
-    assert b" 413 " in out.split(b"\r\n")[0]
+    assert b" 400 " in out.split(b"\r\n")[0]
 
 
 # ---- E2 F5: 예상 밖의 서버 오류도 JSON으로 답한다(연결을 끊지 않는다) ----
-def test_unexpected_error_is_json_500_without_details(svc, monkeypatch):
+def test_unexpected_error_is_json_503_without_details(svc, monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("SECRET-internal-detail")
     monkeypatch.setattr(svc, "list_drafts", boom)
     api = api_of(svc)
     st, body = api.handle("GET", "/v1/drafts", AUTH, b"")
-    assert st == 500 and body["code"] == "UNAVAILABLE" and "SECRET-internal-detail" not in json.dumps(body)
+    assert st == 503 and body["code"] == "UNAVAILABLE" and "SECRET-internal-detail" not in json.dumps(body)
     with serving(api) as port:
         try:
             urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{port}/v1/drafts", headers=AUTH), timeout=5)
         except urllib.error.HTTPError as e:
-            assert e.code == 500 and json.load(e)["code"] == "UNAVAILABLE"
+            assert e.code == 503 and json.load(e)["code"] == "UNAVAILABLE"
 
 
 # ---- E2 F7 ----
@@ -252,3 +252,24 @@ def test_phi_check_is_linear_on_long_lines_and_still_detects(svc):
     assert time.monotonic() - t < 2.0
     assert AuthoringService._phi_warnings("문의 kim.doctor+a@hospital.co.kr 입니다".encode()) == ["이메일 형태"]
     assert AuthoringService._phi_warnings(b"010-1234-5678") == ["전화번호 형태"]
+
+
+def test_error_status_codes_match_contract_table(svc, monkeypatch):
+    """QA-14: 상태 코드는 계약 CONVENTIONS.md 9절 표(독립 출처)에서 읽은 값과 같아야 한다. 표에 없는 코드(500, 413)를 내지 않는다."""
+    import pathlib, re
+    from question_authoring.http_api import STATUS
+    doc = pathlib.Path(__file__).resolve().parents[2] / "boundary-contracts" / "CONVENTIONS.md"
+    if not doc.exists():
+        pytest.skip("계약 문서가 이웃 폴더에 없다")
+    table = {}
+    for line in doc.read_text(encoding="utf-8").split("## 9.")[1].split("HTTP 층의")[0].splitlines():
+        m = re.match(r"\|\s*([A-Z_, ]+?)\s*\|\s*(\d{3})\s*\|", line)
+        if m:
+            for code in m.group(1).split(","):
+                table[code.strip()] = int(m.group(2))
+    assert table and STATUS == table, (STATUS, table)
+    def boom(*a, **k):
+        raise RuntimeError("x")
+    monkeypatch.setattr(svc, "list_drafts", boom)
+    st, body = api_of(svc).handle("GET", "/v1/drafts", AUTH, b"")
+    assert st == table[body["code"]]

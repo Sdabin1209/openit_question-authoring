@@ -71,8 +71,8 @@
 | F2 무응답 / F3 느림 (업로드가 멈춤) | 요청 소켓이 `QA_REQUEST_TIMEOUT_SECONDS`(기본 30초) 멈추면 연결을 끊고 처리하지 않는다. 이전에는 상한이 없어 멈춘 업로드가 스레드를 계속 쥐었다 | `test_stalled_upload_is_cut_and_nothing_is_saved` |
 | 업로드 도중 연결 끊김 | 본문이 `Content-Length`보다 짧으면 처리하지 않는다(초안·원본 자료 저장 없음). 이전에는 짧게 온 본문을 그대로 처리했다 | `test_client_disconnect_mid_upload_saves_nothing` |
 | F4 서비스 재시작 | 초안·확정 버전은 저장소(PostgreSQL/SQLite)에 있어 재시작 뒤에도 미리보기와 확인을 이어 갈 수 있다. 확인을 두 번 보내면 같은 `ref`, 다른 미리보기 해시면 409 `CONFLICT` | `test_restart_keeps_drafts...`(SQLite), `test_postgres_restart_keeps_draft...` |
-| F5 5xx | 저장소 장애는 503 `UNAVAILABLE`(재시도 가능). **예상 밖의 오류는 이전에 연결을 끊고 응답이 없었으나 이제 JSON 500(`UNAVAILABLE`, 원문 메시지 없음)이다** | `test_unexpected_error_is_json_500...` |
-| F6 깨진 요청 | JSON이 아니면 400, `Content-Length`가 숫자가 아니거나 음수면 400(이전에는 연결이 끊김), 8MiB 초과 413 | `test_bad_content_length_is_400`, `test_oversize_is_413...` |
+| F5 5xx | 저장소 장애는 503 `UNAVAILABLE`(재시도 가능). **예상 밖의 오류는 이전에 연결을 끊고 응답이 없었으나 이제 JSON 503(`UNAVAILABLE`, 원문 메시지 없음)이다(CONVENTIONS 9절 표에 500이 없다)** | `test_unexpected_error_is_json_503...` |
+| F6 깨진 요청 | JSON이 아니면 400, `Content-Length`가 숫자가 아니거나 음수면 400(이전에는 연결이 끊김), 8MiB 초과도 400(표에 413이 없다) | `test_bad_content_length_is_400`, `test_oversize_and_non_json_are_400` |
 | F7 인증 실패 | 403 `PERMISSION_DENIED`, `retryable=false`(401이 아니라 403이 이 서비스의 기존 규약이다). 실패를 세어 `/readyz`에 보이는 것은 하지 않았다 | `test_auth_failures_are_not_retryable` |
 
 - **원자성(원칙 1)**: 문항 세트 버전, 검수, 변경 분류는 한 트랜잭션이다. 트랜잭션 도중(삽입이 끝난 뒤 커밋 직전) 서버 쪽에서 연결이 죽는 상황을 PostgreSQL에서 흉내 내 보면, 두 번 다 죽으면 버전·검수 모두 남지 않고(`UNAVAILABLE`), 첫 시도만 죽으면 재시도가 끝까지 가서 정확히 한 번 저장된다(`test_commit_is_atomic_when_connection_dies_mid_transaction`). 원본 자료(`blobs`)는 초안 생성 전에 따로 저장되므로 업로드가 중간에 실패하면 주인 없는 원본이 남을 수 있다(내용 해시로 식별되고 같은 자료를 다시 올리면 그대로 쓴다. 해가 없지만 청소하는 도구는 없다).

@@ -84,9 +84,9 @@ class Api:
             return 200, self._route(method, path, q, headers, body, actor)
         except BoundaryError as e:
             return STATUS[e.code], e.to_record()
-        except Exception as e:  # 예상 밖의 오류. 연결을 끊지 않고 JSON 500으로 답한다. 원문 메시지는 쓰지 않는다(접속 정보·자료가 섞일 수 있다)
+        except Exception as e:  # 예상 밖의 오류. 연결을 끊지 않고 JSON 503(UNAVAILABLE)으로 답한다. 상태 코드는 CONVENTIONS 9절 표가 고정한다(500은 표에 없다). 원문 메시지는 쓰지 않는다(접속 정보·자료가 섞일 수 있다)
             print(f"내부 오류: {type(e).__name__}", flush=True)
-            return 500, BoundaryError("UNAVAILABLE", "내부 오류").to_record()
+            return 503, BoundaryError("UNAVAILABLE", "내부 오류").to_record()
 
     def _bearer(self, headers) -> Optional[str]:
         auth = {k.lower(): v for k, v in headers.items()}.get("authorization", "")
@@ -292,7 +292,7 @@ def make_server(api: Api, host: str, port: int, request_timeout: Optional[float]
             if bad:
                 status, out = 400, BoundaryError("INVALID_RECORD", "Content-Length가 올바르지 않다").to_record()
             elif n > MAX_BODY:
-                status, out = 413, BoundaryError("INVALID_RECORD", "본문이 너무 크다").to_record()
+                status, out = 400, BoundaryError("INVALID_RECORD", "본문이 너무 크다").to_record()   # 왜 400: CONVENTIONS 9절 표가 INVALID_RECORD=400으로 고정, 413은 표에 없다
                 self.close_connection = True   # 읽지 않은 본문이 남는다
             else:
                 try:
