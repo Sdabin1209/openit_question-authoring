@@ -45,12 +45,12 @@
 
 ## 실행 방법
 
-전제: Python 3.12(Dockerfile 기준), git, `../boundary-contracts`와 `../survey-service/schema`가 옆에 있는 워크스페이스. 스모크에는 Docker(데몬 접근 가능)와 curl이 필요하다. 이미지 설치는 github ssh 접근으로 태그를 받는다(requirements.lock).
+전제: Python 3.12(Dockerfile 기준), git, github ssh 접근(계약과 문진 스키마를 `requirements.lock`의 태그로 받는다). 이웃 폴더는 필요 없다. 스모크에는 Docker(데몬 접근 가능)와 curl이 필요하다.
 
 설치와 시험(docs/runbook.md):
 ```
-python3 -m venv .venv && . .venv/bin/activate
-pip install -e ../boundary-contracts -e ../survey-service/schema jsonschema pytest "psycopg[binary]==3.3.6" && pip install -e . --no-deps
+bash scripts/setup-env.sh        # .venv 생성·재사용, requirements.lock 태그로 설치, pytest, -e . --no-deps
+. .venv/bin/activate
 python -m pytest -q
 # PostgreSQL 시험(선택): export TEST_DATABASE_URL="$(bash ../deploy/scripts/dev-postgres.sh up qa)"; 끝나면 ... down qa  (없으면 해당 시험은 SKIP)
 ```
@@ -70,7 +70,7 @@ scripts/smoke.sh
 
 ## 현재 상태
 
-**시험 상태(정본, 개수는 여기 한 곳)**: 커밋 9b912e9, 2026-10-28, 새 clone + 새 venv(위 설치 줄 그대로, `../boundary-contracts`·`../survey-service/schema` 옆에 둠), `python -m pytest -q -rs`. PostgreSQL 없음(`TEST_DATABASE_URL` 미설정, 기본 기준): 297 통과, 87 건너뜀, 0 실패(약 62초). 건너뜀 87건은 전부 `TEST_DATABASE_URL` 없음으로 건너뛴 PostgreSQL 시험이다(`-rs` 출력 60줄, 한 줄이 여러 건일 수 있어 건수 합 87). 다른 사유의 건너뜀은 없다. PostgreSQL 포함 전체(일회용 PostgreSQL 한 대, 헤드 지시로 같은 커밋 기준): 384 통과. 이번 세션에서 PostgreSQL 포함 실행은 다시 하지 않았고 384는 이전 실측값이다. 스모크(`scripts/smoke.sh`)는 이번에 돌리지 않았다.
+**시험 상태(정본, 개수는 여기 한 곳)**: 커밋 9b912e9, 2026-10-28, 새 clone + 새 venv(위 설치 줄 그대로, 당시에는 이웃 폴더 editable 설치), `python -m pytest -q -rs`. PostgreSQL 없음(`TEST_DATABASE_URL` 미설정, 기본 기준): 297 통과, 87 건너뜀, 0 실패(약 62초). 건너뜀 87건은 전부 `TEST_DATABASE_URL` 없음으로 건너뛴 PostgreSQL 시험이다(`-rs` 출력 60줄, 한 줄이 여러 건일 수 있어 건수 합 87). 다른 사유의 건너뜀은 없다. PostgreSQL 포함 전체(일회용 PostgreSQL 한 대, 헤드 지시로 같은 커밋 기준): 384 통과. 이번 세션에서 PostgreSQL 포함 실행은 다시 하지 않았고 384는 이전 실측값이다. 스모크(`scripts/smoke.sh`)는 이번에 돌리지 않았다.
 
 0.7.0(2026-10-28; 시험 개수는 위 "시험 상태" 문단, SQLite·PostgreSQL 스모크 SMOKE OK): 전수 점검 반영(추출기 선형화, 4-eyes 기본, 엄격 입력, 환자 정보 탐지 확대, 운영 구성 거부, 동시 요청 상한, SIGTERM, 보존 `purge`, v2 Trace 문항 ID). 상세와 한계는 docs/CHANGELOG.md, docs/boundary.md.
 

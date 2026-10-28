@@ -3,8 +3,8 @@
 ## 개발 환경
 
 ```
-python3 -m venv .venv && . .venv/bin/activate
-pip install -e ../boundary-contracts -e ../survey-service/schema jsonschema pytest && pip install -e . --no-deps
+bash scripts/setup-env.sh   # 환경 준비의 정본(멱등). 이웃 폴더 불필요
+. .venv/bin/activate
 python -m pytest -q
 ```
 
