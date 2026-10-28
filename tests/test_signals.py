@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from boundary_contracts import PIPELINE_SCHEMA_VERSION
 from boundary_contracts.clients import HttpFailureStore
 
 from question_authoring.http_api import Api, make_server
@@ -17,7 +18,7 @@ HASH = "sha256:" + "0" * 64
 
 
 def case(i, ftype, qs="qs-main", status="PENDING", trace=None, with_set=True):
-    c = {"pipeline_schema_version": "2.0", "case_id": f"fc-{i}", "version": 1, "created_at": "2026-10-15T00:00:00Z",
+    c = {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "case_id": f"fc-{i}", "version": 1, "created_at": "2026-10-15T00:00:00Z",
          "source_release_id": "rel-1", "runtime_contract_version": 1, "deidentified": True,
          "deidentified_trace_ref": trace or f"tr-{i}", "failure_type": ftype, "detection_method": "RULE",
          "review_status": status}
@@ -45,7 +46,7 @@ def i7():
         def do_GET(self):
             u = urlparse(self.path); q = parse_qs(u.query)
             if self.headers.get("Authorization") != "Bearer i7-tok":
-                return self._send(403, {"pipeline_schema_version": "1.0", "code": "PERMISSION_DENIED", "message": "x", "retryable": False})
+                return self._send(403, {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "code": "PERMISSION_DENIED", "message": "x", "retryable": False})
             if u.path == "/v1/cases":
                 lim = int(q.get("limit", ["100"])[0]); start = int(q.get("cursor", ["0"])[0])
                 items = CASES[start:start + lim]
@@ -54,9 +55,9 @@ def i7():
             if u.path.startswith("/v1/deidentified-traces/"):
                 t = TRACES.get(u.path.rsplit("/", 1)[1])
                 if t is None:
-                    return self._send(404, {"pipeline_schema_version": "1.0", "code": "NOT_FOUND", "message": "x", "retryable": False})
+                    return self._send(404, {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "code": "NOT_FOUND", "message": "x", "retryable": False})
                 return self._send(200, t)
-            self._send(404, {"pipeline_schema_version": "1.0", "code": "NOT_FOUND", "message": "x", "retryable": False})
+            self._send(404, {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "code": "NOT_FOUND", "message": "x", "retryable": False})
         def _send(self, st, body):
             d = json.dumps(body).encode()
             self.send_response(st); self.send_header("Content-Type", "application/json")
