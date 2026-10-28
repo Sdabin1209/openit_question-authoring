@@ -1,0 +1,253 @@
+{
+  "note": "영역 경계 스키마 계약 승격 준비(wo6, 구조 규칙 6). 코드는 바꾸지 않았다. 예시는 실제 코드가 낸 값(환경 변수 예시와 Source 거부 예시는 손으로 씀).",
+  "items": [
+    {
+      "name": "AuthoringRequests",
+      "source_draft": "docs/change-requests/schemas/authoring-requests.schema.json",
+      "producer": "콘솔/gateway(저자·검수자)",
+      "consumers": [
+        "question-authoring"
+      ],
+      "unknown_keys": "reject",
+      "note": "저작 API 요청 본문과 쿼리 8종($defs). 모르는 키 거부가 스키마의 의도이고, 현재 서버 코드는 모르는 키를 무시한다(차이, 코드는 바꾸지 않음). 콘솔 쪽 코드는 읽지 못했다: 이웃 쪽 미확인.",
+      "examples": [
+        {
+          "file": "valid/AuthoringRequests.AcknowledgeRequest.json",
+          "def": "AcknowledgeRequest"
+        },
+        {
+          "file": "valid/AuthoringRequests.AddReviewRequest.json",
+          "def": "AddReviewRequest"
+        },
+        {
+          "file": "valid/AuthoringRequests.ConfirmRequest.json",
+          "def": "ConfirmRequest"
+        },
+        {
+          "file": "valid/AuthoringRequests.CreateDraftRequest.json",
+          "def": "CreateDraftRequest"
+        },
+        {
+          "file": "valid/AuthoringRequests.DiscardRequest.json",
+          "def": "DiscardRequest"
+        },
+        {
+          "file": "valid/AuthoringRequests.EditsRequest.json",
+          "def": "EditsRequest"
+        },
+        {
+          "file": "valid/AuthoringRequests.MaterialQuery.json",
+          "def": "MaterialQuery"
+        },
+        {
+          "file": "valid/AuthoringRequests.SignalsQuery.json",
+          "def": "SignalsQuery"
+        },
+        {
+          "file": "invalid/AuthoringRequests.AcknowledgeRequest.json",
+          "def": "AcknowledgeRequest"
+        },
+        {
+          "file": "invalid/AuthoringRequests.AddReviewRequest.json",
+          "def": "AddReviewRequest"
+        },
+        {
+          "file": "invalid/AuthoringRequests.ConfirmRequest.json",
+          "def": "ConfirmRequest"
+        },
+        {
+          "file": "invalid/AuthoringRequests.CreateDraftRequest.json",
+          "def": "CreateDraftRequest"
+        },
+        {
+          "file": "invalid/AuthoringRequests.DiscardRequest.json",
+          "def": "DiscardRequest"
+        },
+        {
+          "file": "invalid/AuthoringRequests.EditsRequest.json",
+          "def": "EditsRequest"
+        },
+        {
+          "file": "invalid/AuthoringRequests.MaterialQuery.json",
+          "def": "MaterialQuery"
+        },
+        {
+          "file": "invalid/AuthoringRequests.SignalsQuery.json",
+          "def": "SignalsQuery"
+        }
+      ]
+    },
+    {
+      "name": "AuthoringResponses",
+      "source_draft": "docs/change-requests/schemas/authoring-responses.schema.json",
+      "producer": "question-authoring",
+      "consumers": [
+        "콘솔/gateway"
+      ],
+      "unknown_keys": "reject",
+      "note": "저작 API 응답. 서버가 내는 키를 모두 열거해 닫는다(읽는 쪽은 모르는 키를 무시해도 된다). Ref는 계약 ArtifactRef로, AddReviewResponse는 계약 ReviewRecord로, Source는 QuestionAuthoringExt의 Source로 대체해 사본을 두지 않았다. ArtifactRef.version은 계약에서 minLength 1 문자열이라 초안의 Id 패턴보다 느슨하다. Draft.bank는 object로만 본다. QuestionBank와의 비교(설치된 문진 스키마 패키지의 QuestionBank를 question_authoring.validation.Validators로 확인한 실측, survey-service/schema 파일과의 직접 대조는 하지 않음): Draft.valid와 Draft.confirmed 예시의 bank는 QuestionBank에서 필수 정수 필드 version만 빠진 같은 모양이다(version을 붙이면 오류 0건). version은 확정 때 붙는다(service._strip_version이 초안에서 뺀다). Draft.discarded 예시의 bank({\"questions\": []}, 문항 없는 초안)는 version, session_settings 필수 누락과 questions 최소 1개 위반으로 QuestionBank를 통과하지 못한다. 즉 초안의 bank는 작성 중인 QuestionBank라 완성된 QuestionBank가 아니며 확정 때 QuestionBank 스키마로 검증된다. 콘솔 쪽 미확인.",
+      "examples": [
+        {
+          "file": "valid/AuthoringResponses.AddReviewResponse.json",
+          "def": "AddReviewResponse"
+        },
+        {
+          "file": "valid/AuthoringResponses.ConfirmResponse.json",
+          "def": "ConfirmResponse"
+        },
+        {
+          "file": "valid/AuthoringResponses.Draft.confirmed.json",
+          "def": "Draft"
+        },
+        {
+          "file": "valid/AuthoringResponses.Draft.discarded.json",
+          "def": "Draft"
+        },
+        {
+          "file": "valid/AuthoringResponses.Draft.json",
+          "def": "Draft"
+        },
+        {
+          "file": "valid/AuthoringResponses.DraftList.json",
+          "def": "DraftList"
+        },
+        {
+          "file": "valid/AuthoringResponses.MaterialIngested.fallback.json",
+          "def": "MaterialIngested"
+        },
+        {
+          "file": "valid/AuthoringResponses.MaterialIngested.json",
+          "def": "MaterialIngested"
+        },
+        {
+          "file": "valid/AuthoringResponses.Preview.json",
+          "def": "Preview"
+        },
+        {
+          "file": "invalid/AuthoringResponses.AddReviewResponse.json",
+          "def": "AddReviewResponse"
+        },
+        {
+          "file": "invalid/AuthoringResponses.ConfirmResponse.json",
+          "def": "ConfirmResponse"
+        },
+        {
+          "file": "invalid/AuthoringResponses.Draft.json",
+          "def": "Draft"
+        },
+        {
+          "file": "invalid/AuthoringResponses.DraftList.json",
+          "def": "DraftList"
+        },
+        {
+          "file": "invalid/AuthoringResponses.MaterialIngested.json",
+          "def": "MaterialIngested"
+        },
+        {
+          "file": "invalid/AuthoringResponses.Preview.json",
+          "def": "Preview"
+        }
+      ]
+    },
+    {
+      "name": "SignalsResponse",
+      "source_draft": "docs/change-requests/schemas/signals-response.schema.json",
+      "producer": "question-authoring",
+      "consumers": [
+        "콘솔(저자)"
+      ],
+      "unknown_keys": "reject",
+      "note": "GET /v1/signals 응답. DISABLED/OK 두 모양(oneOf). 발화·trace 본문이 새지 않게 닫는다. 상류 FailureCase 필드가 ops-feedback 실제 출력과 맞는지는 이웃 쪽 미확인.",
+      "examples": [
+        {
+          "file": "valid/SignalsResponse.disabled.json"
+        },
+        {
+          "file": "valid/SignalsResponse.ok.json"
+        },
+        {
+          "file": "invalid/SignalsResponse.json"
+        }
+      ]
+    },
+    {
+      "name": "QuestionAuthoringExt",
+      "source_draft": "docs/change-requests/schemas/ext-question-authoring.schema.json",
+      "producer": "question-authoring",
+      "consumers": [
+        "release-gate",
+        "synthetic-data",
+        "admin-console"
+      ],
+      "unknown_keys": "reject",
+      "note": "ReviewRecord.ext[\"question-authoring\"]는 ReviewExt, ChangeClassification.ext[\"question-authoring\"]는 ChangeExt의 모양이다(헤드 결정: 계약으로 승격). ext 규칙에 따라 읽는 쪽은 보존만 하고 판단에 쓰지 않는다. Source는 AuthoringResponses가 같은 정의를 참조한다. 읽는 쪽 영역이 이 값을 어떻게 다루는지는 이웃 쪽 미확인.",
+      "examples": [
+        {
+          "file": "valid/QuestionAuthoringExt.ChangeExt.json",
+          "def": "ChangeExt"
+        },
+        {
+          "file": "valid/QuestionAuthoringExt.ReviewExt.author.json",
+          "def": "ReviewExt"
+        },
+        {
+          "file": "valid/QuestionAuthoringExt.ReviewExt.followup.json",
+          "def": "ReviewExt"
+        },
+        {
+          "file": "invalid/QuestionAuthoringExt.ChangeExt.json",
+          "def": "ChangeExt"
+        },
+        {
+          "file": "invalid/QuestionAuthoringExt.ReviewExt.json",
+          "def": "ReviewExt"
+        },
+        {
+          "file": "invalid/QuestionAuthoringExt.Source.json",
+          "def": "Source"
+        }
+      ]
+    },
+    {
+      "name": "QuestionAuthoringDeployInterface",
+      "source_draft": "docs/change-requests/schemas/deploy-interface.schema.json",
+      "producer": "question-authoring(ReadyzResponse, PurgeResult), deploy(Environment)",
+      "consumers": [
+        "deploy"
+      ],
+      "unknown_keys": "reject",
+      "note": "Environment는 환경에 무관한 변수가 섞이므로 모르는 키를 무시한다(unknown_keys_by_def). ReadyzResponse와 PurgeResult는 닫는다. 제안: purge 출력은 지금 파이썬 dict 표기라 JSON이 아니다(코드를 바꿀 때 json.dumps). 예시 PurgeResult는 JSON 모양을 가정한다. 비밀은 NAME_FILE로 받는다(D84). deploy 쪽 미확인.",
+      "unknown_keys_by_def": {
+        "Environment": "ignore",
+        "ReadyzResponse": "reject",
+        "PurgeResult": "reject"
+      },
+      "examples": [
+        {
+          "file": "valid/QuestionAuthoringDeployInterface.Environment.json",
+          "def": "Environment"
+        },
+        {
+          "file": "valid/QuestionAuthoringDeployInterface.PurgeResult.json",
+          "def": "PurgeResult"
+        },
+        {
+          "file": "valid/QuestionAuthoringDeployInterface.ReadyzResponse.json",
+          "def": "ReadyzResponse"
+        },
+        {
+          "file": "invalid/QuestionAuthoringDeployInterface.Environment.json",
+          "def": "Environment"
+        },
+        {
+          "file": "invalid/QuestionAuthoringDeployInterface.PurgeResult.json",
+          "def": "PurgeResult"
+        },
+        {
+          "file": "invalid/QuestionAuthoringDeployInterface.ReadyzResponse.json",
+          "def": "ReadyzResponse"
+        }
+      ]
+    }
+  ]
+}

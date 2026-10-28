@@ -1,0 +1,11 @@
+{
+  "QA_DATABASE_URL_FILE": "/run/secrets/qa_database_url",
+  "QA_AUTHOR_TOKENS_FILE": "/run/secrets/qa_author_tokens",
+  "QA_USER_ROLES": "dr-kim=question-author,dr-park=clinical-reviewer",
+  "QA_REQUIRE_TWO_PERSON": "true",
+  "QA_FAILURES_URL": "http://ops-feedback:8080",
+  "QA_DRAFT_RETENTION_DAYS": "30",
+  "QA_SOURCE_RETENTION_DAYS": "30",
+  "QA_PORT": "8080",
+  "QA_REQUEST_TIMEOUT_SECONDS": "30"
+}

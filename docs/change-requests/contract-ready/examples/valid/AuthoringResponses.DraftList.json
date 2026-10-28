@@ -1,0 +1,146 @@
+{
+  "drafts": [
+    {
+      "draft_id": "dr-2a0e2ecf280f4c98",
+      "question_set_id": "qs-main",
+      "status": "OPEN",
+      "base": null,
+      "bank": {
+        "questions": [
+          {
+            "question_id": "Q1",
+            "name": "체온",
+            "guide_sentences": [],
+            "affected_followups": [],
+            "repeat_keys": [],
+            "slots": [
+              {
+                "slot_id": "body_temp",
+                "units": [
+                  {
+                    "name": "도",
+                    "synonyms": [
+                      "도씨",
+                      "섭씨"
+                    ],
+                    "range": null,
+                    "convert_to": null
+                  }
+                ],
+                "choices": [],
+                "required": true,
+                "reask_sentence": "체온을 숫자로 말씀해 주세요.",
+                "yes_no_map": null,
+                "risk_rule": {
+                  "operator": ">=",
+                  "value": {
+                    "amount": 40,
+                    "unit": "도"
+                  },
+                  "response": "IMMEDIATE"
+                }
+              }
+            ],
+            "order": 1,
+            "prerequisite": null,
+            "question_sentence": "오늘 체온이 얼마였나요?",
+            "refusal_explanation": "체온은 진료 준비에 필요합니다.",
+            "policy": {
+              "question_limit": 3,
+              "unknown_accept_after": 2,
+              "refusal_accept_after": 2
+            }
+          },
+          {
+            "question_id": "Q2",
+            "name": "기침",
+            "guide_sentences": [],
+            "affected_followups": [],
+            "repeat_keys": [],
+            "slots": [
+              {
+                "slot_id": "cough",
+                "units": [],
+                "choices": [],
+                "required": true,
+                "reask_sentence": "기침이 있으면 예, 없으면 아니오로 답해 주세요.",
+                "yes_no_map": {
+                  "yes": "yes",
+                  "no": "no"
+                },
+                "risk_rule": null
+              }
+            ],
+            "order": 2,
+            "prerequisite": {
+              "slot": {
+                "question_id": "Q1",
+                "repeat_key": "",
+                "slot_id": "body_temp"
+              },
+              "value": "high"
+            },
+            "question_sentence": "기침이 있나요?",
+            "refusal_explanation": "증상 파악에 필요합니다.",
+            "policy": {
+              "question_limit": 2,
+              "unknown_accept_after": 1,
+              "refusal_accept_after": 1
+            }
+          }
+        ],
+        "session_settings": {
+          "fixed_sentences": [
+            {
+              "key": "ASK_REPEAT",
+              "sentence": "다시 한 번 말씀해 주시겠어요?"
+            },
+            {
+              "key": "FAREWELL",
+              "sentence": "수고하셨습니다."
+            }
+          ],
+          "guide_list": [
+            {
+              "guide_id": "g-remaining",
+              "selection_criterion": "남은 문항",
+              "per_question": false,
+              "sentence": "남은 문항은 {n}개입니다.",
+              "fill_value": "REMAINING_COUNT"
+            }
+          ],
+          "risk_phrases": [
+            "가슴이 아파요",
+            "숨이 안 쉬어져요"
+          ],
+          "confirm_limit": 3,
+          "unrecognized_streak_limit": 3,
+          "ask_limit": 30
+        }
+      },
+      "flags": [
+        {
+          "flag_id": "fl-25c347e2e8a2",
+          "path": "/questions/0/slots/0/units/0/range",
+          "kind": "UNSURE",
+          "message": "범위를 '범위 최소 ~ 최대' 형식으로 읽지 못했다. 값을 비워 두었다",
+          "raw": "범위 34 ~ ??",
+          "resolved": false
+        }
+      ],
+      "source": {
+        "kind": "material",
+        "source_hash": "sha256:59ce9883af5a0a45a82988bca145d50036c53d9a3a8b961e539f281dc719cd26",
+        "filename": "form.txt",
+        "size": 1211,
+        "extractor": "text-form",
+        "extractor_version": "1"
+      },
+      "fallback": null,
+      "warnings": [],
+      "created_by": "dr-kim",
+      "created_at": "2026-10-28T14:11:56Z",
+      "updated_at": "2026-10-28T14:11:56Z"
+    }
+  ]
+}
