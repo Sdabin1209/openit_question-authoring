@@ -125,3 +125,17 @@ def test_server_down_is_unavailable(served):
     assert e.retryable
     s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()   # 아무도 듣지 않는 포트
     err("UNAVAILABLE", HttpQuestionReader(f"http://127.0.0.1:{port}", READ, timeout=2).latest, "qs-main")
+
+
+def test_client_reads_id_with_colon(served):
+    """QA-13: Id 문법(CONVENTIONS 10절)은 ':'를 허용하고, 공식 클라이언트는 경로 조각을 quote(safe="")로 보낸다(clients/_http.py _q, RFC 3986).
+    따라서 서버는 경로 조각을 디코딩해야 한다. 기대값은 계약 클라이언트와 계약 스키마 검증기에서 나온다."""
+    svc, url, _ = served
+    ref = publish(svc, "qs:a")
+    c = HttpQuestionReader(url, READ)
+    assert "qs:a" in c.list_ids()[0]
+    assert c.latest("qs:a", reviewed_only=False) == ref
+    assert c.list_versions("qs:a") == ([ref], None)
+    assert c.get_question_bank(ref)["version"] == int(ref["version"])
+    assert c.get_reviews(ref)
+    assert c.get_change(ref) is None   # 첫 버전

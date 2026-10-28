@@ -10,7 +10,7 @@ import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable, Iterable, Mapping, Optional
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from boundary_contracts.errors import BoundaryError
 
@@ -117,7 +117,7 @@ class Api:
             return {"items": items, "next_cursor": nxt}
         m = re.match(r"^/v1/question-sets/([^/]+)/(versions|latest)$", path)
         if m:
-            qsid, what = m.groups()
+            qsid, what = unquote(m.group(1)), m.group(2)   # 왜: 공식 클라이언트는 조각마다 quote(safe="")로 보낸다(예: ':' -> %3A). 정규식으로 '/'를 나눈 뒤에 디코딩해야 %2F가 경로를 쪼개지 않는다
             if what == "latest":
                 flag = q.get("reviewed_only", "false")
                 if flag not in ("true", "false"):
@@ -128,7 +128,7 @@ class Api:
             return {"items": items, "next_cursor": nxt}
         m = re.match(r"^/v1/question-sets/([^/]+)/versions/([^/]+)(?:/(reviews|change))?$", path)
         if m:
-            qsid, ver, sub = m.groups()
+            qsid, ver, sub = unquote(m.group(1)), unquote(m.group(2)), m.group(3)
             ref = self.svc.store.ref_of(qsid, ver)
             if sub is None:
                 bank = r.get_question_bank(ref)      # 해시 재계산 포함
