@@ -61,8 +61,8 @@ scripts/smoke.sh
 서비스 실행: `python -m question_authoring`. 기본 DB 경로가 `/data/questions.sqlite3`라 로컬에서는 `QA_DB_PATH`를 쓰기 가능한 경로로 줘야 한다(이 세션에서 `--help`로 시도했더니 `/data` 권한 오류로 멈췄고, `--help` 옵션은 없다).
 비밀(`QA_AUTHOR_TOKENS`, `QA_READ_TOKENS`, `QA_FAILURES_TOKEN`)은 값을 환경 변수로 주지 않고 파일 경로를 `NAME_FILE`로 준다(D84). 예: `-e QA_AUTHOR_TOKENS_FILE=/run/secrets/author_tokens`. 환경 변수 전체 목록은 docs/runbook.md.
 이 세션에서 실제로 돌린 것은 docs/STATUS.md와 CHANGELOG 0.6.0 참고(수치는 그때그때 `python -m pytest -q -rs`로 확인).
-이 세션에서 실제로 돌린 것: `python -m pytest --collect-only -q`(153개 수집, 이전 세션 값), `python -m pytest -q -rs`(2026-10-28, PostgreSQL 없음: 294개 통과, 81개 건너뜀, 0 실패, 67.64초, 이 PC의 기존 `.venv` 한 환경. 건너뜀 81건은 모두 `TEST_DATABASE_URL` 없음으로 PostgreSQL 시험을 건너뜀), `python -m question_authoring --help`(위 오류).
-돌리지 않은 것: 의존 설치, `scripts/smoke.sh`(이미지 빌드), 서버 기동, 깨끗한 두 번째 환경에서의 확인.
+이 세션에서 돌린 것과 시험 개수는 "현재 상태" 절의 시험 상태 문단이 정본이다(개수는 이 줄에 복사하지 않는다). `python -m question_authoring --help`는 위 오류로 멈췄다.
+돌리지 않은 것: `scripts/smoke.sh`(이미지 빌드), 서버 기동. 새 clone·새 venv 설치와 시험은 "시험 상태" 문단대로 했다.
 
 ## 설계 결정 기록(ADR)
 
@@ -70,14 +70,16 @@ scripts/smoke.sh
 
 ## 현재 상태
 
-0.7.0(2026-10-28; pytest 384개 통과 PostgreSQL 포함(L24 경쟁 시험 포함, 일회용 PostgreSQL 한 대), 미포함 시 아래 SKIP 제외 통과, SQLite·PostgreSQL 스모크 SMOKE OK): 전수 점검 반영(추출기 선형화, 4-eyes 기본, 엄격 입력, 환자 정보 탐지 확대, 운영 구성 거부, 동시 요청 상한, SIGTERM, 보존 `purge`, v2 Trace 문항 ID). 상세와 한계는 docs/CHANGELOG.md, docs/boundary.md.
+**시험 상태(정본, 개수는 여기 한 곳)**: 커밋 9b912e9, 2026-10-28, 새 clone + 새 venv(위 설치 줄 그대로, `../boundary-contracts`·`../survey-service/schema` 옆에 둠), `python -m pytest -q -rs`. PostgreSQL 없음(`TEST_DATABASE_URL` 미설정, 기본 기준): 297 통과, 87 건너뜀, 0 실패(약 62초). 건너뜀 87건은 전부 `TEST_DATABASE_URL` 없음으로 건너뛴 PostgreSQL 시험이다(`-rs` 출력 60줄, 한 줄이 여러 건일 수 있어 건수 합 87). 다른 사유의 건너뜀은 없다. PostgreSQL 포함 전체(일회용 PostgreSQL 한 대, 헤드 지시로 같은 커밋 기준): 384 통과. 이번 세션에서 PostgreSQL 포함 실행은 다시 하지 않았고 384는 이전 실측값이다. 스모크(`scripts/smoke.sh`)는 이번에 돌리지 않았다.
 
-저자 경로·개선 신호의 장애 동작(0.6.3, 2026-10-28, FAULT_MATRIX E2·D5): 멈춘/끊긴 업로드, 깨진 요청, 예상 밖 오류, 재시작·재전송 멱등, 큰 자료 쓰기 상한, 개선 신호의 느림·5xx·깨진 응답. 칸별 표와 한계는 docs/boundary.md. 확인한 것(이 PC, 일회용 PostgreSQL 한 대): `python -m pytest -q`는 `TEST_DATABASE_URL` 설정 시 283개 통과, 미설정 시 206개 통과 + 77개 SKIP. 운영에서 저자 경로를 열지 말지는 사용자 결정이라 열지 않았다. 컨테이너 조합 재측정은 deploy E2E에서 헤드가 한다.
+0.7.0(2026-10-28; 시험 개수는 위 "시험 상태" 문단, SQLite·PostgreSQL 스모크 SMOKE OK): 전수 점검 반영(추출기 선형화, 4-eyes 기본, 엄격 입력, 환자 정보 탐지 확대, 운영 구성 거부, 동시 요청 상한, SIGTERM, 보존 `purge`, v2 Trace 문항 ID). 상세와 한계는 docs/CHANGELOG.md, docs/boundary.md.
 
-PostgreSQL 대기 상한(0.6.2, 2026-10-28, FAULT_MATRIX P0-3/E1): 접속 3초, 문장 3초, `/readyz` DB 확인 2초(설정 가능, 근거는 docs/boundary.md "DB 대기 상한"). 확인한 것(이 PC, 일회용 PostgreSQL 컨테이너): `python -m pytest -q`는 `TEST_DATABASE_URL` 설정 시 218개 통과, 미설정 시 160개 통과 + 58개 SKIP. `SMOKE_DB=postgres scripts/smoke.sh`와 기본(SQLite) `scripts/smoke.sh` 모두 SMOKE OK. `docker pause`에서 `/readyz`는 2.0초에 503, 해제 뒤 즉시 200. 확인하지 못한 것: 컨테이너 조합(gateway, 다른 영역)에서의 재측정은 deploy E2E 5p에서 헤드가 한다. 아래 "153개" 줄은 이전 세션의 기록이다.
+저자 경로·개선 신호의 장애 동작(0.6.3, 2026-10-28, FAULT_MATRIX E2·D5): 멈춘/끊긴 업로드, 깨진 요청, 예상 밖 오류, 재시작·재전송 멱등, 큰 자료 쓰기 상한, 개선 신호의 느림·5xx·깨진 응답. 칸별 표와 한계는 docs/boundary.md. 확인한 것(이 PC, 일회용 PostgreSQL 한 대): 시험 개수는 "시험 상태" 문단(이 줄의 당시 값은 복사하지 않는다). 운영에서 저자 경로를 열지 말지는 사용자 결정이라 열지 않았다. 컨테이너 조합 재측정은 deploy E2E에서 헤드가 한다.
+
+PostgreSQL 대기 상한(0.6.2, 2026-10-28, FAULT_MATRIX P0-3/E1): 접속 3초, 문장 3초, `/readyz` DB 확인 2초(설정 가능, 근거는 docs/boundary.md "DB 대기 상한"). 확인한 것(이 PC, 일회용 PostgreSQL 컨테이너): 시험 개수는 "시험 상태" 문단. `SMOKE_DB=postgres scripts/smoke.sh`와 기본(SQLite) `scripts/smoke.sh` 모두 SMOKE OK. `docker pause`에서 `/readyz`는 2.0초에 503, 해제 뒤 즉시 200. 확인하지 못한 것: 컨테이너 조합(gateway, 다른 영역)에서의 재측정은 deploy E2E 5p에서 헤드가 한다.
 
 확인된 것(출처 docs/STATUS.md, docs/CHANGELOG.md):
-- 0.5.0(2026-10-27) 비밀 파일 방식(D84)과 boundary-contracts v2.0.2 적용. STATUS 기록은 "153개 통과"이고 그 시점 값이다(현재 실측은 위 실행 결과).
+- 0.5.0(2026-10-27) 비밀 파일 방식(D84)과 boundary-contracts v2.0.2 적용. 당시 시험 개수는 STATUS 기록이고 현재 값은 "시험 상태" 문단이다.
 - STATUS는 스모크 `SMOKE OK`를 기록하고 있으나 이 세션에서 다시 확인하지 않았다.
 - 구현: I1 읽기(SQLite, 메모리, HTTP), 저작 서비스, 텍스트 양식 추출기, 변경 분류, 개선 신호 수신함(I7).
 미구현(docs/STATUS.md, docs/design.md 12절): 관리자 콘솔 UI, 화면 입력 템플릿과 코드·단위 사전, PDF·Word 추출기, I4·I8 연동, 저자 인증의 실제 방식(지금은 정적 토큰 표), I1 SDK의 별도 패키지·태그 배포.
