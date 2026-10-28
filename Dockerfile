@@ -2,12 +2,14 @@ FROM python:3.12-slim
 ARG COMMIT=unknown
 ARG BOUNDARY_TAG=unknown
 ARG SURVEY_SCHEMA_TAG=unknown
+# 왜 n/a: 이 서비스는 turn-engine·model-runtime을 쓰지 않고 deploy build-images.sh도 이 이미지에 두 값을 넘기지 않는다(BOUNDARY_TAG, SURVEY_SCHEMA_TAG, COMMIT만).
+# 라벨 키는 D50이 통일했고 계약 ImageLabels는 두 키를 필수로 두며 값 없음은 `n/a` 하나만 허용한다(`none`은 거부, deploy CR-D28). ARG로 받게 하면 넘겨받을 값이 없다.
 LABEL io.openit.service=question-authoring \
       io.openit.revision=$COMMIT \
       io.openit.contracts.boundary=$BOUNDARY_TAG \
       io.openit.contracts.survey-schema=$SURVEY_SCHEMA_TAG \
-      io.openit.turn-engine=none \
-      io.openit.model-runtime=none
+      io.openit.turn-engine=n/a \
+      io.openit.model-runtime=n/a
 WORKDIR /app
 COPY requirements.lock .
 RUN grep -v -e '^boundary-contracts' -e '^openit-survey-schema' -e '^#' requirements.lock > /tmp/req.txt && pip install --no-cache-dir -r /tmp/req.txt
