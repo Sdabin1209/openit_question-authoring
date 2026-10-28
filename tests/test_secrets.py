@@ -50,8 +50,8 @@ def test_secrets_from_files_work_and_do_not_leak(tmp_path, monkeypatch, capsys):
         st, b = _call(base, "/v1/drafts", AUTH_SECRET); assert st == 200; bodies.append(b)
         st, b = _call(base, "/v1/question-sets", READ_SECRET); assert st == 200; bodies.append(b)
         st, b = _call(base, "/v1/drafts", READ_SECRET); assert st == 403; bodies.append(b)
-        st, b = _call(base, "/v1/drafts", "wrong"); assert st == 403; bodies.append(b)
-        st, b = _call(base, "/v1/drafts"); assert st == 403; bodies.append(b)
+        st, b = _call(base, "/v1/drafts", "wrong"); assert st == 401; bodies.append(b)
+        st, b = _call(base, "/v1/drafts"); assert st == 401; bodies.append(b)
         st, b = _call(base, "/v1/signals", AUTH_SECRET); bodies.append(b)   # I7 불통: 오류 본문에도 토큰이 없어야 한다
         st, b = _call(base, "/readyz"); assert st == 200; bodies.append(b)
         st, b = _call(base, "/healthz"); bodies.append(b)

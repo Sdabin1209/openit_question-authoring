@@ -17,7 +17,7 @@ def test_health_and_auth(svc):
     assert api.handle("GET", "/healthz", {})[0] == 200
     assert api.handle("GET", "/readyz", {})[0] == 200
     st, body = api.handle("GET", "/v1/drafts", {})
-    assert st == 403 and body["code"] == "PERMISSION_DENIED" and body["retryable"] is False
+    assert st == 401 and body["code"] == "PERMISSION_DENIED" and body["retryable"] is False
     assert call(api, "GET", "/v1/nope")[0] == 404
 
 

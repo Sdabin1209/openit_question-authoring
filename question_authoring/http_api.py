@@ -23,6 +23,15 @@ STATUS = {"NOT_FOUND": 404, "INVALID_RECORD": 400, "UNSUPPORTED_VERSION": 422, "
 MAX_BODY = 8 * 1024 * 1024
 
 
+class AuthError(BoundaryError):
+    """인증/인가 거절. 본문 code는 어느 쪽이든 PERMISSION_DENIED, HTTP 상태만 401(자격 없음·틀림) 또는 403(자격은 맞으나 권한 없음).
+    왜: 계약 CONVENTIONS.md 6절(D106): RFC 9110 15.5.2(401은 유효한 자격이 없음, 403은 이해했으나 거부)·RFC 6750 3절(Bearer 도전)."""
+
+    def __init__(self, status: int, message: str):
+        super().__init__("PERMISSION_DENIED", message)
+        self.status = status
+
+
 def _json(body: bytes) -> dict:
     try:
         v = json.loads(body.decode("utf-8") or "{}")
@@ -104,6 +113,8 @@ class Api:
                 return 200, self._read(path, q)
             actor = self._actor(headers)            # 저작 경로: 읽기 토큰은 여기서 403
             return 200, self._route(method, path, q, headers, body, actor)
+        except AuthError as e:
+            return e.status, e.to_record()
         except BoundaryError as e:
             return STATUS[e.code], e.to_record()
         except Exception as e:  # 예상 밖의 오류. 연결을 끊지 않고 JSON 503(UNAVAILABLE)으로 답한다. 상태 코드는 CONVENTIONS 9절 표가 고정한다(500은 표에 없다). 원문 메시지는 쓰지 않는다(접속 정보·자료가 섞일 수 있다)
@@ -116,9 +127,9 @@ class Api:
         return m.group(1) if m else None
 
     def _reader_auth(self, headers) -> None:
-        tok = self._bearer(headers)
-        if tok is None or (_lookup(self.read_tokens, tok) is None and self._principal(headers) is None):
-            raise BoundaryError("PERMISSION_DENIED", "인증이 필요하다")
+        f = self.auth_failure(headers)
+        if f is not None:
+            raise AuthError(f, "인증이 필요하다" if f == 401 else "권한이 없다")
 
     def _page(self, q) -> tuple[Optional[str], int]:
         try:
@@ -167,37 +178,50 @@ class Api:
             return {"item": ch}
         raise BoundaryError("NOT_FOUND", f"없는 경로: GET {path}")
 
-    def _principal(self, headers) -> Optional[Actor]:
+    def _classify(self, headers):
+        """(actor, reader_ok, failure). 토큰 표는 모두 끝까지 비교한다(ADR 0013).
+        failure: None(받아들임) | 401(토큰 없음·틀림, 또는 gateway 토큰인데 X-Openit-User 없음) | 403(토큰은 맞으나 사용자 모름·형식 불가)."""
         h = {k.lower(): v for k, v in headers.items()}
         m = re.match(r"^Bearer (\S+)$", h.get("authorization", ""))
         if not m:
-            return None
+            return None, False, 401
         tok = m.group(1)
-        static = _lookup(self.tokens, tok)          # 정적 표와 gateway 표를 둘 다 끝까지 비교한다(어느 쪽이 맞았는지가 시간에 드러나지 않게)
+        static = _lookup(self.tokens, tok)          # 정적 표·gateway 표·읽기 표를 모두 비교한다(어느 표에서 맞았는지가 시간에 드러나지 않게)
         is_gw = _has(self.gateway_tokens, tok)
+        reader = _lookup(self.read_tokens, tok) is not None
         if static is not None:                      # 정적 토큰: X-Openit-User는 무시한다(클라이언트가 보낸 값을 믿지 않는다)
-            return static
+            return static, True, None
         if is_gw:
             user = h.get("x-openit-user", "")
+            if not user:
+                return None, False, 401             # 사람 행위자 호출에 신원이 없다(계약: X-Openit-User 없으면 401)
             role = self.user_roles.get(user)
             if role is None or not _USER_RE.match(user):
-                return None                         # 헤더가 없거나 이 서비스가 아는 사용자가 아니다
+                return None, False, 403             # 신원은 왔으나 이 서비스가 아는 사용자가 아니다
             # 계약의 Id(reviewer_id)는 '@'를 허용하지 않는다. 이메일형 ID는 '@'를 ':at:'로 바꿔 기록한다(역변환 가능, 충돌 없음: 입력에 ':'를 허용하지 않는다)
-            return Actor(user.replace("@", ":at:"), role)
-        return None
+            return Actor(user.replace("@", ":at:"), role), True, None
+        if reader:
+            return None, True, None                 # 읽기 토큰: 읽기 면만. 저작 경로는 403
+        return None, False, 401
+
+    def auth_failure(self, headers) -> Optional[int]:
+        """읽기 면(I1)과 본문 읽기 전 검사용: 받아들일 자격이면 None, 아니면 401 또는 403."""
+        return self._classify(headers)[2]
+
+    def _principal(self, headers) -> Optional[Actor]:
+        return self._classify(headers)[0]
 
     def has_credentials(self, headers) -> bool:
-        """본문을 읽기 전의 빠른 검사: 알려진 토큰(또는 읽기 토큰)인가. 8MiB를 받은 뒤에야 거절하지 않으려는 것이다."""
-        if self._principal(headers) is not None:
-            return True
-        m = re.match(r"^Bearer (\S+)$", {k.lower(): v for k, v in headers.items()}.get("authorization", ""))
-        return bool(m and _lookup(self.read_tokens, m.group(1)) is not None)
+        """본문을 읽기 전의 빠른 검사: 받아들일 자격인가. 8MiB를 받은 뒤에야 거절하지 않으려는 것이다."""
+        return self.auth_failure(headers) is None
 
     def _actor(self, headers) -> Actor:
-        actor = self._principal(headers)
-        if actor is None:
-            raise BoundaryError("PERMISSION_DENIED", "인증이 필요하다")
-        return actor
+        actor, _, f = self._classify(headers)
+        if actor is not None:
+            return actor
+        if f is None:                               # 읽기 토큰으로 저작 경로: 토큰은 맞지만 권한이 없다
+            raise AuthError(403, "이 토큰은 읽기 전용이다")
+        raise AuthError(f, "인증이 필요하다" if f == 401 else "권한이 없다")
 
     def _route(self, method, path, q, headers, body, actor):
         s = self.svc
@@ -272,6 +296,8 @@ def make_server(api: Api, host: str, port: int, request_timeout: Optional[float]
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
+            if status == 401:
+                self.send_header("WWW-Authenticate", "Bearer")   # RFC 9110 11.6.1(401은 도전 필수), RFC 6750 3절(Bearer)
             for k, v in (extra or {}).items():
                 self.send_header(k, v)
             self.end_headers()
@@ -290,9 +316,10 @@ def make_server(api: Api, host: str, port: int, request_timeout: Optional[float]
             path = self.path.split("?", 1)[0]
             if path in ("/healthz", "/readyz"):
                 return self._do_inner(method)
-            if not api.has_credentials(dict(self.headers)):
+            f = api.auth_failure(dict(self.headers))
+            if f is not None:
                 self.close_connection = True    # 인증 없는 호출의 본문은 읽지 않는다
-                return self._reply(403, BoundaryError("PERMISSION_DENIED", "인증이 필요하다").to_record())
+                return self._reply(f, BoundaryError("PERMISSION_DENIED", "인증이 필요하다" if f == 401 else "권한이 없다").to_record())
             if not slots.acquire(blocking=False):
                 self.close_connection = True
                 return self._reply(503, BoundaryError("UNAVAILABLE", "동시 요청이 너무 많다. 잠시 뒤 다시 시도").to_record(),

@@ -120,7 +120,7 @@ def test_auth_failures_are_not_retryable(svc):
     api = api_of(svc)
     for h in ({}, {"Authorization": "Bearer wrong"}, {"Authorization": "Basic x"}):
         st, body = api.handle("GET", "/v1/drafts", h, b"")
-        assert st == 403 and body["retryable"] is False
+        assert st == 401 and body["retryable"] is False   # 토큰 없음·틀림은 401(계약 CONVENTIONS 6절)
 
 
 # ---- E2 F4: 재시작해도 확정 데이터와 진행 중 초안이 남고, 재전송은 멱등 ----

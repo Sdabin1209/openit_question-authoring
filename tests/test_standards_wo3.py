@@ -41,7 +41,7 @@ def test_gateway_and_read_tokens_compare_every_candidate(svc, monkeypatch):
               gateway_tokens=["g1", "g2", "g3"], user_roles={"u1": "question-author"})
     calls.clear()
     assert api._principal({"Authorization": "Bearer g1", "X-Openit-User": "u1"}).id == "u1"
-    assert len(calls) == 3      # 정적 토큰 표가 비어 있어 gateway 후보 3개만 비교한다
+    assert len(calls) == 3 + 2      # 정적 0 + gateway 3 + 읽기 2: 어느 표에서 맞았는지와 무관하게 모두 비교한다(401/403 분류 도입 뒤)
     calls.clear()
     assert api.has_credentials({"Authorization": "Bearer r1"}) is True
     # 정적 0 + gateway 3 + 읽기 2를 모두 끝까지 비교

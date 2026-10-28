@@ -85,9 +85,9 @@ def test_unauthenticated_body_is_not_read_and_concurrency_is_capped(svc):
     port = srv.server_address[1]
     try:
         t = time.monotonic()
-        # 인증 없이 8MiB를 보내겠다고 하고 본문은 보내지 않는다: 본문을 기다리지 않고 바로 403
+        # 인증 없이 8MiB를 보내겠다고 하고 본문은 보내지 않는다: 본문을 기다리지 않고 바로 401
         out = raw(port, b"POST /v1/materials?question_set_id=q&filename=f.txt HTTP/1.1\r\nHost: x\r\nContent-Length: 8000000\r\n\r\n")
-        assert b" 403 " in out.split(b"\r\n")[0] and time.monotonic() - t < 2
+        assert b" 401 " in out.split(b"\r\n")[0] and time.monotonic() - t < 2
         # 요청 하나가 자리를 쥐고(본문을 기다리는 중) 있으면 다음 인증된 요청은 503 + Retry-After, healthz는 그대로 응답
         holder = socket.create_connection(("127.0.0.1", port), timeout=5)
         holder.sendall(b"POST /v1/drafts HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer tok\r\nContent-Length: 100\r\n\r\n")

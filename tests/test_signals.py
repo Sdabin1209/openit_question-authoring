@@ -110,7 +110,7 @@ def test_api_enabled_disabled_and_auth(svc, i7):
     assert st == 200 and body["status"] == "OK" and [s["question_set_id"] for s in body["question_sets"]] == ["qs-main"]
     assert call(on, "/v1/signals", "read-tok")[0] == 403          # 읽기 토큰은 불가
     assert call(on, "/v1/signals", "visitor")[0] == 403           # 저자 역할이 아님
-    assert call(on, "/v1/signals", "none")[0] == 403
+    assert call(on, "/v1/signals", "none")[0] == 401
     assert call(on, "/v1/signals?max_cases=0")[0] == 400
     off = Api(svc, actors)
     st, body = call(off, "/v1/signals")

@@ -76,8 +76,8 @@ def test_read_errors_and_auth(server, svc):
     assert get(server, "/v1/question-sets/qs-main/latest?reviewed_only=x")[0] == 400
     assert get(server, "/v1/question-sets?limit=0")[0] == 400
     assert get(server, "/v1/question-sets?limit=501")[0] == 400
-    assert get(server, "/v1/question-sets", token=None)[0] == 403
-    assert get(server, "/v1/question-sets", token="wrong")[0] == 403
+    assert get(server, "/v1/question-sets", token=None)[0] == 401
+    assert get(server, "/v1/question-sets", token="wrong")[0] == 401
     # 승인 철회 후 reviewed_only
     ref = svc.store.latest("qs-main")
     svc.add_review(AUTHOR, ref, decision="REJECTED", clinical_basis_approved=False, reason="철회")
