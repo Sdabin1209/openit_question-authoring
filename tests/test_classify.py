@@ -2,6 +2,7 @@ import copy
 import json
 
 import pytest
+from boundary_contracts import PIPELINE_SCHEMA_VERSION
 
 from question_authoring import classify
 import survey_schema
@@ -75,12 +76,12 @@ def test_classification_record(bank, validators):
     to = {"id": "qs", "version": "2", "content_hash": "sha256:" + "a" * 64}
     fr = {"id": "qs", "version": "1", "content_hash": "sha256:" + "b" * 64}
     rec = classify.classify_change(bank, new, to_ref=to, from_ref=fr, created_at="2026-10-15T00:00:00Z",
-                                   pipeline_schema_version="1.0")
+                                   pipeline_schema_version=PIPELINE_SCHEMA_VERSION)
     validators.check("ChangeClassification", rec)
     assert rec["follow_ups"] == ["REGENERATE_SAMPLES", "REEVALUATE_MODEL", "CLINICAL_REVIEW"]
-    assert classify.classify_change(None, new, to_ref=to, from_ref=None, created_at="x", pipeline_schema_version="1.0") is None
+    assert classify.classify_change(None, new, to_ref=to, from_ref=None, created_at="x", pipeline_schema_version=PIPELINE_SCHEMA_VERSION) is None
     with pytest.raises(ValueError):
-        classify.classify_change(bank, bank, to_ref=to, from_ref=fr, created_at="x", pipeline_schema_version="1.0")
+        classify.classify_change(bank, bank, to_ref=to, from_ref=fr, created_at="x", pipeline_schema_version=PIPELINE_SCHEMA_VERSION)
 
 
 def test_tables_cover_schema_fields():
