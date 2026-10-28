@@ -56,7 +56,7 @@ def _ts(dt: datetime) -> str:
 
 
 def _new_id_default(prefix: str) -> str:
-    return f"{prefix}-{uuid.uuid4().hex[:16]}"
+    return f"{prefix}-{uuid.uuid4().hex}"   # 왜: uuid4 전체(122비트 무작위, RFC 4122 4.4절). 64비트 절단의 이유 기록이 없었다(표준성 #18)
 
 
 def _unescape(p: str) -> str:
