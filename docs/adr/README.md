@@ -15,3 +15,4 @@ Nygard 형식. 결정이 바뀌면 지우지 않고 새 ADR이 이전 것을 대
 - [ADR 0011: 보존과 정리 purge](0011-보존과-정리-purge.md)
 - [ADR 0012: HTTP 서버는 표준 라이브러리 ThreadingHTTPServer](0012-HTTP-서버는-표준-라이브러리-ThreadingHTTPServer.md)
 - [ADR 0013: 토큰 비교는 상수 시간 compare_digest](0013-토큰-비교는-상수-시간-compare_digest.md)
+- [ADR 0014: 근거 기록이 없던 값의 출처 분류](0014-근거-없는-값의-출처-분류.md)
