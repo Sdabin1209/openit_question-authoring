@@ -1,0 +1,19 @@
+{
+  "pipeline_schema_version": "2.1",
+  "review_id": "rv-da74d70965e8441a",
+  "question_set": {
+    "id": "qs-main",
+    "version": "1",
+    "content_hash": "sha256:1dfd4c32498001d366be6957c005a708ac213376d64eac2b9d9d1a960b6aba38"
+  },
+  "reviewer_role": "clinical-reviewer",
+  "reviewer_id": "dr-park",
+  "decision": "APPROVED",
+  "clinical_basis_approved": true,
+  "reviewed_at": "2026-10-28T14:11:56Z",
+  "ext": {
+    "question-authoring": {
+      "kind": "FOLLOW_UP_REVIEW"
+    }
+  }
+}

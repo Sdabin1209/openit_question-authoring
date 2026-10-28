@@ -1,0 +1,9 @@
+{
+  "edits": [
+    {
+      "op": "set",
+      "path": "/questions/0/question_sentence",
+      "value": "체온이 몇 도인가요?"
+    }
+  ]
+}
