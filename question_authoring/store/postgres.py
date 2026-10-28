@@ -276,6 +276,11 @@ class PostgresQuestionStore(AuthoringStore):
                 raise BoundaryError("CONFLICT", f"다음 버전 번호는 {last + 1}이어야 한다: {n}")
             if c.execute("SELECT 1 FROM reviews WHERE review_id=%s", (review["review_id"],)).fetchone():
                 raise BoundaryError("CONFLICT", f"review_id가 이미 있다: {review['review_id']}")
+            # 왜: 방치된 초안을 확인하는 중에 purge가 초안과 원본을 지우면, 메모리에 든 초안으로 출처가 없는 원본을 가리키는 버전이 생긴다(L24 경쟁 시험이 찾음).
+            # 락 안의 같은 트랜잭션에서 원본의 존재를 확인해 막는다. 버전이 한 번 참조하면 purge가 지우지 않는다(ADR 0011).
+            sh = (source or {}).get("source_hash")
+            if sh and not c.execute("SELECT 1 FROM blobs WHERE source_hash=%s", (sh,)).fetchone():
+                raise BoundaryError("FAILED_PRECONDITION", "원본 자료가 보존 기간이 지나 정리되었다. 같은 자료를 다시 올린 뒤 확인해야 한다")
             c.execute("INSERT INTO versions(qsid, version_no, content_hash, bank, source) VALUES(%s,%s,%s,%s,%s)",
                       (qsid, n, ref["content_hash"], _dump(bank), _dump(source) if source else None))
             c.execute("INSERT INTO reviews(review_id, qsid, version_no, record) VALUES(%s,%s,%s,%s)",

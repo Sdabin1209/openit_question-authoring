@@ -1,5 +1,10 @@
 # 변경 이력
 
+## 미배포 (2026-10-28) L24 PostgreSQL 업로드·purge 경쟁
+
+- 결함 수정: 보존 기간을 넘겨 방치된 초안을 확인(confirm)하는 중에 purge가 초안과 원본을 지우면, 원본이 없는 출처를 가리키는 불변 버전이 만들어졌다. `commit_version`이 같은 락(트랜잭션) 안에서 원본 존재를 확인하고 없으면 FAILED_PRECONDITION으로 거절한다(세 저장소 구현 모두). 같은 자료를 다시 올리면 확인이 이어진다. 근거: ADR 0011.
+- 시험 추가: `tests/test_postgres_purge_race.py`(스레드별 연결의 업로드·purge, 편집·purge, 별도 프로세스 purge, 확인·purge 경쟁, 최악 지점 결정적 끼워 넣기)와 `test_commit_refuses_a_version_whose_source_material_is_gone`(전 저장소).
+
 ## 미배포 (2026-10-28) 3차 점검 M2
 
 - 시험 수정: `test_purge_threaded_with_uploads_never_loses_a_referenced_source`가 간헐 실패하던 원인은 시험의 가정이었다(방금 올린 참조 전 원본까지 강제로 오래된 것으로 만듦). 올림~참조 저장 구간과 나이 올리기를 배타적으로 하고, purge 뒤 불변식 검사를 추가했다. 코드 변경 없음.

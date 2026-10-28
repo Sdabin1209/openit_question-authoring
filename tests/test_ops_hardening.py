@@ -346,3 +346,28 @@ def test_gateway_email_style_user_ids(validators):
                            "<s>@x": "question-author", "a%40b": "question-author", ("a" * 70 + "@x"): "question-author"})
     for bad in ("a b@x", "a@b@c", "x:y", "<s>@x", "a%40b", "a" * 70 + "@x", "@x", "kim@"):
         assert call(bad)[0] == 403, bad
+
+
+def test_commit_refuses_a_version_whose_source_material_is_gone(store, validators):
+    """L24: 원본이 정리된 뒤의 확정은 출처 없는 버전을 만들지 않는다. 다시 올리면 확정된다(모든 저장소 구현이 같다)."""
+    from boundary_contracts.errors import BoundaryError
+    svc = AuthoringService(store, validators, require_two_person=False)
+    out = svc.ingest_material(AUTHOR, "qs-g", "form.txt", example_text())
+    did = out["draft_id"]
+    h = store.load_draft(did)["source"]["source_hash"]
+    ph = svc.get_preview(did)["preview_hash"]
+    # 원본만 사라진 상태를 만든다(저장소 구현별 내부 삭제): purge와 같은 결과
+    if isinstance(store, MemoryQuestionStore):
+        store._blobs.pop(h)
+    elif getattr(store, "kind", "") == "postgres":
+        store._write(lambda c: c.execute("DELETE FROM blobs"))
+    else:
+        store._db.execute("DELETE FROM blobs")
+    with pytest.raises(BoundaryError) as e:
+        svc.confirm(AUTHOR, did, ph)
+    assert e.value.code == "FAILED_PRECONDITION"
+    with pytest.raises(BoundaryError) as nf:
+        store.latest("qs-g")
+    assert nf.value.code == "NOT_FOUND"
+    store.put_source(h, "form.txt", example_text())
+    assert svc.confirm(AUTHOR, did, ph)["version"] == "1"
