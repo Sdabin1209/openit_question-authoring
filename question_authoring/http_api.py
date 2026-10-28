@@ -5,6 +5,7 @@ handle()은 소켓 없이 시험할 수 있는 순수 함수 형태이고, make_
 """
 from __future__ import annotations
 
+import hmac
 import json
 import re
 import threading
@@ -40,6 +41,27 @@ def _need(d: dict, key: str):
 
 # gateway 사용자 ID: 일반 ID 또는 이메일형(local@domain). 문자 집합과 길이를 제한한다(총 길이가 계약 Id의 128자 안에 들도록 local 60, domain 60).
 _USER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,59}(?:@[A-Za-z0-9][A-Za-z0-9.-]{0,59})?$")
+
+
+def _lookup(table: Mapping, token: str):
+    """토큰 표 조회. 모든 후보를 `hmac.compare_digest`로 끝까지 비교한다(조기 종료·dict 해시 조회 없음).
+    왜: 문자열 `==`/dict 조회는 앞부분이 맞을수록 오래 걸려 타이밍 차이로 토큰을 추정할 수 있다. Python hmac 문서와 OWASP가 상수 시간 비교를 권한다(ADR 0010 개정).
+    바이트로 비교하는 이유: compare_digest는 ASCII가 아닌 str에 TypeError를 내기 때문이다."""
+    t = token.encode("utf-8")
+    found = None
+    for k, v in table.items():
+        if hmac.compare_digest(k.encode("utf-8"), t):
+            found = v
+    return found
+
+
+def _has(table: Iterable, token: str) -> bool:
+    t = token.encode("utf-8")
+    ok = False
+    for k in table:
+        if hmac.compare_digest(k.encode("utf-8"), t):
+            ok = True
+    return ok
 
 
 class Api:
@@ -95,7 +117,7 @@ class Api:
 
     def _reader_auth(self, headers) -> None:
         tok = self._bearer(headers)
-        if tok is None or (tok not in self.read_tokens and self._principal(headers) is None):
+        if tok is None or (_lookup(self.read_tokens, tok) is None and self._principal(headers) is None):
             raise BoundaryError("PERMISSION_DENIED", "인증이 필요하다")
 
     def _page(self, q) -> tuple[Optional[str], int]:
@@ -151,9 +173,11 @@ class Api:
         if not m:
             return None
         tok = m.group(1)
-        if tok in self.tokens:                      # 정적 토큰: X-Openit-User는 무시한다(클라이언트가 보낸 값을 믿지 않는다)
-            return self.tokens[tok]
-        if tok in self.gateway_tokens:
+        static = _lookup(self.tokens, tok)          # 정적 표와 gateway 표를 둘 다 끝까지 비교한다(어느 쪽이 맞았는지가 시간에 드러나지 않게)
+        is_gw = _has(self.gateway_tokens, tok)
+        if static is not None:                      # 정적 토큰: X-Openit-User는 무시한다(클라이언트가 보낸 값을 믿지 않는다)
+            return static
+        if is_gw:
             user = h.get("x-openit-user", "")
             role = self.user_roles.get(user)
             if role is None or not _USER_RE.match(user):
@@ -167,7 +191,7 @@ class Api:
         if self._principal(headers) is not None:
             return True
         m = re.match(r"^Bearer (\S+)$", {k.lower(): v for k, v in headers.items()}.get("authorization", ""))
-        return bool(m and m.group(1) in self.read_tokens)
+        return bool(m and _lookup(self.read_tokens, m.group(1)) is not None)
 
     def _actor(self, headers) -> Actor:
         actor = self._principal(headers)
