@@ -12,7 +12,6 @@
 | 출력 | 합성 데이터, model-lab, 게이트(docs/brief.md 2절) | 문항 세트 불변 버전, 검수, 변경 분류 읽기 | I1 QuestionReader. HTTP `GET /v1/question-sets` 이하(docs/boundary.md) |
 | 입력 | ops-feedback | 실패 사례로 만드는 개선 신호(읽기 전용, 설정할 때만 켜짐) | I7 FailureStore(`list_cases`, `get_trace`) |
 | 입력(미구현) | release-gate | 판정 조회 | I4 |
-| 입력(미구현) | turn-engine | 규칙 미리보기 | I8 |
 | 입력 | 사람(저자) | 문항 자료 파일, 화면 입력, 확인 | 저작 API `/v1/drafts`, `/v1/materials` 등(docs/design.md 8절) |
 
 이웃 영역의 코드는 가져오지 않는다. 계약은 `boundary-contracts`, 문진 스키마는 `openit-survey-schema` 패키지로만(버전은 `requirements.lock`과 `deploy/scripts/lib.sh`가 정본) 쓴다(docs/boundary.md, requirements.lock).

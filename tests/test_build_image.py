@@ -18,15 +18,23 @@ SHA = "a" * 64
 OFFLINE_WHEEL = {"PIP_NO_BUILD_ISOLATION": "0"} if all(importlib.util.find_spec(m) for m in ("setuptools", "wheel")) else {}
 
 
-def make_tree(path, name):
+def make_tree(path, name, version="1.0"):
     """wheel로 만들 수 있는 가짜 라이브러리 소스 트리."""
     path.mkdir(parents=True)
     (path / "pyproject.toml").write_text(
-        f'[build-system]\nrequires=["setuptools"]\nbuild-backend="setuptools.build_meta"\n[project]\nname="{name}"\nversion="1.0"\n'
+        f'[build-system]\nrequires=["setuptools"]\nbuild-backend="setuptools.build_meta"\n[project]\nname="{name}"\nversion="{version}"\n'
         f'[tool.setuptools]\npackages=["{name}"]\n')
     (path / name).mkdir()
     (path / name / "__init__.py").write_text("")
     return str(path)
+
+
+LOCK = ("boundary-contracts @ git+ssh://git@github.com/x/openit_boundary-contracts.git@v3.0.0\n"
+        "openit-survey-schema @ git+ssh://git@github.com/x/openit_survey-service.git@survey-schema-v1.2.0#subdirectory=schema\n")
+
+
+def write_lock(src, text=LOCK):
+    (pathlib.Path(src) / "requirements.lock").write_text(text)
 
 
 @pytest.fixture
@@ -40,8 +48,11 @@ def req(tmp_path):
     (src / ".venv").mkdir()
     (src / "question_authoring").mkdir()
     (src / "question_authoring" / "m.py").write_text("")
-    return {"source_dir": str(src), "revision": "abcdef1", "versions": {"boundary": "v2.5.0", "survey_schema": "v1.2.0", "turn_engine": "v0.4.3"},
-            "dependency_sources": {"boundary": make_tree(tmp_path / "bc", "fakebc"), "survey_schema": make_tree(tmp_path / "ss", "fakess")},
+    write_lock(src)
+    # 실제 패키지와 같은 이름·버전의 가짜 트리: 라벨은 요청이 아니라 이 wheel의 버전에서 나온다(U50)
+    return {"source_dir": str(src), "revision": "abcdef1", "versions": {"boundary": "v3.0.0", "survey_schema": "v1.2.0"},
+            "dependency_sources": {"boundary": make_tree(tmp_path / "bc", "boundary_contracts", "3.0.0"),
+                                   "survey_schema": make_tree(tmp_path / "ss", "openit_survey_schema", "1.2.0")},
             "image_tag": "question-authoring-test/q:t1"}
 
 
@@ -100,7 +111,7 @@ case "$1" in
   image) case "$4" in
       '{{.Id}}') echo "sha256:__SHA__" ;;
       *) c=$(grep -o -- '--build-arg COMMIT=[^ ]*' "$log" | cut -d= -f2); b=$(grep -o -- 'BOUNDARY_TAG=[^ ]*' "$log" | cut -d= -f2); s=$(grep -o -- 'SURVEY_SCHEMA_TAG=[^ ]*' "$log" | cut -d= -f2)
-         echo "{\"io.openit.service\":\"question-authoring\",\"io.openit.revision\":\"$c\",\"io.openit.contracts.boundary\":\"$b\",\"io.openit.contracts.survey-schema\":\"$s\",\"io.openit.turn-engine\":\"n/a\",\"io.openit.model-runtime\":\"n/a\",\"org.other\":\"x\"}" ;;
+         echo "{\"io.openit.service\":\"question-authoring\",\"io.openit.revision\":\"$c\",\"io.openit.contracts.boundary\":\"$b\",\"io.openit.contracts.survey-schema\":\"$s\",\"io.openit.model-runtime\":\"n/a\",\"org.other\":\"x\"}" ;;
     esac ;;
 esac
 '''
@@ -122,9 +133,9 @@ def test_result_last_line_matches_contract_and_labels_match_request(tmp_path, re
     assert not list(bc.validator("BuildImageResult").iter_errors(out))
     assert out["image"] == req["image_tag"] and out["image_id"] == "sha256:" + SHA
     assert out["labels"]["io.openit.revision"] == req["revision"]
-    assert out["labels"]["io.openit.contracts.boundary"] == "v2.5.0"
+    assert out["labels"]["io.openit.contracts.boundary"] == "v3.0.0"
     assert out["labels"]["io.openit.contracts.survey-schema"] == "1"          # v1.2.0의 주 버전
-    assert out["labels"]["io.openit.turn-engine"] == "n/a"                    # turn_engine 요청 값은 쓰지 않는다(폐기)
+    assert "io.openit.turn-engine" not in out["labels"]                       # 3.0.0에서 라벨이 없어졌다
     assert "org.other" not in out["labels"]
     rec = log.read_text()
     assert "-t " + req["image_tag"] in rec
@@ -164,3 +175,40 @@ def test_missing_exposure_declaration_fails(tmp_path, req):
     (pathlib.Path(req["source_dir"]) / "deploy-exposure.json").unlink()
     p = run(tmp_path, req)
     assert p.returncode == 2 and "deploy-exposure.json" in p.stderr
+
+
+def test_label_values_come_from_the_installed_wheels_not_the_request(tmp_path, req):
+    """U50: 요청의 버전 문자열이 아니라 wheel(실제 설치될 것)의 버전에서 라벨 값을 찍는다. 같은 요청이라도 트리가 다르면 요청이 거짓이 된다."""
+    r = json.loads(json.dumps(req))
+    r["versions"]["boundary"] = "v3.0.1"          # 요청은 3.0.1이라 하지만 트리는 3.0.0
+    p = run(tmp_path, r)
+    assert p.returncode == 2 and "v3.0.0" in p.stderr and "v3.0.1" in p.stderr and "라벨" in p.stderr
+
+
+def test_survey_schema_mismatch_between_request_and_tree_fails(tmp_path, req):
+    r = json.loads(json.dumps(req))
+    r["versions"]["survey_schema"] = "v1.3.0"
+    p = run(tmp_path, r)
+    assert p.returncode == 2 and "1.2.0" in p.stderr and "v1.3.0" in p.stderr
+
+
+@pytest.mark.parametrize("lock", [LOCK.replace("@v3.0.0", "@v2.9.0"), LOCK.replace("survey-schema-v1.2.0", "survey-schema-v1.1.0"), ""])
+def test_request_that_differs_from_this_repos_pin_fails(tmp_path, req, lock):
+    """요청 버전이 이 영역의 고정(requirements.lock)과 다르면 라벨을 찍지 않고 실패한다(라벨이 거짓이 되지 않게)."""
+    write_lock(req["source_dir"], lock)
+    p = run(tmp_path, req)
+    assert p.returncode == 2 and "requirements.lock" in p.stderr
+
+
+def test_docker_gets_the_installed_versions(tmp_path, req):
+    fake = tmp_path / "docker"
+    fake.write_text(FAKE_DOCKER.replace("__SHA__", SHA))
+    fake.chmod(0o755)
+    log = tmp_path / "log.txt"
+    os.environ["FAKE_LOG"] = str(log)
+    try:
+        assert run(tmp_path, req, docker=str(fake)).returncode == 0
+    finally:
+        del os.environ["FAKE_LOG"]
+    rec = log.read_text()
+    assert "BOUNDARY_TAG=v3.0.0" in rec and "SURVEY_SCHEMA_TAG=1 " in rec

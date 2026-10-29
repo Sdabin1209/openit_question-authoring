@@ -20,8 +20,21 @@ tar -C "$SRC" --exclude=.git --exclude=.venv --exclude=build --exclude=__pycache
 epoch="$(git -C "$SRC" show -s --format=%ct "$REVISION" 2>/dev/null || echo 0)"
 for lib in "$BOUNDARY_SRC" "$SURVEY_SRC"; do
   w="$tmp/w$(basename "$lib")"; cp -r "$lib" "$w"          # 원본 트리에 빌드 흔적을 남기지 않는다
-  SOURCE_DATE_EPOCH="$epoch" "$PY" -m pip wheel -q --no-deps -w "$ctx/build/wheels" "$w" >&2
+  mkdir -p "$tmp/out-$(basename "$lib")"
+  SOURCE_DATE_EPOCH="$epoch" "$PY" -m pip wheel -q --no-deps -w "$tmp/out-$(basename "$lib")" "$w" >&2
+  cp "$tmp/out-$(basename "$lib")"/*.whl "$ctx/build/wheels/"
 done
+# 라벨 정직성(U50): 라벨 값은 요청 문자열이 아니라 이미지에 실제로 설치되는 wheel의 버전에서 찍는다.
+# 요청 버전, wheel 버전, 이 영역의 고정(requirements.lock)이 하나라도 다르면 라벨을 찍지 않고 실패한다.
+wheel_version() { local f; f="$(ls "$ctx/build/wheels/"$1-*.whl 2>/dev/null | head -1)"; [ -n "$f" ] || { echo "build-image: wheel을 찾지 못했다: $1" >&2; exit 2; }; basename "$f" | cut -d- -f2; }
+ACTUAL_BOUNDARY="v$(wheel_version boundary_contracts)"
+ACTUAL_SURVEY="$(wheel_version openit_survey_schema)"                 # 예: 1.2.0
+lock_boundary="$(sed -n 's/^boundary-contracts @ .*@\(v[0-9][0-9.]*\)$/\1/p' "$SRC/requirements.lock" 2>/dev/null || true)"
+lock_survey="$(sed -n 's/^openit-survey-schema @ .*@survey-schema-\(v[0-9][0-9.]*\)#.*$/\1/p' "$SRC/requirements.lock" 2>/dev/null || true)"
+mismatch() { echo "build-image: $1 버전이 서로 다르다(요청 $2, 설치될 wheel $3, requirements.lock ${4:-없음}). 라벨이 거짓이 되므로 빌드하지 않는다" >&2; exit 2; }
+[ "$ACTUAL_BOUNDARY" = "$BOUNDARY_VERSION" ] && [ "$ACTUAL_BOUNDARY" = "$lock_boundary" ] || mismatch "boundary-contracts" "$BOUNDARY_VERSION" "$ACTUAL_BOUNDARY" "$lock_boundary"
+[ "v$ACTUAL_SURVEY" = "$SURVEY_VERSION" ] && [ "v$ACTUAL_SURVEY" = "$lock_survey" ] || mismatch "문진 스키마" "$SURVEY_VERSION" "v$ACTUAL_SURVEY" "$lock_survey"
+BOUNDARY_VERSION="$ACTUAL_BOUNDARY"; SURVEY_MAJOR="${ACTUAL_SURVEY%%.*}"      # 라벨 값: 계약은 v 접두사 전체, 문진 스키마는 주 버전
 # 레이어에 파일 시각이 들어가므로 컨텍스트 전체의 시각도 같은 값으로 맞춘다
 find "$ctx" -exec touch -h -d "@$epoch" {} +
 # 노출 선언(계약 Exposure)은 리포의 deploy-exposure.json이 정본이고 이미지 라벨 io.openit.exposure에 compact JSON으로 단다(ADR 0021)

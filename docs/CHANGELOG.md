@@ -1,5 +1,12 @@
 # 변경 이력
 
+## 미배포 (2026-10-30) 계약 3.0.0 전환 (U300) + 라벨 정직성 (U50)
+
+- 핀: boundary-contracts v3.0.0(`requirements.lock`, `scripts/build_wheels.sh`, 시험의 표본 값). 2.x 레코드는 3.0 클라이언트가 거부하므로 레코드 버전은 계약의 `PIPELINE_SCHEMA_VERSION`을 따른다(이 영역은 리터럴을 두지 않았다).
+- turn-engine: 코드·설치 의존은 처음부터 없었다. 이미지 라벨 `io.openit.turn-engine`(n/a)을 Dockerfile에서 지웠다(ImageLabels가 3.0.0에서 거부). 문서의 I8 규칙 미리보기 언급을 지웠다(`docs/brief.md`는 헤드가 준 브리프라 그대로 두었고, 이 영역에서 할 일이 아니다).
+- U50: `scripts/build-image.sh`가 라벨 값을 요청 문자열이 아니라 이미지에 설치되는 wheel의 버전에서 찍는다. 요청 버전, wheel 버전, `requirements.lock`의 고정 중 하나라도 다르면 라벨을 찍지 않고 종료 코드 2로 실패한다.
+- 계약 3.0.0의 나머지(I9 `ExtractRequest`, `action_rules_version`, ReleaseReader, deid, StaticImageInterface)는 이 영역이 쓰지 않는다. `SetupEnvReport`의 `environment` 필수는 이미 지킨다.
+
 ## 미배포 (2026-10-30) U49: 승격된 스키마의 영역 사본 삭제
 
 - `docs/change-requests/schemas/`(스키마 5개, 예시 45개, check.py)와 `contract-ready/`(스키마 5개, 예시, MANIFEST, check.py) 모두 계약 boundary-contracts에 같은 이름이 있는 사본((가))이라 지웠다. 분류 표는 `docs/change-requests/CR-0007-boundary-schemas.md`. 이 사본을 읽는 시험·스크립트는 없었다.

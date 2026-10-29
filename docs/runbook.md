@@ -70,4 +70,4 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 
 ## 이미지 점검
 
-라벨: `io.openit.service`, `io.openit.revision`, `io.openit.contracts.boundary`, `io.openit.contracts.survey-schema`, `io.openit.turn-engine`, `io.openit.model-runtime`(D50). HEALTHCHECK는 `/healthz`를 15초마다 부른다(`docker inspect -f '{{.State.Health.Status}}'`). 스모크는 읽기 토큰으로 I1 읽기 호출과 저작 경로 403도 확인한다.
+라벨: `io.openit.service`, `io.openit.revision`, `io.openit.contracts.boundary`, `io.openit.contracts.survey-schema`, `io.openit.model-runtime`(D50; 계약 3.0.0에서 turn-engine 라벨은 없어졌다), `io.openit.exposure`. HEALTHCHECK는 `/healthz`를 15초마다 부른다(`docker inspect -f '{{.State.Health.Status}}'`). 스모크는 읽기 토큰으로 I1 읽기 호출과 저작 경로 403도 확인한다.

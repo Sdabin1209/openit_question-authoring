@@ -96,13 +96,14 @@ def test_i1_read_surface_and_signals_are_denied_at_the_gateway():
 
 def test_build_image_attaches_the_declaration_as_label(tmp_path):
     """가짜 docker가 받은 --label 값이 정본 파일의 내용과 같고 계약 Exposure를 통과한다."""
-    from test_build_image import FAKE_DOCKER, SHA, make_tree
+    from test_build_image import FAKE_DOCKER, SHA, make_tree, write_lock
     src = tmp_path / "src"
     src.mkdir()
     (src / "Dockerfile").write_text("FROM scratch\n")
     (src / "deploy-exposure.json").write_text((ROOT / "deploy-exposure.json").read_text(encoding="utf-8"))
-    req = {"source_dir": str(src), "revision": "abcdef1", "versions": {"boundary": "v2.7.0", "survey_schema": "v1.2.0"},
-           "dependency_sources": {"boundary": make_tree(tmp_path / "bc", "fakebc"), "survey_schema": make_tree(tmp_path / "ss", "fakess")},
+    write_lock(src)
+    req = {"source_dir": str(src), "revision": "abcdef1", "versions": {"boundary": "v3.0.0", "survey_schema": "v1.2.0"},
+           "dependency_sources": {"boundary": make_tree(tmp_path / "bc", "boundary_contracts", "3.0.0"), "survey_schema": make_tree(tmp_path / "ss", "openit_survey_schema", "1.2.0")},
            "image_tag": "question-authoring-test/q:t1"}
     fake = tmp_path / "docker"
     fake.write_text(FAKE_DOCKER.replace("__SHA__", SHA))

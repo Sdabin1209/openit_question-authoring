@@ -9,7 +9,7 @@
 - Dockerfile, 스모크 시험(`scripts/smoke.sh`, `docker`로 실행해 SMOKE OK 확인).
 - 후속 2: I1 HTTP 읽기 면, 읽기 토큰, survey-schema wheel, HEALTHCHECK, 라벨 통일. boundary-contracts는 v2.0.2(clients 포함).
 - `python -m pytest -q`: PostgreSQL 포함 전체 통과(0.6.0, `TEST_DATABASE_URL` 설정 시). 미설정 시 PostgreSQL 항목은 SKIP.
-- turn-engine·model-runtime: 이 영역은 둘을 설치하지 않고 코드에서도 쓰지 않는다. 이미지 라벨 `io.openit.turn-engine`, `io.openit.model-runtime`은 `none`이다(Dockerfile). turn-engine은 I8 규칙 미리보기를 붙일 때 처음 필요해진다(미구현).
+- model-runtime: 이 영역은 설치하지 않고 코드에서도 쓰지 않는다. 이미지 라벨 `io.openit.model-runtime`은 `n/a`다(Dockerfile). 규칙 미리보기(I8)는 계약 3.0.0에서 퇴역한 turn-engine 몫이라 이 영역에서 하지 않는다.
 
 - 0.6.2: PostgreSQL 접속·문장·`/readyz` 대기 상한(FAULT_MATRIX P0-3/E1). pytest 218개 통과(`TEST_DATABASE_URL` 설정), 미설정 시 160 통과 + 58 SKIP. 스모크 SQLite·PostgreSQL 모두 SMOKE OK. 컨테이너 조합 재측정은 deploy E2E 5p(헤드).
 

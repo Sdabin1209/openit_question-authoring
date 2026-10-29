@@ -37,7 +37,7 @@ def main(path):
     v = req["versions"]
     major = v["survey_schema"][1:].split(".")[0]   # 라벨 io.openit.contracts.survey-schema는 문진 스키마 주 버전(정수, 계약 ImageLabels)
     for name, val in (("SRC", req["source_dir"]), ("REVISION", req["revision"]), ("BOUNDARY_VERSION", v["boundary"]),
-                      ("SURVEY_MAJOR", major), ("IMAGE_TAG", req["image_tag"]),
+                      ("SURVEY_MAJOR", major), ("SURVEY_VERSION", v["survey_schema"]), ("IMAGE_TAG", req["image_tag"]),
                       ("BOUNDARY_SRC", req["dependency_sources"]["boundary"]),
                       ("SURVEY_SRC", req["dependency_sources"]["survey_schema"])):
         print(f"{name}={shlex.quote(val)}")

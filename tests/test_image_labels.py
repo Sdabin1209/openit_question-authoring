@@ -1,14 +1,14 @@
 """Dockerfile 이미지 라벨 시험(계약 ImageLabels, deploy CR-D28).
-이 서비스는 turn-engine·model-runtime을 쓰지 않으므로 두 라벨은 상수 `n/a`다(`none`·`unknown`은 계약이 거부).
+이 서비스는 model-runtime을 쓰지 않으므로 그 라벨은 상수 `n/a`다(`none`·`unknown`은 계약이 거부). turn-engine 라벨은 계약 3.0.0에서 없어졌고 ImageLabels가 거부한다.
 계약 ImageLabels 스키마가 설치된 계약 패키지에 있으면 그 스키마로도 검증한다(없으면 그 부분만 건너뛴다).
-기대값 출처: deploy CR-D28의 표와 ImageLabels 스키마(필수 6개, turn-engine·model-runtime은 `v<semver>` 또는 `n/a`)."""
+기대값 출처: deploy CR-D28의 표와 ImageLabels 스키마(필수 4개, model-runtime은 `v<semver>` 또는 `n/a`)."""
 import pathlib
 import re
 
 import pytest
 
 DOCKERFILE = pathlib.Path(__file__).resolve().parent.parent / "Dockerfile"
-SAMPLE_ARGS = {"COMMIT": "85b3552", "BOUNDARY_TAG": "v2.7.0", "SURVEY_SCHEMA_TAG": "1"}
+SAMPLE_ARGS = {"COMMIT": "85b3552", "BOUNDARY_TAG": "v3.0.0", "SURVEY_SCHEMA_TAG": "1"}
 
 
 def dockerfile_labels() -> dict:
@@ -23,14 +23,14 @@ def dockerfile_labels() -> dict:
 
 def test_unused_neighbours_are_na_not_none():
     labels = dockerfile_labels()
-    assert labels["io.openit.turn-engine"] == "n/a"
     assert labels["io.openit.model-runtime"] == "n/a"
+    assert "io.openit.turn-engine" not in labels      # 3.0.0에서 제거
 
 
 def test_required_labels_present_and_well_formed():
     labels = dockerfile_labels()
     for k in ("io.openit.service", "io.openit.revision", "io.openit.contracts.boundary",
-              "io.openit.contracts.survey-schema", "io.openit.turn-engine", "io.openit.model-runtime"):
+              "io.openit.contracts.survey-schema", "io.openit.model-runtime"):
         assert k in labels, k
     assert labels["io.openit.service"] == "question-authoring"
     assert re.fullmatch(r"v\d+\.\d+\.\d+", labels["io.openit.contracts.boundary"])
@@ -53,5 +53,10 @@ def test_arg_defaults_are_na_not_none_unknown_unset():
 
 def test_bad_labels_are_rejected_by_contract():
     from boundary_contracts import validator
-    bad = dict(dockerfile_labels(), **{"io.openit.turn-engine": "none"})
+    bad = dict(dockerfile_labels(), **{"io.openit.model-runtime": "none"})
     assert list(validator("ImageLabels").iter_errors(bad))
+
+
+def test_contract_rejects_the_removed_turn_engine_label():
+    from boundary_contracts import validator
+    assert list(validator("ImageLabels").iter_errors(dict(dockerfile_labels(), **{"io.openit.turn-engine": "n/a"})))

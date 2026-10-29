@@ -41,7 +41,7 @@
 | PostgreSQL이 TCP는 받되 응답이 없거나 느림(FAULT_MATRIX P0-3/E1) | `/readyz`가 `QA_READYZ_DB_TIMEOUT_SECONDS`(기본 2초) 안에 503(`db: postgres`, 접속 정보 없음). `/healthz`는 200. 요청 경로(저작·I1 읽기)는 아래 상한 안에 `UNAVAILABLE`로 끝난다 | DB가 돌아오면 서비스를 다시 띄우지 않아도 다음 `/readyz`가 200이고 다음 호출이 새 연결로 성공 |
 | 저장소 내용 변조 | 해당 버전 읽기가 `INTEGRITY_ERROR`. 다른 버전은 영향 없음 | 백업 복원은 runbook |
 | ops-feedback 중단 | `GET /v1/signals`만 UNAVAILABLE. 나머지 영향 없음 |
-| 이웃 영역(release-gate, turn-engine) 중단 | 영향 없음. 호출하지 않는다 | 이후 구간에서 이 표를 갱신 |
+| 이웃 영역(release-gate) 중단 | 영향 없음. 호출하지 않는다 | 이후 구간에서 이 표를 갱신 |
 | 계약 버전 불일치 | 시작하지 않는다(`UNSUPPORTED_VERSION`) | |
 
 ## DB 대기 상한 (PostgreSQL, FAULT_MATRIX P0-3 / E1)
