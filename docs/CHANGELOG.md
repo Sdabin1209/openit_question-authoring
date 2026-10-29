@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 미배포 (2026-10-30) U49: 승격된 스키마의 영역 사본 삭제
+
+- `docs/change-requests/schemas/`(스키마 5개, 예시 45개, check.py)와 `contract-ready/`(스키마 5개, 예시, MANIFEST, check.py) 모두 계약 boundary-contracts에 같은 이름이 있는 사본((가))이라 지웠다. 분류 표는 `docs/change-requests/CR-0007-boundary-schemas.md`. 이 사본을 읽는 시험·스크립트는 없었다.
+
 ## 미배포 (2026-10-30) U47: 노출 선언 라벨, 계약 v2.7.0 (ADR 0021)
 
 - 핀: boundary-contracts v2.7.0.

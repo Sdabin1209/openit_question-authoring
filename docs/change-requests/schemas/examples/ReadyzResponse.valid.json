@@ -1,7 +1,0 @@
-{
-  "status": "ready",
-  "db": "sqlite",
-  "warnings": [
-    "two_person_disabled"
-  ]
-}
