@@ -1,5 +1,6 @@
 """개선 신호: 작은 ops-feedback(I7) 서버 대역을 띄워 HttpFailureStore로 읽는다."""
 import json
+import pathlib
 import threading
 import urllib.error
 import urllib.request
@@ -28,16 +29,31 @@ def case(i, ftype, qs="qs-main", status="PENDING", trace=None, with_set=True):
     return c
 
 
+def _example_trace():
+    """계약 OpsFeedbackDeidentifiedTrace 예시(2.5.1부터 get_trace가 이 스키마로 응답을 검사한다)."""
+    import conformance
+    p = pathlib.Path(conformance.__file__).parent / "examples" / "OpsFeedbackDeidentifiedTrace.json"
+    return json.loads(p.read_text(encoding="utf-8"))
+
+
 def trace_for(*qids):
     # 현행 TurnTrace: 한 턴은 문항 하나를 묻는다(extract_input.question_id). 발화는 비식별 처리된 값이다.
     (q,) = qids
-    return {"session_id": "S", "turn_id": "1", "extract_input": {"question_id": q, "current_question": "", "user_utterance": "<MASKED>", "state": {}}}
+    t = _example_trace()
+    t["extract_input"]["question_id"] = q
+    return t
+
+
+def trace_without_question():
+    t = _example_trace()
+    t["extract_input"] = None
+    return t
 
 
 CASES = [case(1, "TYPE_A", trace="tr-a"), case(2, "TYPE_A", trace="tr-a2", status="CONFIRMED"),
          case(3, "TYPE_B", trace="tr-b"), case(4, "TYPE_A", trace="tr-none"),
          case(5, "X", trace="tr-gone"), case(6, "X", with_set=False), case(7, "TYPE_A", qs="qs-other", trace="tr-a")]
-TRACES = {"tr-a": trace_for("Q1"), "tr-a2": trace_for("Q1"), "tr-b": trace_for("Q2"), "tr-none": {"session_id": "S"}}
+TRACES = {"tr-a": trace_for("Q1"), "tr-a2": trace_for("Q1"), "tr-b": trace_for("Q2"), "tr-none": trace_without_question()}
 
 
 @pytest.fixture

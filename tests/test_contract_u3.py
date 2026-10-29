@@ -196,3 +196,19 @@ def test_purge_prints_json(monkeypatch, tmp_path, capsys):
     line = capsys.readouterr().out.strip().splitlines()[-1]
     out = json.loads(line)       # 파이썬 dict 표기(작은따옴표)면 여기서 실패한다
     assert not list(defv("QuestionAuthoringDeployInterface", "PurgeResult").iter_errors(out))
+
+
+def test_purge_result_with_removals_passes_contract_purge_result(tmp_path):
+    """0건이 아닌 결과도 계약 PurgeResult를 통과한다(purge 출력은 이 dict를 JSON 한 줄로 낸 것이다, __main__.main). 감사: 0건 한 경우만 검증했다."""
+    from datetime import datetime, timedelta, timezone
+    from helpers import AUTHOR
+    from question_authoring.service import AuthoringService
+    from question_authoring.store import SqliteQuestionStore
+    from question_authoring.validation import Validators
+    store = SqliteQuestionStore(tmp_path / "q.sqlite3")
+    svc = AuthoringService(store, Validators(), require_two_person=False)
+    assert svc.ingest_material(AUTHOR, "qs-purge", "f.txt", example_text())["status"] == "PARSED"
+    res = qa_main.purge_once(store, now=datetime.now(timezone.utc) + timedelta(days=400))
+    assert res["drafts_removed"] == 1 and res["sources_removed"] == 1
+    assert not list(defv("QuestionAuthoringDeployInterface", "PurgeResult").iter_errors(json.loads(json.dumps(res))))
+    store.close()

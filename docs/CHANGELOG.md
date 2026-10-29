@@ -1,5 +1,13 @@
 # 변경 이력
 
+## 미배포 (2026-10-30) U42: 영역 빌드 진입점, 계약 v2.5.1 (ADR 0019)
+
+- 핀: boundary-contracts v2.5.1(`requirements.lock`, `scripts/build_wheels.sh`).
+- `scripts/build-image.sh`(계약 BuildImageRequest -> BuildImageResult)와 `scripts/_build_request.py` 추가. `scripts/smoke.sh`가 이 진입점으로 이미지를 만들고 결과와 라벨을 계약으로 검사한다. 스모크 끝에 시험 이미지를 지운다.
+- 시험: v2.5.1의 `get_trace`가 응답을 계약 OpsFeedbackDeidentifiedTrace로 검사하므로 `tests/test_signals.py`의 가짜 trace를 계약 예시에서 만들도록 고쳤다(코드 변경 없음).
+- `scripts/build_wheels.sh`는 옛 deploy 빌드가 부르므로 남겼다(deploy가 바꿀 때 삭제).
+- 시험: `tests/test_build_image.py`, purge 출력이 0건이 아닌 경우도 계약 PurgeResult를 통과함을 확인(`tests/test_contract_u3.py`).
+
 ## 미배포 (2026-10-30) U32: 칸 규격 줄 (D115, ADR 0018)
 
 - 핀: 문진 스키마 survey-schema-v1.2.0, 계약 boundary-contracts v2.4.1.

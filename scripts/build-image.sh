@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# 영역 빌드 진입점(계약 BuildImageRequest/BuildImageResult, boundary-contracts 2.5.0, U42). 사용: bash scripts/build-image.sh <요청 JSON 파일>
+# 표준 출력의 마지막 줄이 BuildImageResult JSON 한 줄이다. 진행 기록은 표준 오류. DOCKER(없으면 docker), PYTHON(없으면 python3, boundary-contracts>=2.5.0과 jsonschema가 있어야 한다).
+# 왜 이 모양인지: docs/adr/0019-영역-빌드-진입점.md
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[ $# -eq 1 ] || { echo "사용: bash scripts/build-image.sh <요청 JSON 파일>" >&2; exit 2; }
+DOCKER="${DOCKER:-docker}"; PY="${PYTHON:-python3}"
+eval "$("$PY" "$here/_build_request.py" "$1")"      # SRC REVISION BOUNDARY_VERSION SURVEY_MAJOR IMAGE_TAG BOUNDARY_SRC SURVEY_SRC
+tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+ctx="$tmp/ctx"; mkdir -p "$ctx/build/wheels"
+# 빌드 컨텍스트는 source_dir 안의 이 영역 소스뿐이다(.git, 가상환경, 이전 빌드 산출물 제외). source_dir은 고치지 않는다.
+tar -C "$SRC" --exclude=.git --exclude=.venv --exclude=build --exclude=__pycache__ --exclude='*.egg-info' --exclude=.pytest_cache -cf - . | tar -C "$ctx" -xf -
+# 같은 요청이 같은 이미지가 되도록 wheel 안의 시각을 소스 커밋 시각으로 고정한다(없으면 0)
+epoch="$(git -C "$SRC" show -s --format=%ct "$REVISION" 2>/dev/null || echo 0)"
+for lib in "$BOUNDARY_SRC" "$SURVEY_SRC"; do
+  w="$tmp/w$(basename "$lib")"; cp -r "$lib" "$w"          # 원본 트리에 빌드 흔적을 남기지 않는다
+  SOURCE_DATE_EPOCH="$epoch" "$PY" -m pip wheel -q --no-deps -w "$ctx/build/wheels" "$w" >&2
+done
+# 레이어에 파일 시각이 들어가므로 컨텍스트 전체의 시각도 같은 값으로 맞춘다
+find "$ctx" -exec touch -h -d "@$epoch" {} +
+echo "build-image: $IMAGE_TAG 빌드 (revision $REVISION, 계약 $BOUNDARY_VERSION, 문진 스키마 주 버전 $SURVEY_MAJOR)" >&2
+"$DOCKER" build -q -t "$IMAGE_TAG" --build-arg COMMIT="$REVISION" --build-arg BOUNDARY_TAG="$BOUNDARY_VERSION" \
+  --build-arg SURVEY_SCHEMA_TAG="$SURVEY_MAJOR" --build-arg SOURCE_DATE_EPOCH="$epoch" --provenance=false --sbom=false "$ctx" >&2
+# 라벨은 요청 값이 아니라 이미지에 실제로 붙은 것을 읽어 낸다
+id="$("$DOCKER" image inspect --format '{{.Id}}' "$IMAGE_TAG")"
+"$DOCKER" image inspect --format '{{json .Config.Labels}}' "$IMAGE_TAG" | "$PY" -c '
+import json, sys
+labels = {k: v for k, v in json.load(sys.stdin).items() if k.startswith("io.openit.")}
+print(json.dumps({"image": sys.argv[1], "image_id": sys.argv[2], "labels": labels}, ensure_ascii=False, separators=(",", ":")))' "$IMAGE_TAG" "$id"

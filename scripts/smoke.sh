@@ -9,15 +9,25 @@ DOCKER="${DOCKER:-docker}"
 IMG=question-authoring:smoke
 NAME=question-authoring-smoke-$$
 TOKEN=smoke-token
-"$here/scripts/build_wheels.sh"
-"$DOCKER" build -q -t "$IMG" \
-  --build-arg COMMIT="$(git -C "$here" rev-parse --short HEAD)" \
-  --build-arg BOUNDARY_TAG="$(cat "$here/build/contracts.tag")" \
-  --build-arg SURVEY_SCHEMA_TAG="$(sed -E 's/^survey-schema-v([0-9]+)\..*/\1/' "$here/build/survey-schema.tag")" "$here" >/dev/null   # 왜 주 버전만: 계약 ImageLabels의 survey-schema 라벨은 정수 주 버전이다
+# 빌드는 영역 진입점(scripts/build-image.sh, 계약 BuildImageRequest)으로 한다. 요청의 버전은 잠금 파일의 핀이고, 라이브러리 소스 트리는
+# 그 태그에서 꺼낸다(배포에서는 deploy가 하는 일을 개발용으로 대신한다. 이 한 곳만 이웃 리포를 읽는다).
+PY="${PYTHON:-$here/.venv/bin/python}"
+BCV="$(sed -n 's/^boundary-contracts @ .*@\(v[0-9.]*\)$/\1/p' "$here/requirements.lock")"
+SST="$(sed -n 's/^openit-survey-schema @ .*@\(survey-schema-v[0-9.]*\)#.*$/\1/p' "$here/requirements.lock")"
+BUILDTMP="$(mktemp -d)"
+mkdir "$BUILDTMP/bc" "$BUILDTMP/ss"
+git -C "$here/../boundary-contracts" archive "$BCV" | tar -x -C "$BUILDTMP/bc"
+git -C "$here/../survey-service" archive "$SST" schema | tar -x -C "$BUILDTMP/ss"
+cat > "$BUILDTMP/request.json" <<EOF
+{"source_dir": "$here", "revision": "$(git -C "$here" rev-parse --short HEAD)",
+ "versions": {"boundary": "$BCV", "survey_schema": "${SST#survey-schema-}"},
+ "dependency_sources": {"boundary": "$BUILDTMP/bc", "survey_schema": "$BUILDTMP/ss/schema"}, "image_tag": "$IMG"}
+EOF
+DOCKER="$DOCKER" PYTHON="$PY" bash "$here/scripts/build-image.sh" "$BUILDTMP/request.json" | tail -1 | tee "$BUILDTMP/result.json"
 SECDIR="$(mktemp -d)"
 SMOKE_DB="${SMOKE_DB:-sqlite}"
 NET=question-authoring-smoke-net-$$; PGNAME=question-authoring-smoke-pg-$$
-trap '"$DOCKER" rm -fv "$NAME" "$PGNAME" >/dev/null 2>&1 || true; "$DOCKER" network rm "$NET" >/dev/null 2>&1 || true; rm -rf "$SECDIR"' EXIT
+trap '"$DOCKER" rm -fv "$NAME" "$PGNAME" >/dev/null 2>&1 || true; "$DOCKER" network rm "$NET" >/dev/null 2>&1 || true; "$DOCKER" rmi "$IMG" >/dev/null 2>&1 || true; rm -rf "$SECDIR" "$BUILDTMP"' EXIT
 EXTRA=()
 # 비밀은 파일로 주입한다(D84): NAME_FILE. 환경 변수에는 경로만 있다.
 REVTOKEN=smoke-reviewer-token
@@ -82,6 +92,9 @@ if "$LPY" -c "import boundary_contracts" >/dev/null 2>&1; then
   "$LPY" -c "import json,sys,boundary_contracts as b; e=list(b.validator('ImageLabels').iter_errors(json.load(open(sys.argv[1])))); print('ImageLabels 검사:', 'OK' if not e else e); sys.exit(1 if e else 0)" "$SECDIR/labels.json"
 else
   echo "ImageLabels 검사 못 함: boundary_contracts가 있는 파이썬이 없다(PYTHON 지정)"
+fi
+if "$LPY" -c "import boundary_contracts" >/dev/null 2>&1; then
+  "$LPY" -c "import json,sys,boundary_contracts as b; e=list(b.validator('BuildImageResult').iter_errors(json.load(open(sys.argv[1])))); print('BuildImageResult 검사:', 'OK' if not e else e); sys.exit(1 if e else 0)" "$BUILDTMP/result.json"
 fi
 if [ "$SMOKE_DB" = postgres ]; then
   # 컨테이너를 다시 띄워도 데이터가 남는다(서버 쪽 저장소)

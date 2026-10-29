@@ -20,3 +20,4 @@ Nygard 형식. 결정이 바뀌면 지우지 않고 새 ADR이 이전 것을 대
 - [ADR 0016: HTTP 서버는 WSGI 앱과 waitress](0016-HTTP-서버는-WSGI-앱과-waitress.md)
 - [ADR 0017: 스키마 변경은 yoyo-migrations](0017-스키마-변경은-yoyo-마이그레이션.md)
 - [ADR 0018: 작성 양식의 칸 규격 줄 문법](0018-칸-규격-줄-문법.md)
+- [ADR 0019: 영역 빌드 진입점 scripts/build-image.sh](0019-영역-빌드-진입점.md)
