@@ -1,6 +1,7 @@
 """영역 빌드 진입점 scripts/build-image.sh (계약 BuildImageRequest/BuildImageResult, boundary-contracts 2.5.0, U42, ADR 0019).
 기대값 출처: 계약 스키마 설명(요청 검증, 쓰는 키가 없으면 실패, 결과는 표준 출력 마지막 줄, 라벨은 이미지에 붙은 io.openit.*).
 실제 docker 빌드는 scripts/smoke.sh가 한 번 한다. 여기서는 가짜 DOCKER로 인자와 결과 모양을 본다."""
+import importlib.util
 import json
 import os
 import pathlib
@@ -13,6 +14,8 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "build-image.sh"
 SHA = "a" * 64
+# 네트워크 없이 wheel을 만든다: 현재 환경에 setuptools와 wheel이 있을 때만 격리 빌드를 끈다(없으면 pip 기본, 색인 접근 필요)
+OFFLINE_WHEEL = {"PIP_NO_BUILD_ISOLATION": "0"} if all(importlib.util.find_spec(m) for m in ("setuptools", "wheel")) else {}
 
 
 def make_tree(path, name):
@@ -44,7 +47,7 @@ def req(tmp_path):
 def run(tmp_path, request, docker="/bin/false"):
     f = tmp_path / "req.json"
     f.write_text(json.dumps(request))
-    env = dict(os.environ, DOCKER=docker, PYTHON=sys.executable, PIP_NO_BUILD_ISOLATION="0")   # 시험은 네트워크 없이 wheel을 만든다
+    env = dict(os.environ, DOCKER=docker, PYTHON=sys.executable, **OFFLINE_WHEEL)
     return subprocess.run(["bash", str(SCRIPT), str(f)], env=env, capture_output=True, text=True, timeout=120)
 
 
@@ -137,6 +140,20 @@ def test_same_request_gives_same_wheels(tmp_path, req):
         w.mkdir()
         t = tmp_path / "t"
         subprocess.run([sys.executable, "-m", "pip", "wheel", "-q", "--no-deps", "-w", str(w), req["dependency_sources"]["boundary"]],
-                       env=dict(os.environ, SOURCE_DATE_EPOCH="0", PIP_NO_BUILD_ISOLATION="0"), check=True)
+                       env=dict(os.environ, SOURCE_DATE_EPOCH="0", **OFFLINE_WHEEL), check=True)
         return hashlib.sha256(next(w.glob("*.whl")).read_bytes()).hexdigest()
     assert digest() == digest()
+
+
+def test_default_interpreter_is_the_repo_venv_and_failures_stop_early(tmp_path, req):
+    """PYTHON을 주지 않으면 리포의 .venv를 쓰고, 없으면 분명한 메시지로 멈춘다. 요청 해석 실패가 다음 줄의 엉뚱한 오류로 번지지 않는다."""
+    f = tmp_path / "req.json"
+    f.write_text(json.dumps(dict(req, surprise=1)))
+    env = {k: v for k, v in os.environ.items() if k != "PYTHON"}
+    p = subprocess.run(["bash", str(SCRIPT), str(f)], env=env, capture_output=True, text=True, timeout=60)
+    assert p.returncode == 2 and "unbound" not in p.stderr and "tar:" not in p.stderr
+    venv = ROOT / ".venv" / "bin" / "python"
+    if venv.exists():
+        assert "BuildImageRequest" in p.stderr        # .venv에 계약 패키지가 있어 요청 검증 메시지까지 간다
+    else:
+        assert "해석기를 찾지 못했다" in p.stderr

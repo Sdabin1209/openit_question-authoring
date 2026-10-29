@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # 영역 빌드 진입점(계약 BuildImageRequest/BuildImageResult, boundary-contracts 2.5.0, U42). 사용: bash scripts/build-image.sh <요청 JSON 파일>
-# 표준 출력의 마지막 줄이 BuildImageResult JSON 한 줄이다. 진행 기록은 표준 오류. DOCKER(없으면 docker), PYTHON(없으면 python3, boundary-contracts>=2.5.0과 jsonschema가 있어야 한다).
+# 표준 출력의 마지막 줄이 BuildImageResult JSON 한 줄이다. 진행 기록은 표준 오류. DOCKER(없으면 docker), PYTHON(없으면 리포의 .venv/bin/python, boundary-contracts>=2.5.0과 jsonschema가 있어야 한다).
 # 왜 이 모양인지: docs/adr/0019-영역-빌드-진입점.md
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ $# -eq 1 ] || { echo "사용: bash scripts/build-image.sh <요청 JSON 파일>" >&2; exit 2; }
-DOCKER="${DOCKER:-docker}"; PY="${PYTHON:-python3}"
-eval "$("$PY" "$here/_build_request.py" "$1")"      # SRC REVISION BOUNDARY_VERSION SURVEY_MAJOR IMAGE_TAG BOUNDARY_SRC SURVEY_SRC
+DOCKER="${DOCKER:-docker}"
+# 해석기 기본은 영역 자신의 환경(scripts/setup-env.sh가 만든 리포의 .venv). 왜: 계약 패키지가 거기에 설치된다. PYTHON으로 바꿀 수 있다
+if [ -n "${PYTHON:-}" ]; then PY="$PYTHON"; elif [ -x "$here/../.venv/bin/python" ]; then PY="$here/../.venv/bin/python"; else
+  echo "build-image: 해석기를 찾지 못했다. bash scripts/setup-env.sh 로 .venv를 만들거나 PYTHON을 지정하라(boundary-contracts 2.5 이상과 jsonschema 필요)" >&2; exit 2; fi
+# 요청 해석 결과(셸 대입문)는 먼저 변수로 받아 종료 코드를 확인한다: eval "$(...)"는 실패를 삼켜 다음 줄에서 엉뚱한 오류로 끝난다
+parsed="$("$PY" "$here/_build_request.py" "$1")" || { echo "build-image: 요청을 해석하지 못했다(위 메시지 참고)" >&2; exit 2; }
+eval "$parsed"      # SRC REVISION BOUNDARY_VERSION SURVEY_MAJOR IMAGE_TAG BOUNDARY_SRC SURVEY_SRC
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 ctx="$tmp/ctx"; mkdir -p "$ctx/build/wheels"
 # 빌드 컨텍스트는 source_dir 안의 이 영역 소스뿐이다(.git, 가상환경, 이전 빌드 산출물 제외). source_dir은 고치지 않는다.

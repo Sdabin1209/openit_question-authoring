@@ -21,7 +21,7 @@ retry() {
 # --force-reinstall: 오래된 설치(예: 이웃 폴더 editable)가 남아 있어도 핀과 같아지게 한다.
 retry "${PIP[@]}" install -q --force-reinstall -r requirements.lock || exit 1
 # 시험 도구. 버전은 lock이 정하지 않은 도구라 최신을 쓴다(psycopg는 lock에 있다).
-retry "${PIP[@]}" install -q pytest || exit 1
+retry "${PIP[@]}" install -q pytest setuptools wheel || exit 1   # setuptools·wheel: 빌드 진입점 시험이 네트워크 없이 wheel을 만든다
 # 이 리포 자체. 의존은 위에서 lock대로 설치했으므로 --no-deps.
 "${PIP[@]}" install -q -e . --no-deps || { echo "setup-env: 이 리포 설치 실패" >&2; exit 1; }
 
