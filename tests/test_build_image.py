@@ -30,7 +30,7 @@ def make_tree(path, name, version="1.0"):
 
 
 LOCK = ("boundary-contracts @ git+ssh://git@github.com/x/openit_boundary-contracts.git@v3.0.0\n"
-        "openit-survey-schema @ git+ssh://git@github.com/x/openit_survey-service.git@survey-schema-v1.2.0#subdirectory=schema\n")
+        "openit-survey-schema @ git+ssh://git@github.com/x/openit_survey-service.git@survey-schema-v2.0.0#subdirectory=schema\n")
 
 
 def write_lock(src, text=LOCK):
@@ -50,9 +50,9 @@ def req(tmp_path):
     (src / "question_authoring" / "m.py").write_text("")
     write_lock(src)
     # 실제 패키지와 같은 이름·버전의 가짜 트리: 라벨은 요청이 아니라 이 wheel의 버전에서 나온다(U50)
-    return {"source_dir": str(src), "revision": "abcdef1", "versions": {"boundary": "v3.0.0", "survey_schema": "v1.2.0"},
+    return {"source_dir": str(src), "revision": "abcdef1", "versions": {"boundary": "v3.0.0", "survey_schema": "v2.0.0"},
             "dependency_sources": {"boundary": make_tree(tmp_path / "bc", "boundary_contracts", "3.0.0"),
-                                   "survey_schema": make_tree(tmp_path / "ss", "openit_survey_schema", "1.2.0")},
+                                   "survey_schema": make_tree(tmp_path / "ss", "openit_survey_schema", "2.0.0")},
             "image_tag": "question-authoring-test/q:t1"}
 
 
@@ -80,7 +80,7 @@ def test_unknown_key_is_rejected_before_docker(tmp_path, req):
 
 def test_bad_values_are_rejected(tmp_path, req):
     for r in (dict(req, revision="not-hex"), dict(req, image_tag="Bad Tag"), dict(req, source_dir="relative/path"),
-              bad(req, versions={"survey_schema": "v1.2.0"})):
+              bad(req, versions={"survey_schema": "v2.0.0"})):
         assert run(tmp_path, r).returncode == 2
 
 
@@ -134,7 +134,7 @@ def test_result_last_line_matches_contract_and_labels_match_request(tmp_path, re
     assert out["image"] == req["image_tag"] and out["image_id"] == "sha256:" + SHA
     assert out["labels"]["io.openit.revision"] == req["revision"]
     assert out["labels"]["io.openit.contracts.boundary"] == "v3.0.0"
-    assert out["labels"]["io.openit.contracts.survey-schema"] == "1"          # v1.2.0의 주 버전
+    assert out["labels"]["io.openit.contracts.survey-schema"] == "2"          # v2.0.0의 주 버전
     assert "io.openit.turn-engine" not in out["labels"]                       # 3.0.0에서 라벨이 없어졌다
     assert "org.other" not in out["labels"]
     rec = log.read_text()
@@ -189,10 +189,10 @@ def test_survey_schema_mismatch_between_request_and_tree_fails(tmp_path, req):
     r = json.loads(json.dumps(req))
     r["versions"]["survey_schema"] = "v1.3.0"
     p = run(tmp_path, r)
-    assert p.returncode == 2 and "1.2.0" in p.stderr and "v1.3.0" in p.stderr
+    assert p.returncode == 2 and "2.0.0" in p.stderr and "v1.3.0" in p.stderr
 
 
-@pytest.mark.parametrize("lock", [LOCK.replace("@v3.0.0", "@v2.9.0"), LOCK.replace("survey-schema-v1.2.0", "survey-schema-v1.1.0"), ""])
+@pytest.mark.parametrize("lock", [LOCK.replace("@v3.0.0", "@v2.9.0"), LOCK.replace("survey-schema-v2.0.0", "survey-schema-v1.1.0"), ""])
 def test_request_that_differs_from_this_repos_pin_fails(tmp_path, req, lock):
     """요청 버전이 이 영역의 고정(requirements.lock)과 다르면 라벨을 찍지 않고 실패한다(라벨이 거짓이 되지 않게)."""
     write_lock(req["source_dir"], lock)
@@ -211,4 +211,4 @@ def test_docker_gets_the_installed_versions(tmp_path, req):
     finally:
         del os.environ["FAKE_LOG"]
     rec = log.read_text()
-    assert "BOUNDARY_TAG=v3.0.0" in rec and "SURVEY_SCHEMA_TAG=1 " in rec
+    assert "BOUNDARY_TAG=v3.0.0" in rec and "SURVEY_SCHEMA_TAG=2 " in rec

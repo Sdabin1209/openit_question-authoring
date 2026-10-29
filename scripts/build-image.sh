@@ -28,7 +28,7 @@ done
 # 요청 버전, wheel 버전, 이 영역의 고정(requirements.lock)이 하나라도 다르면 라벨을 찍지 않고 실패한다.
 wheel_version() { local f; f="$(ls "$ctx/build/wheels/"$1-*.whl 2>/dev/null | head -1)"; [ -n "$f" ] || { echo "build-image: wheel을 찾지 못했다: $1" >&2; exit 2; }; basename "$f" | cut -d- -f2; }
 ACTUAL_BOUNDARY="v$(wheel_version boundary_contracts)"
-ACTUAL_SURVEY="$(wheel_version openit_survey_schema)"                 # 예: 1.2.0
+ACTUAL_SURVEY="$(wheel_version openit_survey_schema)"                 # 예: 2.0.0
 lock_boundary="$(sed -n 's/^boundary-contracts @ .*@\(v[0-9][0-9.]*\)$/\1/p' "$SRC/requirements.lock" 2>/dev/null || true)"
 lock_survey="$(sed -n 's/^openit-survey-schema @ .*@survey-schema-\(v[0-9][0-9.]*\)#.*$/\1/p' "$SRC/requirements.lock" 2>/dev/null || true)"
 mismatch() { echo "build-image: $1 버전이 서로 다르다(요청 $2, 설치될 wheel $3, requirements.lock ${4:-없음}). 라벨이 거짓이 되므로 빌드하지 않는다" >&2; exit 2; }

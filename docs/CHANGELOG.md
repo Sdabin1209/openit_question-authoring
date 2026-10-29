@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 미배포 (2026-10-30) 문진 스키마 고정 survey-schema-v1.2.0 -> v2.0.0
+
+- `requirements.lock`, `scripts/build_wheels.sh`, 시험의 표본 값. 이미지 라벨 `io.openit.contracts.survey-schema`는 주 버전 `2`가 된다. v1.2.0..v2.0.0 사이에서 문진 스키마가 바꾼 것은 `SessionResult`(`skipped_details`)이고 `QuestionBank`와 `CONTRACT_VERSION`(1)은 그대로라 이 영역의 문항 은행 검증(`Validators`, 정수 버전 1)은 영향이 없다(두 태그 사이 diff로 확인).
+
 ## 미배포 (2026-10-30) 계약 3.0.0 전환 (U300) + 라벨 정직성 (U50)
 
 - 핀: boundary-contracts v3.0.0(`requirements.lock`, `scripts/build_wheels.sh`, 시험의 표본 값). 2.x 레코드는 3.0 클라이언트가 거부하므로 레코드 버전은 계약의 `PIPELINE_SCHEMA_VERSION`을 따른다(이 영역은 리터럴을 두지 않았다).

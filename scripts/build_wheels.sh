@@ -4,7 +4,7 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 BC_TAG="${CONTRACTS_TAG:-v3.0.0}"
-SS_TAG="${SURVEY_SCHEMA_TAG:-survey-schema-v1.2.0}"
+SS_TAG="${SURVEY_SCHEMA_TAG:-survey-schema-v2.0.0}"
 PY="${PYTHON:-python3}"
 rm -rf "$here/build"; mkdir -p "$here/build/bc-src" "$here/build/ss-src" "$here/build/wheels"
 git -C "$here/../boundary-contracts" archive "$BC_TAG" | tar -x -C "$here/build/bc-src"
