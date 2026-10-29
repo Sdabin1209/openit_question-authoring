@@ -34,6 +34,7 @@ def req(tmp_path):
     src = tmp_path / "src"
     src.mkdir()
     (src / "Dockerfile").write_text("FROM scratch\n")
+    (src / "deploy-exposure.json").write_text((ROOT / "deploy-exposure.json").read_text(encoding="utf-8"))
     (src / ".git").mkdir()
     (src / ".git" / "HEAD").write_text("x")
     (src / ".venv").mkdir()
@@ -157,3 +158,9 @@ def test_default_interpreter_is_the_repo_venv_and_failures_stop_early(tmp_path, 
         assert "BuildImageRequest" in p.stderr        # .venv에 계약 패키지가 있어 요청 검증 메시지까지 간다
     else:
         assert "해석기를 찾지 못했다" in p.stderr
+
+
+def test_missing_exposure_declaration_fails(tmp_path, req):
+    (pathlib.Path(req["source_dir"]) / "deploy-exposure.json").unlink()
+    p = run(tmp_path, req)
+    assert p.returncode == 2 and "deploy-exposure.json" in p.stderr

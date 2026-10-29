@@ -1,5 +1,11 @@
 # 변경 이력
 
+## 미배포 (2026-10-30) U47: 노출 선언 라벨, 계약 v2.7.0 (ADR 0021)
+
+- 핀: boundary-contracts v2.7.0.
+- `deploy-exposure.json`(계약 Exposure)과 `build-image.sh`의 라벨 `io.openit.exposure`. 선언 파일이 없으면 빌드 실패.
+- 시험: `tests/test_exposure_u47.py`(선언과 코드 라우트 일치), `tests/test_contract_coverage_u47.py`(저작 API 응답 전부와 저장된 ext가 계약을 통과; 응답 자기 검사는 U3의 `contract.check_response`가 실행 코드에 그대로 있다).
+
 ## 미배포 (2026-10-30) U43: setup-env 결과 보고, 계약 v2.6.0 (ADR 0020)
 
 - 핀: boundary-contracts v2.6.0(`requirements.lock`, `scripts/build_wheels.sh`).

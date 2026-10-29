@@ -24,8 +24,12 @@ for lib in "$BOUNDARY_SRC" "$SURVEY_SRC"; do
 done
 # 레이어에 파일 시각이 들어가므로 컨텍스트 전체의 시각도 같은 값으로 맞춘다
 find "$ctx" -exec touch -h -d "@$epoch" {} +
+# 노출 선언(계약 Exposure)은 리포의 deploy-exposure.json이 정본이고 이미지 라벨 io.openit.exposure에 compact JSON으로 단다(ADR 0021)
+[ -f "$ctx/deploy-exposure.json" ] || { echo "build-image: deploy-exposure.json이 없다(노출 선언은 영역이 낸다)" >&2; exit 2; }
+exposure="$("$PY" -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1], encoding="utf-8")), ensure_ascii=False, separators=(",", ":")))' "$ctx/deploy-exposure.json")" \
+  || { echo "build-image: deploy-exposure.json을 읽지 못했다" >&2; exit 2; }
 echo "build-image: $IMAGE_TAG 빌드 (revision $REVISION, 계약 $BOUNDARY_VERSION, 문진 스키마 주 버전 $SURVEY_MAJOR)" >&2
-"$DOCKER" build -q -t "$IMAGE_TAG" --build-arg COMMIT="$REVISION" --build-arg BOUNDARY_TAG="$BOUNDARY_VERSION" \
+"$DOCKER" build -q -t "$IMAGE_TAG" --label "io.openit.exposure=$exposure" --build-arg COMMIT="$REVISION" --build-arg BOUNDARY_TAG="$BOUNDARY_VERSION" \
   --build-arg SURVEY_SCHEMA_TAG="$SURVEY_MAJOR" --build-arg SOURCE_DATE_EPOCH="$epoch" --provenance=false --sbom=false "$ctx" >&2
 # 라벨은 요청 값이 아니라 이미지에 실제로 붙은 것을 읽어 낸다
 id="$("$DOCKER" image inspect --format '{{.Id}}' "$IMAGE_TAG")"

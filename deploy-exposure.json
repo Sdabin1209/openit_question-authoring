@@ -1,0 +1,60 @@
+{
+  "service": "question-authoring",
+  "routes": [
+    {
+      "paths": [
+        "/v1/materials",
+        "/v1/reviews"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "auth": {
+        "kind": "account",
+        "roles": [
+          "author",
+          "clinical-reviewer"
+        ]
+      },
+      "upstream_token": "qa-gateway-token",
+      "user_header": "set",
+      "timeouts_ms": {
+        "dial": 2000,
+        "response_header": 15000
+      }
+    },
+    {
+      "paths": [
+        "/v1/drafts",
+        "/v1/drafts/*"
+      ],
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "auth": {
+        "kind": "account",
+        "roles": [
+          "author",
+          "clinical-reviewer"
+        ]
+      },
+      "upstream_token": "qa-gateway-token",
+      "user_header": "set",
+      "timeouts_ms": {
+        "dial": 2000,
+        "response_header": 15000
+      }
+    },
+    {
+      "paths": [
+        "/v1/question-sets",
+        "/v1/question-sets/*",
+        "/v1/signals"
+      ],
+      "auth": {
+        "kind": "denied"
+      }
+    }
+  ]
+}
