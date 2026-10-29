@@ -24,6 +24,11 @@ MAX_FLAGS = 5000               # 플래그 수. 이만큼 해석하지 못하면
 TIME_BUDGET_SECONDS = 20.0     # 추출 전체의 시간 예산(넘으면 ExtractionFailure -> 화면 입력으로 이어 감)
 
 
+# 칸 규격 줄(문진 스키마 SlotDef의 선택 속성 5개, survey-schema 1.2.0). '단위:' 줄(UnitDef, 사용자 말의 단위 환산)과 다르다 - 그래서 '값 단위'다. ADR 0018
+_FIELD_KEYS = {"자료형": "data_type", "값 단위": "unit", "최소": "minimum", "최대": "maximum", "초과 최소": "exclusive_minimum"}
+DATA_TYPES = ("boolean", "integer", "number", "option")   # 문진 스키마 SlotDef.data_type 열거
+
+
 def _kv_split(raw: str):
     """첫 ':' 또는 '：'에서 나눈다(정규식의 되돌림 없이 한 번 훑는다). 콜론이 없거나 맨 앞이면 (None, None)."""
     i = min((j for j in (raw.find(":"), raw.find("：")) if j >= 0), default=-1)
@@ -316,6 +321,8 @@ class TextFormExtractor:
                     self._flag(self._sp("yes_no_map"), UNSURE, "'예=<값>, 아니오=<값>' 형식으로 읽지 못했다", raw)
         elif k == "위험 기준":
             self._risk(v, raw)
+        elif k in _FIELD_KEYS:
+            self._field(_FIELD_KEYS[k], v, raw)
         elif k == "필수":
             if v in ("예", "아니오"):
                 s["required"] = v == "예"
@@ -324,6 +331,31 @@ class TextFormExtractor:
         else:
             return False
         return True
+
+    def _field(self, key: str, v: str, raw: str):
+        """칸 규격 줄(자료형·값 단위·최소·최대·초과 최소, ADR 0018). 정해진 모양에 정확히 맞을 때만 값으로 읽고, 아니면 값을 비우고 UNSURE로 알린다.
+        한 칸에 같은 줄이 둘이면 첫 값을 두고 알린다(어느 쪽이 맞는지 추정하지 않는다)."""
+        s = self.s
+        path = self._sp(key)
+        if key in s:
+            return self._flag(path, UNSURE, "같은 칸 규격 줄이 두 번 있다. 처음 값을 두었다", raw)
+        if key == "data_type":
+            ok = v in DATA_TYPES
+            val = v
+        elif key == "unit":
+            ok = bool(v) and "|" not in v
+            val = v
+        else:
+            ok = bool(_num_re.match(v))
+            val = _n(v) if ok else None
+        if ok and key == "maximum" and "minimum" in s and val < s["minimum"]:
+            return self._flag(path, UNSURE, "최대가 최소보다 작다. 값을 비워 두었다", raw)
+        if ok and key == "minimum" and "maximum" in s and val > s["maximum"]:
+            return self._flag(path, UNSURE, "최소가 최대보다 크다. 값을 비워 두었다", raw)
+        if not ok:
+            what = {"data_type": f"boolean, integer, number, option 중 하나", "unit": "값 단위 이름 하나"}.get(key, "숫자(예: 0, 7, 0.5)")
+            return self._flag(path, UNSURE, f"{what}로 읽지 못했다. 값을 비워 두었다", raw)
+        s[key] = val
 
     def _unit(self, v: str, raw: str):
         s = self.s

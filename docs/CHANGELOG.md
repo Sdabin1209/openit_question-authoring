@@ -1,5 +1,11 @@
 # 변경 이력
 
+## 미배포 (2026-10-30) U32: 칸 규격 줄 (D115, ADR 0018)
+
+- 핀: 문진 스키마 survey-schema-v1.2.0, 계약 boundary-contracts v2.4.1.
+- 텍스트 양식 추출기가 슬롯의 `자료형`, `값 단위`, `최소`, `최대`, `초과 최소` 줄을 SlotDef `data_type`, `unit`, `minimum`, `maximum`, `exclusive_minimum`으로 읽는다. 읽지 못하면 값을 비우고 UNSURE. 미리보기에 "수치(칸)" 줄, 변경 분류는 선택지·단위(임상 검토 필요).
+- 이전 문항 은행과 같은 양식(새 줄 없음)은 결과가 그대로다.
+
 ## 미배포 (2026-10-29) 계약 핀 v2.2.2 -> v2.3.0
 
 - boundary-contracts v2.3.0(키오스크 기기 인증 mTLS, 하위 호환). `requirements.lock`, `scripts/build_wheels.sh`, 이미지 라벨 시험의 표본 값을 올렸다. 이 영역의 동작은 바뀌지 않았다(저작 API·I1은 기기 인증과 무관).

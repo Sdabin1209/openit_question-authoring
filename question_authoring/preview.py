@@ -46,6 +46,9 @@ class _Marks:
         return (" " + " ".join(out)) if out else ""
 
 
+_FIELD_LABELS = (("data_type", "자료형"), ("unit", "값 단위"), ("minimum", "최소"), ("maximum", "최대"), ("exclusive_minimum", "초과 최소"))
+
+
 def _num(x) -> str:
     return str(int(x)) if isinstance(x, float) and x == int(x) else str(x)
 
@@ -121,6 +124,10 @@ def render_text(draft: dict) -> str:
                     ctxt = f", 환산: 1 {u.get('name')} = {_num(conv['factor'])} {conv['unit']}" if conv else ""
                     syn = f" (같은 말: {', '.join(u['synonyms'])})" if u.get("synonyms") else ""
                     L.append(f"    수치(단위): {u.get('name', EMPTY)}{syn}, {rtxt}{ctxt}{m.at(up)}")
+                fld = [f"{lab} {_num(s[k])}{m.at(sp + '/' + k)}" for k, lab in _FIELD_LABELS if k in s]
+                fld += [f"{lab} {EMPTY}{m.at(sp + '/' + k)}" for k, lab in _FIELD_LABELS if k not in s and m.at(sp + '/' + k)]
+                if fld:
+                    L.append("    수치(칸): " + ", ".join(fld))
                 if s.get("choices"):
                     L.append(f"    선택지: {', '.join(s['choices'])}{m.at(sp + '/choices')}")
                 for ci, c in enumerate(s.get("choice_catalog", [])):

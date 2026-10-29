@@ -33,6 +33,12 @@ SLOT_FIELDS: dict[str, tuple[str, bool]] = {
     "yes_no_map": (CHOICE_UNIT, False),
     "required": (SLOT, False),
     "risk_rule": (SLOT, True),
+    # 칸 규격(survey-schema 1.2.0): 값 범위·단위를 정하므로 단위와 같게 선택지·단위, 임상 검토 대상이다(ADR 0018)
+    "data_type": (CHOICE_UNIT, True),
+    "unit": (CHOICE_UNIT, True),
+    "minimum": (CHOICE_UNIT, True),
+    "maximum": (CHOICE_UNIT, True),
+    "exclusive_minimum": (CHOICE_UNIT, True),
 }
 SESSION_FIELDS: dict[str, tuple[str, bool]] = {
     "risk_phrases": (TEXT, True),
