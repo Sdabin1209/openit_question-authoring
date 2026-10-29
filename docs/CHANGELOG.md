@@ -1,5 +1,10 @@
 # 변경 이력
 
+## 미배포 (2026-10-30) U43: setup-env 결과 보고, 계약 v2.6.0 (ADR 0020)
+
+- 핀: boundary-contracts v2.6.0(`requirements.lock`, `scripts/build_wheels.sh`).
+- `scripts/setup-env.sh`가 표준 출력 마지막 줄에 계약 SetupEnvReport(environment, test_command 포함)를 내고 진행 기록은 표준 오류로 보낸다. 실패해도 보고 줄을 낸다.
+
 ## 미배포 (2026-10-30) U42: 영역 빌드 진입점, 계약 v2.5.1 (ADR 0019)
 
 - 핀: boundary-contracts v2.5.1(`requirements.lock`, `scripts/build_wheels.sh`).
