@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 미배포 (2026-10-29) 계약 핀 v2.2.2 -> v2.3.0
+
+- boundary-contracts v2.3.0(키오스크 기기 인증 mTLS, 하위 호환). `requirements.lock`, `scripts/build_wheels.sh`, 이미지 라벨 시험의 표본 값을 올렸다. 이 영역의 동작은 바뀌지 않았다(저작 API·I1은 기기 인증과 무관).
+
 ## 미배포 (2026-10-29) 단위 4a-B: 스키마를 yoyo 마이그레이션으로 (D111, ADR 0017)
 
 - 계약 핀 boundary-contracts v2.2.2(서버가 앱 전에 내는 413/414/431을 계약 클라이언트가 INVALID_RECORD로 읽는다).
