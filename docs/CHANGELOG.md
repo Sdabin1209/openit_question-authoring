@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 미배포 (2026-10-30) 계약 핀 v3.0.0 -> v3.0.2
+
+- boundary-contracts v3.0.2(SurveyServiceEnv 필수 조건 수정뿐). 이 영역의 동작은 바뀌지 않았다. 이미지 라벨 `io.openit.contracts.boundary`는 설치된 wheel 버전에서 찍는다(U50).
+
 ## 미배포 (2026-10-30) U308: SIGTERM 뒤 서버가 안 끝나던 근본 원인 (ADR 0022)
 
 - 원인: 서버가 종료를 마무리하려고 `raise_signal(SIGINT)`를 썼는데, 비대화형 셸의 `&` 작업(E2E 하네스)은 SIGINT를 무시로 물려받아 신호가 사라졌다.
