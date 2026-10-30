@@ -1,0 +1,48 @@
+{
+ "$id": "ChangeDiff.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "변경 비교 결과(계약 Preview.change와 같은 모양)",
+ "type": "object",
+ "required": [
+  "change_kinds",
+  "affected_slots",
+  "follow_ups",
+  "text"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "change_kinds": {
+   "type": "array",
+   "uniqueItems": true,
+   "items": {
+    "enum": [
+     "TEXT",
+     "CHOICE_UNIT",
+     "SLOT",
+     "BRANCH"
+    ]
+   }
+  },
+  "affected_slots": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "follow_ups": {
+   "type": "array",
+   "uniqueItems": true,
+   "items": {
+    "enum": [
+     "REGENERATE_SAMPLES",
+     "REEVALUATE_MODEL",
+     "CLINICAL_REVIEW"
+    ]
+   }
+  },
+  "text": {
+   "type": "string"
+  }
+ },
+ "title": "ChangeDiff"
+}

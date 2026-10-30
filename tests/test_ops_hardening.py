@@ -16,10 +16,10 @@ from conftest import example_text
 from helpers import AUTHOR
 from question_authoring.__main__ import build, check_environment, main, purge_once
 from helpers import stop_http
-from question_authoring.http_api import Api, make_server
-from question_authoring.service import Actor, AuthoringService
-from question_authoring.signals import question_ids_from_trace
-from question_authoring.store import MemoryQuestionStore, SqliteQuestionStore
+from question_authoring.components.link_authoring_server import Api, make_server
+from question_authoring.wiring.service import Actor, AuthoringService
+from question_authoring.components.signals_build import question_ids_from_trace
+from question_authoring.wiring.stores import MemoryQuestionStore, SqliteQuestionStore
 
 
 # ---- P6 ----
@@ -126,7 +126,7 @@ def store2(request):
 
 
 def test_retention_purge(store2, validators, monkeypatch):
-    s = AuthoringService(store2, validators, require_two_person=False)
+    s = AuthoringService(store2, require_two_person=False)
     k = AUTHOR
     confirmed = s.ingest_material(k, "qs-a", "f.txt", example_text())["draft_id"]
     s.confirm(k, confirmed, s.get_preview(confirmed)["preview_hash"])           # 버전이 이 원본을 참조한다
@@ -137,7 +137,7 @@ def test_retention_purge(store2, validators, monkeypatch):
     # 오래된 것처럼 만든다
     d = store2.load_draft(old_open); d["updated_at"] = _old(40); store2.save_draft(d)
     if hasattr(store2, "_blob_times"):
-        store2._blob_times = {h: _old(40) for h in store2._blob_times}
+        store2._b._blob_times = {h: _old(40) for h in store2._blob_times}
     else:
         store2._db.execute("UPDATE blobs SET created_at=?", (_old(40),))
     out = purge_once(store2)
@@ -190,7 +190,7 @@ def test_purge_cli_follows_production_config_check(monkeypatch, tmp_path):
 
 
 def test_purge_does_not_delete_source_referenced_by_a_new_draft(store2, validators):
-    s = AuthoringService(store2, validators, require_two_person=False)
+    s = AuthoringService(store2, require_two_person=False)
     h = "sha256:" + "c" * 64
     store2.put_source(h, "old.txt", b"data")
     if hasattr(store2, "_blob_times"):
@@ -213,7 +213,7 @@ def test_purge_does_not_delete_source_referenced_by_a_new_draft(store2, validato
 
 def test_purge_conditional_delete_checks_reference_atomically(store2, validators):
     """저장 시각이 아직 오래돼도(재업로드 없이) 새 초안이 참조하면 조건부 삭제가 거부한다."""
-    s = AuthoringService(store2, validators, require_two_person=False)
+    s = AuthoringService(store2, require_two_person=False)
     h = "sha256:" + "b" * 64
     store2.put_source(h, "f", b"x")
     if hasattr(store2, "_blob_times"):
@@ -228,7 +228,7 @@ def test_purge_conditional_delete_checks_reference_atomically(store2, validators
 
 def test_purge_threaded_with_uploads_never_loses_a_referenced_source(validators):
     store = SqliteQuestionStore()
-    s = AuthoringService(store, validators, require_two_person=False)
+    s = AuthoringService(store, require_two_person=False)
     lost = []
     stop = threading.Event()
     # 시험의 가정(라운드3 조사): 보존 기간(기본 30일) 안의 새 업로드는 purge 대상이 아니다. 아래 UPDATE가 방금 올린 참조 전 원본까지
@@ -261,8 +261,8 @@ def test_purge_threaded_with_uploads_never_loses_a_referenced_source(validators)
 
 
 def test_gateway_email_style_user_ids(validators):
-    from question_authoring.http_api import Api
-    s = AuthoringService(MemoryQuestionStore(), validators)
+    from question_authoring.components.link_authoring_server import Api
+    s = AuthoringService(MemoryQuestionStore())
     api = Api(s, {}, gateway_tokens={"gw"}, user_roles={"kim@hosp.kr": "question-author", "park.md@hosp.kr": "clinical-reviewer"})
 
     def call(user, method="GET", path="/v1/drafts", body=b""):
@@ -289,13 +289,13 @@ def test_gateway_email_style_user_ids(validators):
 def test_commit_refuses_a_version_whose_source_material_is_gone(store, validators):
     """L24: 원본이 정리된 뒤의 확정은 출처 없는 버전을 만들지 않는다. 다시 올리면 확정된다(모든 저장소 구현이 같다)."""
     from boundary_contracts.errors import BoundaryError
-    svc = AuthoringService(store, validators, require_two_person=False)
+    svc = AuthoringService(store, require_two_person=False)
     out = svc.ingest_material(AUTHOR, "qs-g", "form.txt", example_text())
     did = out["draft_id"]
     h = store.load_draft(did)["source"]["source_hash"]
     ph = svc.get_preview(did)["preview_hash"]
     # 원본만 사라진 상태를 만든다(저장소 구현별 내부 삭제): purge와 같은 결과
-    if isinstance(store, MemoryQuestionStore):
+    if store._b.__class__.__name__ == "MemoryQuestionStore":
         store._blobs.pop(h)
     elif getattr(store, "kind", "") == "postgres":
         store._write(lambda c: c.execute("DELETE FROM blobs"))

@@ -1,0 +1,38 @@
+{
+ "$id": "PreviewHashInput.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "미리보기 해시 입력",
+ "type": "object",
+ "required": [
+  "question_set_id",
+  "base",
+  "bank",
+  "flags"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "question_set_id": {
+   "$ref": "_common.schema.json#/$defs/Id"
+  },
+  "base": {
+   "oneOf": [
+    {
+     "$ref": "_common.schema.json#/$defs/ArtifactRef"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "bank": {
+   "type": "object"
+  },
+  "flags": {
+   "type": "array",
+   "items": {
+    "$ref": "AuthoringResponses.schema.json#/$defs/Flag"
+   }
+  }
+ },
+ "title": "PreviewHashInput"
+}

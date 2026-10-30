@@ -1,0 +1,28 @@
+{
+ "$id": "BankValidateInput.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "문항 세트 검증 입력",
+ "type": "object",
+ "required": [
+  "bank",
+  "version"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "bank": {
+   "type": "object"
+  },
+  "version": {
+   "oneOf": [
+    {
+     "type": "integer",
+     "minimum": 0
+    },
+    {
+     "type": "null"
+    }
+   ]
+  }
+ },
+ "title": "BankValidateInput"
+}

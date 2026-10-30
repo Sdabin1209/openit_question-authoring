@@ -1,0 +1,21 @@
+{
+ "draft": {
+  "draft_id": "dr-1",
+  "question_set_id": "qs1",
+  "status": "OPEN",
+  "base": null,
+  "bank": {
+   "questions": []
+  },
+  "flags": [],
+  "source": null,
+  "fallback": null,
+  "warnings": [],
+  "created_by": "dr-kim",
+  "created_at": "2026-10-30T10:00:00Z",
+  "updated_at": "2026-10-30T10:00:00Z"
+ },
+ "flag_ids": "fl-1",
+ "actor_id": "dr-kim",
+ "now": "2026-10-30T10:00:00Z"
+}

@@ -1,0 +1,6 @@
+{
+ "$id": "PreviewHashValue.json",
+ "type": "string",
+ "description": "저자가 확인한다고 보낸 미리보기 해시. 현재 해시와 같은지는 confirm_plan이 본다",
+ "title": "PreviewHashValue"
+}

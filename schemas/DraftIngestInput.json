@@ -1,0 +1,92 @@
+{
+ "$id": "DraftIngestInput.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "자료 등록 반영 입력",
+ "type": "object",
+ "required": [
+  "draft",
+  "warnings",
+  "now",
+  "source",
+  "extractor",
+  "extraction"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "draft": {
+   "$ref": "AuthoringResponses.schema.json#/$defs/Draft"
+  },
+  "warnings": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "now": {
+   "$ref": "_common.schema.json#/$defs/Timestamp"
+  },
+  "source": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "description": "원본 자료 출처",
+   "type": "object",
+   "required": [
+    "source_hash",
+    "filename",
+    "size"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "source_hash": {
+     "$ref": "_common.schema.json#/$defs/Hash"
+    },
+    "filename": {
+     "type": "string",
+     "minLength": 1
+    },
+    "size": {
+     "type": "integer",
+     "minimum": 0
+    }
+   }
+  },
+  "extractor": {
+   "oneOf": [
+    {
+     "$schema": "https://json-schema.org/draft/2020-12/schema",
+     "description": "추출기",
+     "type": "object",
+     "required": [
+      "name",
+      "version"
+     ],
+     "additionalProperties": false,
+     "properties": {
+      "name": {
+       "type": "string"
+      },
+      "version": {
+       "type": "string"
+      }
+     }
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "extraction": {
+   "$ref": "MaterialExtraction.json"
+  },
+  "guidance": {
+   "oneOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  }
+ },
+ "title": "DraftIngestInput"
+}

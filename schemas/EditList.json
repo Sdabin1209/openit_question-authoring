@@ -1,0 +1,9 @@
+{
+ "$id": "EditList.json",
+ "type": "array",
+ "items": {
+  "$ref": "AuthoringRequests.schema.json#/$defs/Edit"
+ },
+ "description": "편집 항목 목록(계약 Edit)",
+ "title": "EditList"
+}

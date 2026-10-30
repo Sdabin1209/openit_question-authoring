@@ -11,15 +11,17 @@ LABEL io.openit.service=question-authoring \
       io.openit.model-runtime=n/a
 WORKDIR /app
 COPY requirements.lock .
-RUN grep -v -e '^boundary-contracts' -e '^openit-survey-schema' -e '^#' requirements.lock > /tmp/req.txt && pip install --no-cache-dir -r /tmp/req.txt
+RUN grep -v -e '^boundary-contracts' -e '^openit-survey-schema' -e '^openit-link' -e '^#' requirements.lock > /tmp/req.txt && pip install --no-cache-dir -r /tmp/req.txt
 COPY build/wheels /tmp/wheels
 RUN pip install --no-cache-dir --no-deps /tmp/wheels/*.whl && rm -rf /tmp/wheels
 COPY pyproject.toml ./
 COPY question_authoring ./question_authoring
+COPY schemas ./schemas
 RUN pip install --no-cache-dir --no-deps .
 RUN useradd --uid 10001 --create-home qa && mkdir /data && chown qa /data
 USER 10001
 ENV QA_DB_PATH=/data/questions.sqlite3 \
+    QA_SCHEMA_DIR=/app/schemas \
     PYTHONUNBUFFERED=1
 EXPOSE 8080
 VOLUME /data

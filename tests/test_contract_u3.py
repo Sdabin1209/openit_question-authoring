@@ -13,9 +13,9 @@ import pytest
 import conformance
 import boundary_contracts as bc
 from question_authoring import __main__ as qa_main
-from question_authoring import contract
-from question_authoring.http_api import Api
-from question_authoring.service import Actor
+from question_authoring.wiring import contract
+from question_authoring.components.link_authoring_server import Api
+from question_authoring.wiring.service import Actor
 from conftest import example_text
 
 CONF = pathlib.Path(conformance.__file__).parent
@@ -125,28 +125,29 @@ def test_signals_disabled_and_broken(api, monkeypatch):
     st, out = call(api, "GET", "/v1/signals")
     assert st == 200 and not list(defv("SignalsResponse", None).iter_errors(out))
     api.signals = object()
-    monkeypatch.setattr("question_authoring.signals.build_signals", lambda *a, **k: {"status": "OK", "transcript": "x"})
+    monkeypatch.setattr("question_authoring.wiring.service.AuthoringService.build_signals", lambda *a, **k: {"status": "OK", "transcript": "x"})
     st, out = call(api, "GET", "/v1/signals")
     assert st == 503 and out["code"] == "UNAVAILABLE"
 
 
 # ---------- QuestionAuthoringExt ----------
-def test_ext_is_checked_before_writing(svc, monkeypatch):
-    seen = []
-    real = contract.check_ext
-    monkeypatch.setattr(contract, "check_ext", lambda d, v: (seen.append(d), real(d, v))[1])
-    from helpers import AUTHOR, publish
+def test_ext_is_checked_before_writing(svc):
+    """ext는 컴포넌트 출력 스키마(ConfirmFinalizeResult, ChangeRecord)가 쓰기 전에 ReviewExt, ChangeExt로 검사한다. 저장된 것도 그 스키마를 통과한다."""
+    from helpers import publish
+    from question_authoring.wiring import schemas
     publish(svc, text=example_text())
     publish(svc, edits=[{"op": "set", "path": "/questions/0/name", "value": "체온 측정"}])
-    assert "ReviewExt" in seen and "ChangeExt" in seen
-    for r in svc.store.reader().get_reviews(svc.store.reader().latest("qs-main")):
-        contract.check_ext("ReviewExt", r["ext"]["question-authoring"])
+    rd = svc.store.reader()
+    ref = rd.latest("qs-main")
+    for r in rd.get_reviews(ref):
+        assert schemas.problems("QuestionAuthoringExt#ReviewExt", r["ext"]["question-authoring"]) == []
+    assert schemas.problems("QuestionAuthoringExt#ChangeExt", rd.get_change(ref)["ext"]["question-authoring"]) == []
 
 
 def test_ext_check_rejects_invalid_examples():
-    for n, d in (("ReviewExt", "ReviewExt"), ("ChangeExt", "ChangeExt")):
-        with pytest.raises(Exception):
-            contract.check_ext(d, {"unknown": 1})
+    from question_authoring.wiring import schemas
+    for d in ("ReviewExt", "ChangeExt"):
+        assert schemas.problems("QuestionAuthoringExt#" + d, {"unknown": 1})
 
 
 # ---------- QuestionAuthoringDeployInterface ----------
@@ -202,11 +203,11 @@ def test_purge_result_with_removals_passes_contract_purge_result(tmp_path):
     """0건이 아닌 결과도 계약 PurgeResult를 통과한다(purge 출력은 이 dict를 JSON 한 줄로 낸 것이다, __main__.main). 감사: 0건 한 경우만 검증했다."""
     from datetime import datetime, timedelta, timezone
     from helpers import AUTHOR
-    from question_authoring.service import AuthoringService
-    from question_authoring.store import SqliteQuestionStore
-    from question_authoring.validation import Validators
+    from question_authoring.wiring.service import AuthoringService
+    from question_authoring.wiring.stores import SqliteQuestionStore
+    from helpers import Validators
     store = SqliteQuestionStore(tmp_path / "q.sqlite3")
-    svc = AuthoringService(store, Validators(), require_two_person=False)
+    svc = AuthoringService(store, require_two_person=False)
     assert svc.ingest_material(AUTHOR, "qs-purge", "f.txt", example_text())["status"] == "PARSED"
     res = qa_main.purge_once(store, now=datetime.now(timezone.utc) + timedelta(days=400))
     assert res["drafts_removed"] == 1 and res["sources_removed"] == 1

@@ -1,0 +1,66 @@
+{
+ "$id": "ConfirmPlan.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "확인 계획. REPLAY면 ref, PROCEED면 reservation과 reserved_now",
+ "type": "object",
+ "required": [
+  "action"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "action": {
+   "enum": [
+    "REPLAY",
+    "PROCEED"
+   ]
+  },
+  "ref": {
+   "$ref": "_common.schema.json#/$defs/ArtifactRef"
+  },
+  "reserved_now": {
+   "type": "boolean"
+  },
+  "reservation": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "description": "예약된 번호와 시각",
+   "type": "object",
+   "required": [
+    "version",
+    "at"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "version": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "at": {
+     "$ref": "_common.schema.json#/$defs/Timestamp"
+    }
+   }
+  }
+ },
+ "allOf": [
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "REPLAY"
+     }
+    }
+   },
+   "then": {
+    "required": [
+     "ref"
+    ]
+   },
+   "else": {
+    "required": [
+     "reservation",
+     "reserved_now"
+    ]
+   }
+  }
+ ],
+ "title": "ConfirmPlan"
+}

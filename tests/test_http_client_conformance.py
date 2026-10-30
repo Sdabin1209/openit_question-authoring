@@ -9,8 +9,8 @@ from boundary_contracts.errors import BoundaryError
 from boundary_contracts.sdk import QuestionReader
 
 from helpers import stop_http
-from question_authoring.http_api import Api, make_server
-from question_authoring.service import Actor
+from question_authoring.components.link_authoring_server import Api, make_server
+from question_authoring.wiring.service import Actor
 from helpers import AUTHOR, publish
 
 READ = "read-tok"

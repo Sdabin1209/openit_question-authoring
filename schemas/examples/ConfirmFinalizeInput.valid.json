@@ -1,0 +1,33 @@
+{
+ "draft": {
+  "draft_id": "dr-1",
+  "question_set_id": "qs1",
+  "status": "OPEN",
+  "base": null,
+  "bank": {
+   "questions": []
+  },
+  "flags": [],
+  "source": null,
+  "fallback": null,
+  "warnings": [],
+  "created_by": "dr-kim",
+  "created_at": "2026-10-30T10:00:00Z",
+  "updated_at": "2026-10-30T10:00:00Z"
+ },
+ "actor": {
+  "id": "dr-kim",
+  "role": "question-author"
+ },
+ "preview_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "validation_errors": [],
+ "ref": {
+  "id": "qs1",
+  "version": "1",
+  "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+ },
+ "diff": null,
+ "at": "2026-10-30T10:00:00Z",
+ "require_two_person": true,
+ "pipeline_schema_version": "3.1"
+}

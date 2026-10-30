@@ -1,7 +1,6 @@
 import pytest
 
-from question_authoring.extractors import (ExtractionFailure, ExtractionResult, ExtractorRegistry, TextFormExtractor,
-                                           default_registry)
+from question_authoring.components.extract_textform import ExtractionFailure, TextFormExtractor
 from conftest import example_text
 
 X = TextFormExtractor()
@@ -82,16 +81,21 @@ def test_failures():
             X.extract(data, "f.txt")
 
 
-def test_registry_pluggable():
-    class Fake:
-        name, version, extensions = "fake", "0", (".fake",)
-        def can_handle(self, filename, data): return filename.endswith(".fake")
-        def extract(self, data, filename): return ExtractionResult({"questions": []})
-    reg = default_registry()
-    reg.register(Fake())
-    assert reg.select("a.fake", b"").name == "fake"
-    assert reg.select("a.txt", b"").name == "text-form"
-    with pytest.raises(ExtractionFailure):
-        reg.select("a.pdf", b"%PDF")
-    with pytest.raises(ValueError):
-        reg.register(Fake())
+def test_registry_pluggable(store):
+    """형식은 추출기 컴포넌트 하나씩 추가한다(D33). 서비스는 확장자로 고르거나 이름으로 지정하고, 맞는 것이 없으면 FALLBACK이다."""
+    import types
+    from question_authoring.components import extract_textform
+    from question_authoring.wiring.service import AuthoringService
+    from helpers import AUTHOR
+    fake = types.SimpleNamespace(NAME="fake", VERSION="0", INPUT_SCHEMA="MaterialExtractRequest", OUTPUT_SCHEMA="MaterialExtraction",
+                                 can_handle=lambda filename: filename.endswith(".fake"), __name__="fake",
+                                 run=lambda inp: {"status": "PARSED", "bank": {"questions": []}, "flags": []})
+    svc = AuthoringService(store, extractors=(extract_textform, fake), require_two_person=False)
+    a = svc.ingest_material(AUTHOR, "qs-x", "a.fake", b"x")
+    assert a["status"] == "PARSED" and svc.get_draft(a["draft_id"])["source"]["extractor"] == "fake"
+    b = svc.ingest_material(AUTHOR, "qs-x", "a.txt", example_text())
+    assert svc.get_draft(b["draft_id"])["source"]["extractor"] == "text-form"
+    c = svc.ingest_material(AUTHOR, "qs-x", "a.pdf", b"%PDF")
+    assert c["status"] == "FALLBACK"
+    d = svc.ingest_material(AUTHOR, "qs-x", "a.txt", example_text(), extractor="nope")
+    assert d["status"] == "FALLBACK"

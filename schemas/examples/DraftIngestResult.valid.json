@@ -1,0 +1,23 @@
+{
+ "draft": {
+  "draft_id": "dr-1",
+  "question_set_id": "qs1",
+  "status": "OPEN",
+  "base": null,
+  "bank": {
+   "questions": []
+  },
+  "flags": [],
+  "source": null,
+  "fallback": {
+   "reason": "읽지 못했다"
+  },
+  "warnings": [],
+  "created_by": "dr-kim",
+  "created_at": "2026-10-30T10:00:00Z",
+  "updated_at": "2026-10-30T10:00:00Z"
+ },
+ "status": "FALLBACK",
+ "reason": "읽지 못했다",
+ "open_flags": 0
+}

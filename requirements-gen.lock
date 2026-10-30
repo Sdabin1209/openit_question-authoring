@@ -1,0 +1,17 @@
+datamodel-code-generator==0.25.0
+annotated-types==0.8.0
+argcomplete==3.7.2
+black==26.10.1
+click==8.5.0
+genson==1.4.0
+inflect==5.6.2
+isort==5.13.2
+Jinja2==3.1.6
+MarkupSafe==3.0.4
+mypy_extensions==1.1.0
+packaging==26.3
+pydantic==2.14.2
+pydantic_core==2.50.2
+PyYAML==6.0.3
+typing-inspection==0.4.4
+typing_extensions==4.16.0

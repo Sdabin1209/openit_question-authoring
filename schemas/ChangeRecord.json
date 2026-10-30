@@ -1,0 +1,28 @@
+{
+ "$id": "ChangeRecord.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "만들어진 ChangeClassification(계약) + ext.question-authoring(ChangeExt)",
+ "allOf": [
+  {
+   "$ref": "ChangeClassification.schema.json"
+  },
+  {
+   "required": [
+    "ext"
+   ],
+   "properties": {
+    "ext": {
+     "required": [
+      "question-authoring"
+     ],
+     "properties": {
+      "question-authoring": {
+       "$ref": "QuestionAuthoringExt.schema.json#/$defs/ChangeExt"
+      }
+     }
+    }
+   }
+  }
+ ],
+ "title": "ChangeRecord"
+}

@@ -1,7 +1,7 @@
 import json
 
-from question_authoring.http_api import Api
-from question_authoring.service import Actor
+from question_authoring.components.link_authoring_server import Api
+from question_authoring.wiring.service import Actor
 from conftest import example_text
 
 H = {"Authorization": "Bearer tok-a"}

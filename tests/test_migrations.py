@@ -7,8 +7,8 @@ from boundary_contracts.errors import BoundaryError
 
 from conftest import pg_schema
 from helpers import AUTHOR, publish
-from question_authoring.service import AuthoringService
-from question_authoring.store import SqliteQuestionStore
+from question_authoring.wiring.service import AuthoringService
+from question_authoring.wiring.stores import SqliteQuestionStore
 
 OLD_SQLITE = """
 CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT NOT NULL);
@@ -50,7 +50,7 @@ def test_sqlite_adopts_a_database_made_before_migrations(tmp_path, validators, w
     assert s.get_source("sha256:" + "a" * 64) is not None          # 기존 자료가 그대로 있다
     cols = [r[1] for r in s._db.execute("PRAGMA table_info(blobs)").fetchall()]
     assert "created_at" in cols
-    ref = publish(AuthoringService(s, validators))                    # 새 쓰기도 된다
+    ref = publish(AuthoringService(s))                    # 새 쓰기도 된다
     with pytest.raises(sqlite3.Error):
         s._db.execute("UPDATE versions SET content_hash='x'")         # 불변 트리거가 살아 있다
     s.close()
@@ -92,7 +92,7 @@ def test_sqlite_read_only_refuses_unmigrated_database_and_does_not_change_it(tmp
 
 def test_postgres_adopts_a_database_made_before_migrations(validators):
     import psycopg
-    from question_authoring.store import PostgresQuestionStore
+    from question_authoring.wiring.stores import PostgresQuestionStore
     with pg_schema() as (url, schema):
         with psycopg.connect(url, autocommit=True) as c:
             c.execute(f"SET search_path TO {schema}")
@@ -106,7 +106,7 @@ def test_postgres_adopts_a_database_made_before_migrations(validators):
             c.execute("INSERT INTO blobs(source_hash, filename, data) VALUES('sha256:" + "a" * 64 + "', 'f.txt', '\\x616263')")
         s = PostgresQuestionStore(url, schema=schema)
         assert s.get_source("sha256:" + "a" * 64) is not None
-        ref = publish(AuthoringService(s, validators))
+        ref = publish(AuthoringService(s))
         with pytest.raises(psycopg.Error):
             s._db.execute("UPDATE versions SET content_hash='x'")     # 불변 트리거가 생겼다
         s.close()
@@ -118,7 +118,7 @@ def test_postgres_adopts_a_database_made_before_migrations(validators):
 
 
 def test_postgres_read_only_refuses_unmigrated_database():
-    from question_authoring.store import PostgresQuestionStore
+    from question_authoring.wiring.stores import PostgresQuestionStore
     with pg_schema() as (url, schema):
         with pytest.raises(BoundaryError) as e:
             PostgresQuestionStore(url, schema=schema, read_only=True)

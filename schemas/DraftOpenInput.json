@@ -1,0 +1,50 @@
+{
+ "$id": "DraftOpenInput.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "초안 열기 입력",
+ "type": "object",
+ "required": [
+  "draft_id",
+  "question_set_id",
+  "actor_id",
+  "now",
+  "base",
+  "base_bank"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "draft_id": {
+   "$ref": "_common.schema.json#/$defs/Id"
+  },
+  "question_set_id": {
+   "$ref": "_common.schema.json#/$defs/Id"
+  },
+  "actor_id": {
+   "$ref": "_common.schema.json#/$defs/Id"
+  },
+  "now": {
+   "$ref": "_common.schema.json#/$defs/Timestamp"
+  },
+  "base": {
+   "oneOf": [
+    {
+     "$ref": "_common.schema.json#/$defs/ArtifactRef"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "base_bank": {
+   "oneOf": [
+    {
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  }
+ },
+ "title": "DraftOpenInput"
+}

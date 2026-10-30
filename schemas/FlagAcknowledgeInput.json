@@ -1,0 +1,28 @@
+{
+ "$id": "FlagAcknowledgeInput.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "플래그 확인 입력",
+ "type": "object",
+ "required": [
+  "draft",
+  "flag_ids",
+  "actor_id",
+  "now"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "draft": {
+   "$ref": "AuthoringResponses.schema.json#/$defs/Draft"
+  },
+  "flag_ids": {
+   "$ref": "FlagIdList.json"
+  },
+  "actor_id": {
+   "$ref": "_common.schema.json#/$defs/Id"
+  },
+  "now": {
+   "$ref": "_common.schema.json#/$defs/Timestamp"
+  }
+ },
+ "title": "FlagAcknowledgeInput"
+}

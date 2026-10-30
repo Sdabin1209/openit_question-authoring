@@ -1,0 +1,36 @@
+{
+ "$id": "ChangeRecordInput.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "변경 분류 레코드 입력",
+ "type": "object",
+ "required": [
+  "diff",
+  "to",
+  "from",
+  "created_at",
+  "draft_id",
+  "pipeline_schema_version"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "diff": {
+   "$ref": "ChangeDiff.json"
+  },
+  "to": {
+   "$ref": "_common.schema.json#/$defs/ArtifactRef"
+  },
+  "from": {
+   "$ref": "_common.schema.json#/$defs/ArtifactRef"
+  },
+  "created_at": {
+   "$ref": "_common.schema.json#/$defs/Timestamp"
+  },
+  "draft_id": {
+   "$ref": "_common.schema.json#/$defs/Id"
+  },
+  "pipeline_schema_version": {
+   "$ref": "_common.schema.json#/$defs/PipelineSchemaVersion"
+  }
+ },
+ "title": "ChangeRecordInput"
+}

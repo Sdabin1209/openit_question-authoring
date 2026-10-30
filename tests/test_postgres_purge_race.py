@@ -16,8 +16,8 @@ from datetime import datetime, timedelta, timezone
 from conftest import pg_schema, example_text
 from helpers import AUTHOR
 from question_authoring.__main__ import purge_once
-from question_authoring.service import AuthoringService
-from question_authoring.store import PostgresQuestionStore
+from question_authoring.wiring.service import AuthoringService
+from question_authoring.wiring.stores import PostgresQuestionStore
 
 ROUNDS = int(os.environ.get("QA_RACE_ROUNDS", "12"))
 
@@ -91,7 +91,7 @@ def test_pg_concurrent_uploads_and_purge_threads(validators):
         done = threading.Event()
 
         def uploader(idx, st):
-            svc = AuthoringService(st, validators, require_two_person=False)
+            svc = AuthoringService(st, require_two_person=False)
             try:
                 barrier.wait(30)
                 for k in range(ROUNDS):
@@ -145,7 +145,7 @@ def test_pg_purge_vs_edit_of_same_draft_never_loses_the_edit(validators):
     """R2: 오래된 OPEN 초안을 purge가 지우려는 순간 편집(새 updated_at 저장)이 겹친다. 어느 순서로 끝나도 편집된 초안은 남아 있어야 한다."""
     with pg_schema() as (url, schema):
         sp, se = PostgresQuestionStore(url, schema=schema), PostgresQuestionStore(url, schema=schema)
-        svc = AuthoringService(se, validators, require_two_person=False)
+        svc = AuthoringService(se, require_two_person=False)
         for r in range(ROUNDS * 2):
             d = svc.create_draft(AUTHOR, f"qs-e{r}")
             d["updated_at"] = _old()
@@ -178,7 +178,7 @@ def test_pg_purge_vs_edit_of_same_draft_never_loses_the_edit(validators):
 _PURGER = (
     "import os,sys\n"
     "from question_authoring.__main__ import purge_once\n"
-    "from question_authoring.store import PostgresQuestionStore\n"
+    "from question_authoring.wiring.stores import PostgresQuestionStore\n"
     "s=PostgresQuestionStore(os.environ['TEST_DATABASE_URL'], schema=sys.argv[1])\n"
     "for _ in range(int(sys.argv[2])): purge_once(s)\n"
     "s.close()\n")
@@ -188,7 +188,7 @@ def test_pg_upload_vs_purge_in_separate_processes(validators):
     """R4: purge가 별도 프로세스(다른 연결·다른 파이썬)다. 프로세스 안 RLock이 아니라 DB의 advisory lock만으로 안전해야 한다."""
     with pg_schema() as (url, schema):
         st, ager = PostgresQuestionStore(url, schema=schema), PostgresQuestionStore(url, schema=schema)
-        svc = AuthoringService(st, validators, require_two_person=False)
+        svc = AuthoringService(st, require_two_person=False)
         procs = [subprocess.Popen([sys.executable, "-c", _PURGER, schema, str(ROUNDS * 2)],
                                   env=dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path)),   # 설치 여부와 무관하게 같은 코드를 읽는다
                                  
@@ -215,7 +215,7 @@ def test_pg_confirm_of_stale_draft_vs_purge_keeps_provenance(validators):
     """R5: 보존 기간을 넘겨 방치된 초안을 확인하는 순간 purge가 겹친다. 버전이 만들어졌다면 그 버전이 가리키는 원본은 있어야 한다."""
     with pg_schema() as (url, schema):
         sp, se = PostgresQuestionStore(url, schema=schema), PostgresQuestionStore(url, schema=schema)
-        svc = AuthoringService(se, validators, require_two_person=False)
+        svc = AuthoringService(se, require_two_person=False)
         outcomes = {"confirmed": 0, "refused": 0}
         for r in range(ROUNDS * 2):
             out = svc.ingest_material(AUTHOR, f"qs-c{r}", "form.txt", example_text())
@@ -262,7 +262,7 @@ def test_pg_confirm_interleaved_with_purge_at_the_worst_point(validators):
     방치된 초안이 확인되는 중이면 purge가 초안과 원본을 지워도, 확정된 버전이 가리키는 원본은 남아 있어야 한다."""
     with pg_schema() as (url, schema):
         sp, se = PostgresQuestionStore(url, schema=schema), PostgresQuestionStore(url, schema=schema)
-        svc = AuthoringService(se, validators, require_two_person=False)
+        svc = AuthoringService(se, require_two_person=False)
         out = svc.ingest_material(AUTHOR, "qs-w", "form.txt", example_text())
         did = out["draft_id"]
         d = se.load_draft(did)

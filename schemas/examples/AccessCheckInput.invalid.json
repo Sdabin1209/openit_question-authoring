@@ -1,0 +1,11 @@
+{
+ "actor": {
+  "id": "dr-kim",
+  "role": "question-author"
+ },
+ "allowed_roles": [],
+ "reviewer_role": "r",
+ "reviewer_ok": false,
+ "require_two_person": true,
+ "owner_id": null
+}

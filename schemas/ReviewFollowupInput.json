@@ -1,0 +1,96 @@
+{
+ "$id": "ReviewFollowupInput.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "이후 검수 입력",
+ "type": "object",
+ "required": [
+  "actor",
+  "require_two_person",
+  "ref",
+  "decision",
+  "clinical_basis_approved",
+  "reason",
+  "review_id",
+  "new_review_id",
+  "existing_reviews",
+  "now",
+  "pipeline_schema_version"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "actor": {
+   "$ref": "Actor.json"
+  },
+  "require_two_person": {
+   "type": "boolean"
+  },
+  "ref": {
+   "$ref": "_common.schema.json#/$defs/ArtifactRef"
+  },
+  "decision": {
+   "enum": [
+    "APPROVED",
+    "REJECTED",
+    "CHANGES_REQUESTED"
+   ]
+  },
+  "clinical_basis_approved": {
+   "type": "boolean"
+  },
+  "reason": {
+   "oneOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "review_id": {
+   "oneOf": [
+    {
+     "$ref": "_common.schema.json#/$defs/Id"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "new_review_id": {
+   "$ref": "_common.schema.json#/$defs/Id"
+  },
+  "existing_reviews": {
+   "type": "array",
+   "items": {
+    "$ref": "ReviewRecord.schema.json"
+   }
+  },
+  "now": {
+   "$ref": "_common.schema.json#/$defs/Timestamp"
+  },
+  "pipeline_schema_version": {
+   "$ref": "_common.schema.json#/$defs/PipelineSchemaVersion"
+  }
+ },
+ "allOf": [
+  {
+   "if": {
+    "properties": {
+     "decision": {
+      "const": "APPROVED"
+     }
+    }
+   },
+   "else": {
+    "properties": {
+     "reason": {
+      "type": "string",
+      "minLength": 1
+     }
+    }
+   }
+  }
+ ],
+ "title": "ReviewFollowupInput"
+}

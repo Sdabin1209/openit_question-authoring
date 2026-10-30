@@ -1,0 +1,19 @@
+{
+ "$id": "BankValidateResult.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "검증 오류 목록(없으면 빈 목록)",
+ "type": "object",
+ "required": [
+  "errors"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "errors": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  }
+ },
+ "title": "BankValidateResult"
+}

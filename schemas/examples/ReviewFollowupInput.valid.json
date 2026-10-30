@@ -1,0 +1,20 @@
+{
+ "actor": {
+  "id": "dr-kim",
+  "role": "question-author"
+ },
+ "require_two_person": true,
+ "ref": {
+  "id": "qs1",
+  "version": "1",
+  "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+ },
+ "decision": "APPROVED",
+ "clinical_basis_approved": true,
+ "reason": null,
+ "review_id": null,
+ "new_review_id": "rv-1",
+ "existing_reviews": [],
+ "now": "2026-10-30T10:00:00Z",
+ "pipeline_schema_version": "3.1"
+}

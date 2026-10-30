@@ -1,0 +1,23 @@
+{
+ "$id": "MaterialExtractRequest.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "추출기 입력",
+ "type": "object",
+ "required": [
+  "filename",
+  "data_base64"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "filename": {
+   "type": "string",
+   "minLength": 1
+  },
+  "data_base64": {
+   "type": "string",
+   "pattern": "^[A-Za-z0-9+/]*={0,2}$",
+   "description": "base64(RFC 4648)로 인코딩한 원본 바이트. JSON에는 바이트가 없다"
+  }
+ },
+ "title": "MaterialExtractRequest"
+}

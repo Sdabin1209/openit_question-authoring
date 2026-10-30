@@ -1,0 +1,36 @@
+{
+ "$id": "SignalsBuildInput.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "개선 신호 만들기 입력",
+ "type": "object",
+ "required": [
+  "bundle",
+  "question_set_id",
+  "confusion_min",
+  "now"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "bundle": {
+   "$ref": "FailureBundle.json"
+  },
+  "question_set_id": {
+   "oneOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "confusion_min": {
+   "type": "integer",
+   "minimum": 1
+  },
+  "now": {
+   "$ref": "_common.schema.json#/$defs/Timestamp"
+  }
+ },
+ "title": "SignalsBuildInput"
+}

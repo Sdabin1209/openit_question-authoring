@@ -1,0 +1,37 @@
+{
+ "$id": "ConfirmFinalizeResult.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "저자 확인 ReviewRecord",
+ "type": "object",
+ "required": [
+  "review"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "review": {
+   "allOf": [
+    {
+     "$ref": "ReviewRecord.schema.json"
+    },
+    {
+     "required": [
+      "ext"
+     ],
+     "properties": {
+      "ext": {
+       "required": [
+        "question-authoring"
+       ],
+       "properties": {
+        "question-authoring": {
+         "$ref": "QuestionAuthoringExt.schema.json#/$defs/ReviewExt"
+        }
+       }
+      }
+     }
+    }
+   ]
+  }
+ },
+ "title": "ConfirmFinalizeResult"
+}

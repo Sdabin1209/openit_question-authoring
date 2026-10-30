@@ -4,9 +4,9 @@ import json
 import pytest
 from boundary_contracts import PIPELINE_SCHEMA_VERSION
 
-from question_authoring import classify
+from question_authoring.components import change_diff as classify
 import survey_schema
-from question_authoring.extractors import TextFormExtractor
+from question_authoring.components.extract_textform import TextFormExtractor
 from conftest import example_text
 
 
@@ -75,13 +75,15 @@ def test_classification_record(bank, validators):
     new["questions"][0]["slots"][0]["units"][0]["range"] = [30, 45]
     to = {"id": "qs", "version": "2", "content_hash": "sha256:" + "a" * 64}
     fr = {"id": "qs", "version": "1", "content_hash": "sha256:" + "b" * 64}
-    rec = classify.classify_change(bank, new, to_ref=to, from_ref=fr, created_at="2026-10-15T00:00:00Z",
-                                   pipeline_schema_version=PIPELINE_SCHEMA_VERSION)
-    validators.check("ChangeClassification", rec)
+    from question_authoring.wiring import schemas
+    from question_authoring.components import change_diff, change_record
+    diff = schemas.bind(change_diff)({"old": bank, "new": new})
+    rec = schemas.bind(change_record)({"diff": diff, "to": to, "from": fr, "created_at": "2026-10-15T00:00:00Z", "draft_id": "dr-1",
+                                       "pipeline_schema_version": PIPELINE_SCHEMA_VERSION})
+    validators.check("ChangeClassification", rec)       # 계약 레코드로도 통과한다(출력 스키마 ChangeRecord가 이미 확인했다)
     assert rec["follow_ups"] == ["REGENERATE_SAMPLES", "REEVALUATE_MODEL", "CLINICAL_REVIEW"]
-    assert classify.classify_change(None, new, to_ref=to, from_ref=None, created_at="x", pipeline_schema_version=PIPELINE_SCHEMA_VERSION) is None
-    with pytest.raises(ValueError):
-        classify.classify_change(bank, bank, to_ref=to, from_ref=fr, created_at="x", pipeline_schema_version=PIPELINE_SCHEMA_VERSION)
+    same = schemas.bind(change_diff)({"old": bank, "new": bank})
+    assert same["change_kinds"] == [] and same["text"] == "변경 없음"      # 변경 없음은 레코드를 만들지 않는다(confirm_finalize가 거절)
 
 
 def test_tables_cover_schema_fields():

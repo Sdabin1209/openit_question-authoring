@@ -5,8 +5,8 @@ import threading
 import pytest
 from boundary_contracts.errors import BoundaryError
 
-from question_authoring.service import AuthoringService
-from question_authoring.store import bank_hash
+from question_authoring.wiring.service import AuthoringService
+from helpers import bank_hash
 from helpers import AUTHOR, publish
 
 

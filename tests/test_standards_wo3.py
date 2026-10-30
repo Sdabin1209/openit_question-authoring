@@ -1,67 +1,39 @@
-"""표준성 점검 결정표 2절(question-authoring) #12 재현 시험.
-
-#12 토큰 비교: 알려진 모든 토큰을 `hmac.compare_digest`로 끝까지 비교한다(조기 종료 없음).
-    표준 근거: Python `hmac.compare_digest` 문서(타이밍 공격 대응용 상수 시간 비교), OWASP 타이밍 공격 대응.
-    기대값은 "토큰이 N개면 비교가 정확히 N번, 맞는 토큰이 첫째여도 N번"이다(dict 조회·조기 종료는 이를 어긴다).
-"""
-import hmac
-
-from question_authoring import http_api
-from question_authoring.http_api import Api
-from question_authoring.service import Actor
+"""토큰 의미 시험(표준성 점검 #12의 후속). 인증·401/403 규약은 openit_link.App이 맡는다(D118)이므로 여기서는 이 영역이 토큰에 붙이는 의미만 본다:
+정적 토큰은 X-Openit-User를 무시하고, gateway 토큰은 그 사용자와 역할표를 쓰며, 읽기 토큰은 저작 경로에서 403이다.
+상수 시간 비교(hmac.compare_digest)는 라이브러리 몫이다: 현재 v0.1.0은 dict 조회라 이 시험은 그것을 확인하지 않는다(docs/change-requests/CR-0008)."""
+from question_authoring.components.link_authoring_server import Api
+from question_authoring.wiring.service import Actor
 
 
-def _spy(monkeypatch):
-    calls = []
-    real = hmac.compare_digest
-
-    def spy(a, b):
-        calls.append((a, b))
-        return real(a, b)
-    monkeypatch.setattr(http_api.hmac, "compare_digest", spy, raising=False)
-    return calls
+def api_of(svc):
+    return Api(svc, {"tok-a": Actor("dr-kim", "question-author")}, read_tokens={"rd": "synthetic-data"}, gateway_tokens={"g1"},
+               user_roles={"u1": "question-author"})
 
 
-def test_static_token_compares_every_candidate(svc, monkeypatch):
-    calls = _spy(monkeypatch)
-    toks = {"t-first": Actor("a1", "question-author"), "t-second": Actor("a2", "question-author"),
-            "t-third": Actor("a3", "question-author")}
-    api = Api(svc, toks)
-    calls.clear()
-    assert api._principal({"Authorization": "Bearer t-first"}).id == "a1"   # 첫 후보가 맞아도
-    assert len(calls) == 3                                                  # 세 후보를 모두 비교한다
-    calls.clear()
-    assert api._principal({"Authorization": "Bearer nope"}) is None
-    assert len(calls) == 3
+def status(api, headers, path="/v1/drafts"):
+    return api.handle("GET", path, headers)[0]
 
 
-def test_gateway_and_read_tokens_compare_every_candidate(svc, monkeypatch):
-    calls = _spy(monkeypatch)
-    api = Api(svc, {}, read_tokens={"r1": "synthetic-data", "r2": "model-lab"},
-              gateway_tokens=["g1", "g2", "g3"], user_roles={"u1": "question-author"})
-    calls.clear()
-    assert api._principal({"Authorization": "Bearer g1", "X-Openit-User": "u1"}).id == "u1"
-    assert len(calls) == 3 + 2      # 정적 0 + gateway 3 + 읽기 2: 어느 표에서 맞았는지와 무관하게 모두 비교한다(401/403 분류 도입 뒤)
-    calls.clear()
-    assert (api.auth_failure({"Authorization": "Bearer r1"}) is None) is True
-    # 정적 0 + gateway 3 + 읽기 2를 모두 끝까지 비교
-    assert len(calls) == 3 + 2
-    calls.clear()
-    api._reader_auth({"Authorization": "Bearer r1"})
-    assert len(calls) >= 2
+def test_static_token_ignores_user_header(svc):
+    a = api_of(svc)
+    assert status(a, {"Authorization": "Bearer tok-a", "X-Openit-User": "stranger"}) == 200
 
 
-def test_token_semantics_unchanged(svc):
-    api = Api(svc, {"tok-a": Actor("dr-kim", "question-author")}, read_tokens={"rd": "synthetic-data"})
-    assert api._principal({"Authorization": "Bearer tok-a"}).id == "dr-kim"
-    assert api._principal({"Authorization": "Bearer tok-"}) is None
-    assert api._principal({"Authorization": "Bearer tok-aa"}) is None
-    assert (api.auth_failure({"Authorization": "Bearer rd"}) is None) is True
-    assert (api.auth_failure({"Authorization": "Bearer x"}) is None) is False
-    assert (api.auth_failure({}) is None) is False
+def test_gateway_requires_known_user(svc):
+    a = api_of(svc)
+    assert status(a, {"Authorization": "Bearer g1", "X-Openit-User": "u1"}) == 200
+    assert status(a, {"Authorization": "Bearer g1"}) == 401
+    assert status(a, {"Authorization": "Bearer g1", "X-Openit-User": "stranger"}) == 403
 
 
-def test_non_ascii_token_does_not_crash(svc):
-    # compare_digest는 str이 ASCII가 아니면 TypeError를 낸다. 바이트로 비교해 500/503 대신 거절해야 한다
-    api = Api(svc, {"tok-a": Actor("dr-kim", "question-author")})
-    assert api._principal({"Authorization": "Bearer 토큰"}) is None
+def test_read_token_reads_but_cannot_author(svc):
+    a = api_of(svc)
+    assert status(a, {"Authorization": "Bearer rd"}, "/v1/question-sets") == 200
+    assert status(a, {"Authorization": "Bearer rd"}) == 403
+
+
+def test_prefix_suffix_and_non_ascii_tokens_are_rejected(svc):
+    a = api_of(svc)
+    for t in ("tok-", "tok-aa", "토큰", ""):
+        assert status(a, {"Authorization": "Bearer " + t}) == 401
+    assert status(a, {}) == 401

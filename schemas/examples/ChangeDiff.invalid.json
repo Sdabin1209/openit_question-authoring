@@ -1,0 +1,12 @@
+{
+ "change_kinds": [
+  "OTHER"
+ ],
+ "affected_slots": [
+  "q1.s1"
+ ],
+ "follow_ups": [
+  "REGENERATE_SAMPLES"
+ ],
+ "text": "변경 종류: 문구"
+}

@@ -1,0 +1,29 @@
+{
+ "$id": "StoreVersionPageQuery.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "버전 목록 쪽 매기기(cursor는 마지막 버전 번호)",
+ "type": "object",
+ "required": [
+  "limit",
+  "cursor"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "limit": {
+   "type": "integer",
+   "minimum": 1
+  },
+  "cursor": {
+   "oneOf": [
+    {
+     "type": "string",
+     "pattern": "^[0-9]+$"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  }
+ },
+ "title": "StoreVersionPageQuery"
+}

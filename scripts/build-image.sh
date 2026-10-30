@@ -24,6 +24,13 @@ for lib in "$BOUNDARY_SRC" "$SURVEY_SRC"; do
   SOURCE_DATE_EPOCH="$epoch" "$PY" -m pip wheel -q --no-deps -w "$tmp/out-$(basename "$lib")" "$w" >&2
   cp "$tmp/out-$(basename "$lib")"/*.whl "$ctx/build/wheels/"
 done
+# 통신 라이브러리(openit-link, D118)는 계약 BuildImageRequest에 dependency_sources 키가 아직 없어(CR-0008) requirements.lock의 고정 줄로 호스트에서 wheel을 만든다.
+# 왜 호스트: 이미지 안에서는 ssh를 쓸 수 없다. OPENIT_LINK_SPEC은 시험이 가짜 트리를 넘기는 자리다. 이 wheel도 위와 같은 시각 고정을 쓴다
+link_spec="${OPENIT_LINK_SPEC:-$(grep '^openit-link @' "$SRC/requirements.lock" 2>/dev/null || true)}"
+[ -n "$link_spec" ] || { echo "build-image: requirements.lock에 openit-link 고정 줄이 없다" >&2; exit 2; }
+mkdir -p "$tmp/out-link"
+SOURCE_DATE_EPOCH="$epoch" "$PY" -m pip wheel -q --no-deps -w "$tmp/out-link" "$link_spec" >&2 || { echo "build-image: openit-link wheel을 만들지 못했다($link_spec)" >&2; exit 2; }
+cp "$tmp/out-link"/*.whl "$ctx/build/wheels/"
 # 라벨 정직성(U50): 라벨 값은 요청 문자열이 아니라 이미지에 실제로 설치되는 wheel의 버전에서 찍는다.
 # 요청 버전, wheel 버전, 이 영역의 고정(requirements.lock)이 하나라도 다르면 라벨을 찍지 않고 실패한다.
 wheel_version() { local f; f="$(ls "$ctx/build/wheels/"$1-*.whl 2>/dev/null | head -1)"; [ -n "$f" ] || { echo "build-image: wheel을 찾지 못했다: $1" >&2; exit 2; }; basename "$f" | cut -d- -f2; }

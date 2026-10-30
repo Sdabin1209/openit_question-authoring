@@ -1,0 +1,39 @@
+{
+ "$id": "ConfirmPlanInput.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "확인 계획 입력",
+ "type": "object",
+ "required": [
+  "draft",
+  "preview_hash",
+  "current_preview_hash",
+  "latest",
+  "now"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "draft": {
+   "$ref": "AuthoringResponses.schema.json#/$defs/Draft"
+  },
+  "preview_hash": {
+   "$ref": "PreviewHashValue.json"
+  },
+  "current_preview_hash": {
+   "$ref": "_common.schema.json#/$defs/Hash"
+  },
+  "latest": {
+   "oneOf": [
+    {
+     "$ref": "_common.schema.json#/$defs/ArtifactRef"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "now": {
+   "$ref": "_common.schema.json#/$defs/Timestamp"
+  }
+ },
+ "title": "ConfirmPlanInput"
+}

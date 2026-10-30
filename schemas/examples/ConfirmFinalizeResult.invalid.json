@@ -1,0 +1,16 @@
+{
+ "review": {
+  "pipeline_schema_version": "3.1",
+  "review_id": "rv-dr-1",
+  "question_set": {
+   "id": "qs1",
+   "version": "1",
+   "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "reviewer_role": "question-author",
+  "reviewer_id": "dr-kim",
+  "decision": "APPROVED",
+  "clinical_basis_approved": false,
+  "reviewed_at": "2026-10-30T10:00:00Z"
+ }
+}

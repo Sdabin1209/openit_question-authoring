@@ -9,8 +9,8 @@ import pytest
 from boundary_contracts.clients import HttpFailureStore
 
 from conftest import example_text
-from question_authoring.http_api import Api
-from question_authoring.service import Actor
+from question_authoring.components.link_authoring_server import Api
+from question_authoring.wiring.service import Actor
 from test_signals import i7  # noqa: F401  (ops-feedback 대역 fixture)
 
 H = {"Authorization": "Bearer tok-a"}
@@ -32,9 +32,9 @@ def svc4(store, validators):
     """4-eyes(기본 구성) 서비스: 검수 역할이 임상 승인을 덧붙인다. conftest의 svc는 4-eyes를 끈 구성이라 쓰지 않는다."""
     import itertools
     from conftest import Tick
-    from question_authoring.service import AuthoringService
+    from question_authoring.wiring.service import AuthoringService
     c = itertools.count(1)
-    return AuthoringService(store, validators, clock=Tick(), new_id=lambda p: f"{p}-{next(c):04d}", require_two_person=True)
+    return AuthoringService(store, clock=Tick(), new_id=lambda p: f"{p}-{next(c):04d}", require_two_person=True)
 
 
 @pytest.fixture

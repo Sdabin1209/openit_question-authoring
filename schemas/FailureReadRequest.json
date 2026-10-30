@@ -1,0 +1,52 @@
+{
+ "$id": "FailureReadRequest.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "실패 사례 읽기 요청",
+ "type": "object",
+ "required": [
+  "max_cases",
+  "review_status",
+  "question_set_id",
+  "deadline_seconds"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "max_cases": {
+   "type": "integer",
+   "minimum": 1,
+   "maximum": 20000
+  },
+  "review_status": {
+   "oneOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "question_set_id": {
+   "oneOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "deadline_seconds": {
+   "oneOf": [
+    {
+     "type": "number",
+     "exclusiveMinimum": 0
+    },
+    {
+     "type": "null"
+    }
+   ]
+  }
+ },
+ "title": "FailureReadRequest"
+}

@@ -7,7 +7,7 @@ import pytest
 from boundary_contracts import canonical
 from boundary_contracts.errors import BoundaryError
 
-from question_authoring.service import Actor, AuthoringService
+from question_authoring.wiring.service import Actor, AuthoringService
 from conftest import example_text
 from helpers import AUTHOR, publish
 
@@ -96,7 +96,9 @@ def test_confirm_idempotent_and_hash_stable(svc, store):
 
 
 def test_confirm_retry_after_crash(validators):
-    from question_authoring.store import MemoryQuestionStore
+    from question_authoring.components.question_store import QuestionStore
+    from question_authoring.components.store_memory import MemoryQuestionStore
+    from question_authoring.wiring import schemas
 
     class Flaky(MemoryQuestionStore):
         boom = False
@@ -106,11 +108,11 @@ def test_confirm_retry_after_crash(validators):
                 raise BoundaryError("UNAVAILABLE", "일시 장애")
             super().save_draft(draft)
 
-    s = Flaky()
-    svc = AuthoringService(s, validators)
+    s = QuestionStore(Flaky(), schemas.check)
+    svc = AuthoringService(s)
     out = svc.ingest_material(AUTHOR, "qs-main", "f.txt", example_text())
     ph = svc.get_preview(out["draft_id"])["preview_hash"]
-    s.boom = True
+    s._b.boom = True
     assert code(svc.confirm, AUTHOR, out["draft_id"], ph).retryable
     ref = svc.confirm(AUTHOR, out["draft_id"], ph)             # 재시도: 같은 버전, 중복 없음
     assert ref["version"] == "1" and len(s.list_versions("qs-main")[0]) == 1
@@ -179,7 +181,7 @@ def test_fallback_to_screen_input(svc, store):
 
 
 def TextBank():
-    from question_authoring.extractors import TextFormExtractor
+    from question_authoring.components.extract_textform import TextFormExtractor
     return TextFormExtractor().extract(example_text(), "f.txt").bank
 
 

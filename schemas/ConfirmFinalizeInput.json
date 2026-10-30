@@ -1,0 +1,58 @@
+{
+ "$id": "ConfirmFinalizeInput.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "확인 마무리 입력",
+ "type": "object",
+ "required": [
+  "draft",
+  "actor",
+  "preview_hash",
+  "validation_errors",
+  "ref",
+  "diff",
+  "at",
+  "require_two_person",
+  "pipeline_schema_version"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "draft": {
+   "$ref": "AuthoringResponses.schema.json#/$defs/Draft"
+  },
+  "actor": {
+   "$ref": "Actor.json"
+  },
+  "preview_hash": {
+   "$ref": "PreviewHashValue.json"
+  },
+  "validation_errors": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "ref": {
+   "$ref": "_common.schema.json#/$defs/ArtifactRef"
+  },
+  "diff": {
+   "oneOf": [
+    {
+     "$ref": "ChangeDiff.json"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "at": {
+   "$ref": "_common.schema.json#/$defs/Timestamp"
+  },
+  "require_two_person": {
+   "type": "boolean"
+  },
+  "pipeline_schema_version": {
+   "$ref": "_common.schema.json#/$defs/PipelineSchemaVersion"
+  }
+ },
+ "title": "ConfirmFinalizeInput"
+}

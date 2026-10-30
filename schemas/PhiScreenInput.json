@@ -1,0 +1,22 @@
+{
+ "$id": "PhiScreenInput.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "환자 정보 점검 입력. accept_warning이 false이고 경고가 있으면 거절한다(저자가 확인 후 다시 올려야 한다)",
+ "type": "object",
+ "required": [
+  "data_base64",
+  "accept_warning"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "data_base64": {
+   "type": "string",
+   "pattern": "^[A-Za-z0-9+/]*={0,2}$",
+   "description": "base64(RFC 4648)로 인코딩한 원본 바이트. JSON에는 바이트가 없다"
+  },
+  "accept_warning": {
+   "type": "boolean"
+  }
+ },
+ "title": "PhiScreenInput"
+}

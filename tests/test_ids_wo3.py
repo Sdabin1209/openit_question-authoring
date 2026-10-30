@@ -3,7 +3,7 @@
 import re
 import uuid
 
-from question_authoring.service import _new_id_default
+from question_authoring.wiring.ids import new_id_default as _new_id_default
 
 
 def test_generated_ids_are_full_uuid4_hex():

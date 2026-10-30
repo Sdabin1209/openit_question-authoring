@@ -1,5 +1,6 @@
 """장애 경로 시험(FAULT_MATRIX E2 저자 클라이언트 -> 저작 API, D5 개선 신호 읽기, 큰 자료, 원자성, 멱등).
 PostgreSQL 항목은 TEST_DATABASE_URL이 없으면 SKIP(store 픽스처)."""
+from helpers import phi_warnings
 import contextlib
 import json
 import socket
@@ -16,8 +17,8 @@ from boundary_contracts.errors import BoundaryError
 from conftest import example_text
 from helpers import publish
 from helpers import stop_http
-from question_authoring.http_api import Api, make_server, MAX_BODY
-from question_authoring.service import Actor
+from question_authoring.components.link_authoring_server import Api, make_server, MAX_BODY
+from question_authoring.wiring.service import Actor
 
 AUTH = {"Authorization": "Bearer tok-a"}
 
@@ -129,13 +130,13 @@ def test_auth_failures_are_not_retryable(svc):
 
 # ---- E2 F4: 재시작해도 확정 데이터와 진행 중 초안이 남고, 재전송은 멱등 ----
 def test_restart_keeps_drafts_and_confirmed_versions_and_resend_is_idempotent(tmp_path, validators):
-    from question_authoring.service import AuthoringService
-    from question_authoring.store import SqliteQuestionStore
+    from question_authoring.wiring.service import AuthoringService
+    from question_authoring.wiring.stores import SqliteQuestionStore
     path = tmp_path / "q.sqlite3"
 
     def boot():
         s = SqliteQuestionStore(path)
-        return s, api_of(AuthoringService(s, validators))
+        return s, api_of(AuthoringService(s))
     s1, api1 = boot()
     st, out = api1.handle("POST", MAT, AUTH, example_text())
     did = out["draft_id"]
@@ -163,7 +164,7 @@ def test_resend_same_ok_different_conflict(svc, store):
     rv = store.get_reviews(ref)[0]
     store.commit_version(bank, ref, rv, None, None)                         # 같은 버전·같은 내용: 조용히 성공
     other = json.loads(json.dumps(bank)); other["questions"][0]["name"] = "다른 이름"
-    from question_authoring.store.base import bank_hash
+    from helpers import bank_hash
     ref_o = dict(ref, content_hash=bank_hash(other))
     with pytest.raises(BoundaryError) as e:
         store.commit_version(other, ref_o, dict(rv, review_id="rv-other"), None, None)
@@ -235,7 +236,7 @@ def test_d5_total_deadline_bounds_many_slow_pages(svc):
 
 def test_d5_trace_upstream_failure_is_not_counted_as_missing_trace(svc):
     """상류가 죽은 것을 trace 없음(TRACE_UNREADABLE)으로 조용히 세지 않는다."""
-    from question_authoring.signals import build_signals
+    from helpers import build_signals
 
     class Src:
         def list_cases(self, **k):
@@ -250,18 +251,18 @@ def test_d5_trace_upstream_failure_is_not_counted_as_missing_trace(svc):
 
 # ---- 큰 자료의 처리 시간: 긴 한 줄이 제곱으로 느려지지 않는다(이메일 패턴이 그랬다) ----
 def test_phi_check_is_linear_on_long_lines_and_still_detects(svc):
-    from question_authoring.service import AuthoringService
+    from question_authoring.wiring.service import AuthoringService
     t = time.monotonic()
-    assert AuthoringService._phi_warnings(b"x" * (2 * 1024 * 1024)) == []
+    assert phi_warnings(b"x" * (2 * 1024 * 1024)) == []
     assert time.monotonic() - t < 2.0
-    assert AuthoringService._phi_warnings("문의 kim.doctor+a@hospital.co.kr 입니다".encode()) == ["이메일 형태"]
-    assert AuthoringService._phi_warnings(b"010-1234-5678") == ["전화번호 형태"]
+    assert phi_warnings("문의 kim.doctor+a@hospital.co.kr 입니다".encode()) == ["이메일 형태"]
+    assert phi_warnings(b"010-1234-5678") == ["전화번호 형태"]
 
 
 def test_error_status_codes_match_contract_table(svc, monkeypatch):
     """QA-14: 상태 코드는 계약 CONVENTIONS.md 9절 표(독립 출처)에서 읽은 값과 같아야 한다. 표에 없는 코드(500, 413)를 내지 않는다."""
     import pathlib, re
-    from question_authoring.http_api import STATUS
+    from question_authoring.components.link_authoring_server import STATUS
     doc = pathlib.Path(__file__).resolve().parents[2] / "boundary-contracts" / "CONVENTIONS.md"
     if not doc.exists():
         pytest.skip("계약 문서가 이웃 폴더에 없다")

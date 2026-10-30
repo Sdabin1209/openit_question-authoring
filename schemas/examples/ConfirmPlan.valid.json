@@ -1,0 +1,8 @@
+{
+ "action": "PROCEED",
+ "reserved_now": true,
+ "reservation": {
+  "version": 1,
+  "at": "2026-10-30T10:00:00Z"
+ }
+}

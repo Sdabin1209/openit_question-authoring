@@ -11,8 +11,8 @@ import boundary_contracts as bc
 import pytest
 
 from conftest import example_text
-from question_authoring.http_api import Api
-from question_authoring.service import Actor
+from question_authoring.components.link_authoring_server import Api
+from question_authoring.wiring.service import Actor
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DECL = json.loads((ROOT / "deploy-exposure.json").read_text(encoding="utf-8"))
@@ -55,7 +55,7 @@ def call(api, method, path, body=b"{}"):
 def served(api, method, path):
     """코드가 이 메서드·경로를 아는가: '없는 경로' 404 NOT_FOUND가 아니면 안다(없는 초안 404 같은 업무 오류는 아는 경로)."""
     st, out = call(api, method, path)
-    return not (st == 404 and "없는 경로" in out.get("message", ""))
+    return not (st == 405 or (st == 404 and out.get("message", "") in ("경로가 없다",) or "없는 경로" in out.get("message", "")))
 
 
 def test_every_declared_exposed_route_exists_in_code(api):
@@ -80,10 +80,8 @@ def test_roles_are_the_gateway_roles_that_reach_the_author_routes():
 
 def test_every_known_service_path_is_declared_exposed_or_denied():
     """코드가 서비스하는 경로 묶음이 선언에 빠지지 않는다(새 경로를 만들면 이 시험이 깨져 선언을 고치게 한다)."""
-    src = (ROOT / "question_authoring" / "http_api.py").read_text(encoding="utf-8")
-    literal = set(re.findall(r'path == "(/v1/[a-z-]+)"', src)) | set(re.findall(r'path\.startswith\("(/v1/[a-z-]+)/"\)', src))
-    regex_prefix = set(re.findall(r're\.match\(r"\^(/v1/[a-z-]+)', src))
-    known = literal | regex_prefix
+    src = (ROOT / "question_authoring" / "components" / "link_authoring_server.py").read_text(encoding="utf-8")
+    known = set(re.findall(r'W\("[A-Z]+", "(/v1/[a-z-]+)', src)) | set(re.findall(r'sc = "(/v1/[a-z-]+)"', src))
     assert {"/v1/drafts", "/v1/materials", "/v1/reviews", "/v1/signals", "/v1/question-sets"} <= known, known
     declared = {p.rstrip("/*").rstrip("/") or p for r in DECL["routes"] for p in r["paths"]}
     assert known <= declared, f"선언에 없는 서비스 경로: {sorted(known - declared)}"
@@ -102,8 +100,8 @@ def test_build_image_attaches_the_declaration_as_label(tmp_path):
     (src / "Dockerfile").write_text("FROM scratch\n")
     (src / "deploy-exposure.json").write_text((ROOT / "deploy-exposure.json").read_text(encoding="utf-8"))
     write_lock(src)
-    req = {"source_dir": str(src), "revision": "abcdef1", "versions": {"boundary": "v3.0.2", "survey_schema": "v2.0.0"},
-           "dependency_sources": {"boundary": make_tree(tmp_path / "bc", "boundary_contracts", "3.0.2"), "survey_schema": make_tree(tmp_path / "ss", "openit_survey_schema", "2.0.0")},
+    req = {"source_dir": str(src), "revision": "abcdef1", "versions": {"boundary": "v3.1.1", "survey_schema": "v2.0.0"},
+           "dependency_sources": {"boundary": make_tree(tmp_path / "bc", "boundary_contracts", "3.1.1"), "survey_schema": make_tree(tmp_path / "ss", "openit_survey_schema", "2.0.0")},
            "image_tag": "question-authoring-test/q:t1"}
     fake = tmp_path / "docker"
     fake.write_text(FAKE_DOCKER.replace("__SHA__", SHA))
@@ -112,7 +110,7 @@ def test_build_image_attaches_the_declaration_as_label(tmp_path):
     log = tmp_path / "log.txt"
     from test_build_image import OFFLINE_WHEEL
     p = subprocess.run(["bash", str(ROOT / "scripts" / "build-image.sh"), str(tmp_path / "req.json")], capture_output=True, text=True,
-                       env=dict(os.environ, DOCKER=str(fake), PYTHON=sys.executable, FAKE_LOG=str(log), **OFFLINE_WHEEL), timeout=120)
+                       env=dict(os.environ, DOCKER=str(fake), PYTHON=sys.executable, FAKE_LOG=str(log), OPENIT_LINK_SPEC=make_tree(tmp_path / "lk", "openit_link", "0.1.0"), **OFFLINE_WHEEL), timeout=120)
     assert p.returncode == 0, p.stderr
     m = re.search(r"--label io\.openit\.exposure=(\{.*?\}) --", log.read_text())
     assert m, log.read_text()[:400]

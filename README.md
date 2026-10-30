@@ -20,19 +20,18 @@
 
 | 경로 | 역할 |
 | --- | --- |
-| `question_authoring/service.py` | 저작 로직: 초안, 편집, 자료 등록, 미리보기, 확인, 이후 검수. 저장소에 쓰는 유일한 길 |
-| `question_authoring/store/` | 문항 저장소. `postgres.py`(운영), `sqlite.py`(개발·시험 기본, 단일 파일), `memory.py`(이웃이 시험에 쓰는 가짜 구현), `base.py`(읽기 논리) |
-| `question_authoring/extractors/` | 자료를 초안으로 바꾸는 추출기. 현재 텍스트 양식(`textform.py`)뿐 |
-| `question_authoring/preview.py` | 사람이 읽는 미리보기와 해시 |
-| `question_authoring/classify.py` | 버전 사이 변경 분류(`ChangeClassification`) |
-| `question_authoring/validation.py` | 스키마·참조 검증 |
-| `question_authoring/signals.py` | 개선 신호 수신함(I7 읽기) |
-| `question_authoring/http_api.py`, `__main__.py` | HTTP 계층과 진입점(환경 변수는 `__main__.py`에서만 읽음) |
-| `tests/` | 시험(저장소 적합성, HTTP, 추출기, 비밀 값 등) |
-| `scripts/smoke.sh`, `scripts/build_wheels.sh` | 이미지 스모크 시험, 계약 wheel 빌드 |
-| `Dockerfile`, `requirements.lock` | 이미지와 잠긴 의존(계약 태그) |
+| `schemas/` | 영역 내부 타입의 JSON Schema와 통과·거부 예시, "스키마 밖 조건" 표([schemas/README.md](schemas/README.md)) |
+| `question_authoring/types/` | `schemas/`에서 생성한 타입(손으로 고치지 않는다, 생성 명령은 아래 "타입 생성") |
+| `question_authoring/components/` | 컴포넌트 한 파일씩(업무, 저장소, `link_*` 통신). 목록과 입출력은 [docs/components.md](docs/components.md) |
+| `question_authoring/wiring/` | 컴포넌트 연결: 저작 서비스(`service.py`), 스키마 검증 껍데기, 저장소 주입 |
+| `question_authoring/__main__.py`, `store/migrate.py`, `migrations/` | 진입점(환경 변수는 여기서만 읽음), 마이그레이션. 컴포넌트가 아니다 |
+| `tests/` | 시험(저장소 적합성, HTTP, 추출기, 비밀 값, 구조 `test_structure.py` 등) |
+| `scripts/gen_types.py`, `scripts/smoke.sh`, `scripts/build_wheels.sh` | 타입 생성, 이미지 스모크 시험, 계약 wheel 빌드 |
+| `Dockerfile`, `requirements.lock`, `requirements-gen.lock` | 이미지와 잠긴 의존(계약·통신 라이브러리 태그), 타입 생성기 잠금 |
 | `examples/question_form.txt` | 텍스트 양식 입력 예 |
 | `docs/` | 설계·경계·런북 등(아래 "더 자세한 문서") |
+
+타입 생성(datamodel-code-generator 0.25.0, `requirements-gen.lock`에 고정): `python3 -m venv .gen && .gen/bin/pip install -r requirements-gen.lock && .gen/bin/python scripts/gen_types.py --contracts "$(.venv/bin/python -c 'import boundary_contracts;print(boundary_contracts.schema_dir())')"`. `tests/test_structure.py`가 다시 생성한 결과와 `types/`가 같은지 본다.
 
 ```
 자료 파일(.txt/.md) --> 환자정보 경고 --> 추출기 --> 초안(+확신 못 한 값 표시)

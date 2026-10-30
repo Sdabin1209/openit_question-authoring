@@ -3,14 +3,14 @@ import sqlite3
 import pytest
 from boundary_contracts.errors import BoundaryError
 
-from question_authoring.service import AuthoringService
-from question_authoring.store import SqliteQuestionStore
+from question_authoring.wiring.service import AuthoringService
+from question_authoring.wiring.stores import SqliteQuestionStore
 from helpers import AUTHOR, publish
 
 
 def test_immutable_triggers(tmp_path, validators):
     s = SqliteQuestionStore(tmp_path / "a.sqlite3")
-    svc = AuthoringService(s, validators)
+    svc = AuthoringService(s)
     publish(svc)
     publish(svc, edits=[{"op": "set", "path": "/questions/0/name", "value": "체온 측정"}])
     for sql in ("UPDATE versions SET bank='{}'", "DELETE FROM versions", "UPDATE reviews SET record='{}'",
@@ -23,7 +23,7 @@ def test_immutable_triggers(tmp_path, validators):
 def test_persistence_and_read_only(tmp_path, validators):
     path = tmp_path / "b.sqlite3"
     s = SqliteQuestionStore(path)
-    ref = publish(AuthoringService(s, validators))
+    ref = publish(AuthoringService(s))
     s.close()
     ro = SqliteQuestionStore(path, read_only=True)
     assert ro.reader().get_question_bank(ref)["version"] == 1

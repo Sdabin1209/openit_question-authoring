@@ -1,0 +1,38 @@
+{
+ "$id": "PreviewBuildInput.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "미리보기 입력",
+ "type": "object",
+ "required": [
+  "draft",
+  "preview_hash",
+  "validation_errors",
+  "change"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "draft": {
+   "$ref": "AuthoringResponses.schema.json#/$defs/Draft"
+  },
+  "preview_hash": {
+   "$ref": "_common.schema.json#/$defs/Hash"
+  },
+  "validation_errors": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "change": {
+   "oneOf": [
+    {
+     "$ref": "ChangeDiff.json"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  }
+ },
+ "title": "PreviewBuildInput"
+}

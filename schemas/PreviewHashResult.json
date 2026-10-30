@@ -1,0 +1,16 @@
+{
+ "$id": "PreviewHashResult.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "미리보기 해시",
+ "type": "object",
+ "required": [
+  "preview_hash"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "preview_hash": {
+   "$ref": "_common.schema.json#/$defs/Hash"
+  }
+ },
+ "title": "PreviewHashResult"
+}

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from question_authoring.service import Actor, AuthoringService
-from question_authoring.store import MemoryQuestionStore, SqliteQuestionStore
-from question_authoring.validation import Validators
+from question_authoring.wiring.service import Actor, AuthoringService
+from question_authoring.wiring.stores import MemoryQuestionStore, SqliteQuestionStore
+from helpers import Validators
 
 ROOT = Path(__file__).resolve().parent.parent
 AUTHOR = Actor("dr-kim", "question-author")
@@ -50,7 +50,7 @@ def store(request, tmp_path):
         s = SqliteQuestionStore()
     elif request.param == "postgres":
         with pg_schema() as (url, schema):
-            from question_authoring.store import PostgresQuestionStore
+            from question_authoring.wiring.stores import PostgresQuestionStore
             s = PostgresQuestionStore(url, schema=schema)
             yield s
             s.close()
@@ -75,7 +75,7 @@ def svc(store, validators):
     c = itertools.count(1)
     # 기존 시험은 "저자 확인이 곧 임상 승인"인 이전 동작을 전제로 하므로 4-eyes를 끈 서비스를 쓴다.
     # 4-eyes(기본값)는 tests/test_two_person.py가 따로 시험한다.
-    return AuthoringService(store, validators, clock=Tick(), new_id=lambda p: f"{p}-{next(c):04d}", require_two_person=False)
+    return AuthoringService(store, clock=Tick(), new_id=lambda p: f"{p}-{next(c):04d}", require_two_person=False)
 
 
 def example_text() -> bytes:

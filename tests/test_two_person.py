@@ -1,4 +1,5 @@
 """D88 U9: 저자 != 검수자(4-eyes)가 기본. 초안 소유, 엄격한 입력 형식, gateway 경유 인증, 동시 편집, 번호 예약 풀림, 환자 정보 탐지."""
+from helpers import phi_warnings
 import itertools
 import json
 import threading
@@ -7,9 +8,9 @@ import pytest
 from boundary_contracts.errors import BoundaryError
 
 from conftest import example_text
-from question_authoring.http_api import Api
-from question_authoring.service import Actor, AuthoringService
-from question_authoring.store import MemoryQuestionStore
+from question_authoring.components.link_authoring_server import Api
+from question_authoring.wiring.service import Actor, AuthoringService
+from question_authoring.wiring.stores import MemoryQuestionStore
 
 KIM = Actor("dr-kim", "question-author")
 LEE = Actor("dr-lee", "question-author")
@@ -20,7 +21,7 @@ KIM_AS_REVIEWER = Actor("dr-kim", "clinical-reviewer")      # 같은 주체가 �
 @pytest.fixture
 def s2(validators):
     c = itertools.count(1)
-    return AuthoringService(MemoryQuestionStore(), validators, new_id=lambda p: f"{p}-{next(c):04d}")   # 기본값 = 4-eyes
+    return AuthoringService(MemoryQuestionStore(), new_id=lambda p: f"{p}-{next(c):04d}")   # 기본값 = 4-eyes
 
 
 def draft_ready(s, actor=KIM, qsid="qs-main"):
@@ -73,7 +74,7 @@ def test_reviewer_cannot_author(s2):
 
 
 def test_flag_false_restores_old_behavior_and_warns(validators):
-    s = AuthoringService(MemoryQuestionStore(), validators, require_two_person=False)
+    s = AuthoringService(MemoryQuestionStore(), require_two_person=False)
     did, ph = draft_ready(s)
     ref = s.confirm(KIM, did, ph)
     assert s.store.get_reviews(ref)[0]["clinical_basis_approved"] is True
@@ -167,21 +168,21 @@ def test_concurrent_edits_are_not_lost(s2):
     ("02-123-4567", "유선전화 형태"), ("031 123 4567", "유선전화 형태"), ("a.b@c.kr", "이메일 형태"),
 ])
 def test_phi_detection_widened(text, expect):
-    assert expect in AuthoringService._phi_warnings(text.encode())
+    assert expect in phi_warnings(text.encode())
 
 
 @pytest.mark.parametrize("text", ["체온 36.5도", "순서: 1", "확인 한도: 3", "Q1.s1 = 예", "2026-10-28", "한도 30"])
 def test_phi_no_false_alarm_on_normal_form_text(text):
-    assert AuthoringService._phi_warnings(text.encode()) == []
+    assert phi_warnings(text.encode()) == []
 
 
 def test_example_form_has_no_phi_warning():
-    assert AuthoringService._phi_warnings(example_text()) == []
+    assert phi_warnings(example_text()) == []
 
 
 def test_non_utf8_is_not_silently_accepted(s2):
     data = "문항 Q1: 체온\n010-1234-5678".encode("utf-16")
-    assert AuthoringService._phi_warnings(data) and "UTF-8" in AuthoringService._phi_warnings(data)[0]
+    assert phi_warnings(data) and "UTF-8" in phi_warnings(data)[0]
     assert code(s2.ingest_material, KIM, "qs-u", "f.txt", data) == "FAILED_PRECONDITION"
     out = s2.ingest_material(KIM, "qs-u", "f.txt", data, accept_phi_warning=True)
     assert out["status"] == "FALLBACK"
@@ -189,12 +190,12 @@ def test_non_utf8_is_not_silently_accepted(s2):
 
 @pytest.mark.parametrize("text", ["2024-01-02 1234567", "2024.01.02 1234567", "20240102 1234567", "작성일 2026/10/28 1234567"])
 def test_dates_do_not_trigger_phone_warnings(text):
-    assert AuthoringService._phi_warnings(text.encode()) == []
+    assert phi_warnings(text.encode()) == []
 
 
 def test_date_exclusion_keeps_real_detections():
     for t in ("2001011234567", "홍길동900101-1234567", "010 1234 5678", "2024-01-02 연락처 010-1234-5678", "+82-10-1234-5678"):
-        assert AuthoringService._phi_warnings(t.encode()), t
+        assert phi_warnings(t.encode()), t
 
 
 # 라운드3 M2: 날짜꼴로 끝나는 전화번호는 날짜 치환에 지워지지 않고 잡혀야 한다. 날짜 문장은 계속 경고가 없어야 한다
@@ -205,13 +206,13 @@ def test_date_exclusion_keeps_real_detections():
     ("+82-2-20120101", "유선전화 형태"), ("연락처 010 2012 0101", "전화번호 형태"),
 ])
 def test_phone_ending_like_date_is_detected(text, expect):
-    assert expect in AuthoringService._phi_warnings(text.encode())
+    assert expect in phi_warnings(text.encode())
 
 
 @pytest.mark.parametrize("text", ["2012-01-01", "2012.01.01", "20120101에 방문", "방문일 2012/01/01 입니다",
                                   "2024-01-02 2024-01-03 1234567"])
 def test_plain_dates_still_not_phone(text):
-    assert AuthoringService._phi_warnings(text.encode()) == []
+    assert phi_warnings(text.encode()) == []
 
 
 def test_phi_check_scales_linearly_with_phone_and_date_text():
@@ -219,7 +220,7 @@ def test_phi_check_scales_linearly_with_phone_and_date_text():
     unit = "방문 2012-01-01 010-2012 0101 20120101 02-".encode()
     def t(n):
         data = unit * n
-        t0 = time.perf_counter(); AuthoringService._phi_warnings(data); return time.perf_counter() - t0
+        t0 = time.perf_counter(); phi_warnings(data); return time.perf_counter() - t0
     t(500)
     small, big = min(t(2000) for _ in range(3)), min(t(8000) for _ in range(3))
     assert big < small * 4 * 3 + 0.05, (small, big)

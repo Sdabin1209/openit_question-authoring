@@ -1,0 +1,28 @@
+{
+ "$id": "StorePageQuery.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "문항 세트 목록 쪽 매기기",
+ "type": "object",
+ "required": [
+  "limit",
+  "cursor"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "limit": {
+   "type": "integer",
+   "minimum": 1
+  },
+  "cursor": {
+   "oneOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  }
+ },
+ "title": "StorePageQuery"
+}

@@ -1,0 +1,47 @@
+{
+ "$id": "DraftIngestResult.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "자료 등록 반영 결과",
+ "type": "object",
+ "required": [
+  "draft",
+  "status",
+  "open_flags"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "draft": {
+   "$ref": "AuthoringResponses.schema.json#/$defs/Draft"
+  },
+  "status": {
+   "enum": [
+    "PARSED",
+    "FALLBACK"
+   ]
+  },
+  "reason": {
+   "type": "string"
+  },
+  "open_flags": {
+   "type": "integer",
+   "minimum": 0
+  }
+ },
+ "allOf": [
+  {
+   "if": {
+    "properties": {
+     "status": {
+      "const": "FALLBACK"
+     }
+    }
+   },
+   "then": {
+    "required": [
+     "reason"
+    ]
+   }
+  }
+ ],
+ "title": "DraftIngestResult"
+}

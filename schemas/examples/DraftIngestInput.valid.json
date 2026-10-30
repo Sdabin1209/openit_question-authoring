@@ -1,0 +1,36 @@
+{
+ "draft": {
+  "draft_id": "dr-1",
+  "question_set_id": "qs1",
+  "status": "OPEN",
+  "base": null,
+  "bank": {
+   "questions": []
+  },
+  "flags": [],
+  "source": null,
+  "fallback": null,
+  "warnings": [],
+  "created_by": "dr-kim",
+  "created_at": "2026-10-30T10:00:00Z",
+  "updated_at": "2026-10-30T10:00:00Z"
+ },
+ "warnings": [],
+ "now": "2026-10-30T10:00:00Z",
+ "source": {
+  "source_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "filename": "q.txt",
+  "size": 3
+ },
+ "extractor": {
+  "name": "text-form",
+  "version": "1"
+ },
+ "extraction": {
+  "status": "PARSED",
+  "bank": {
+   "questions": []
+  },
+  "flags": []
+ }
+}

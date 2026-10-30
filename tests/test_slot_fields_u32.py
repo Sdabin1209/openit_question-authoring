@@ -6,8 +6,8 @@ import boundary_contracts as bc
 import pytest
 
 from conftest import example_text
-from question_authoring import classify, preview
-from question_authoring.extractors import TextFormExtractor
+from question_authoring.components import change_diff as classify, preview_build as preview
+from question_authoring.components.extract_textform import TextFormExtractor
 
 X = TextFormExtractor()
 HEAD = """세션 설정
@@ -87,7 +87,7 @@ def test_values_pass_the_contract_question_field_spec():
 
 
 def test_preview_shows_values_and_marks_unsure():
-    from question_authoring.preview import render_text
+    from question_authoring.components.preview_build import render_text
     r, _ = extract("자료형: integer\n값 단위: day/week\n최소: 0\n최대: abc\n")
     draft = {"question_set_id": "qs-x", "draft_id": "dr-1", "base": None, "source": None, "bank": r.bank,
              "flags": [dict(flag_id=f"fl-{i}", path=f.path, kind=f.kind, message=f.message, raw=f.raw, resolved=False)

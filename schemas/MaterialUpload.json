@@ -1,0 +1,26 @@
+{
+ "$id": "MaterialUpload.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "올린 문항 자료의 메타",
+ "type": "object",
+ "required": [
+  "question_set_id",
+  "filename",
+  "size"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "question_set_id": {
+   "$ref": "_common.schema.json#/$defs/Id"
+  },
+  "filename": {
+   "type": "string",
+   "minLength": 1
+  },
+  "size": {
+   "type": "integer",
+   "minimum": 1
+  }
+ },
+ "title": "MaterialUpload"
+}

@@ -35,11 +35,11 @@ from datetime import datetime, timedelta, timezone
 
 from boundary_contracts import read_secret
 
-from . import contract
-from .http_api import Api, close_all, drain, make_server
-from .service import Actor, AuthoringService
-from .store import AuthoringStore, PostgresQuestionStore, SqliteQuestionStore
-from .validation import Validators
+from .components.link_authoring_server import Api, Actor, close_all, drain, make_server
+from .components.question_store import QuestionStore as AuthoringStore
+from .wiring import contract
+from .wiring.service import AuthoringService
+from .wiring.stores import PostgresQuestionStore, SqliteQuestionStore
 
 
 def check_environment(environ=None) -> None:
@@ -122,17 +122,16 @@ def build() -> tuple[Api, AuthoringStore]:
         if gateway_tokens and not user_roles:
             raise SystemExit("QA_GATEWAY_TOKENS가 있는데 QA_USER_ROLES가 비어 있다")
     store = open_store()
-    v = Validators()
     read_tokens = {}
     for item in filter(None, (read_secret("QA_READ_TOKENS") or "").split(",")):
         role, tok = item.split("=", 1)
         read_tokens[tok] = role
     two = _bool("QA_REQUIRE_TWO_PERSON", True)
-    svc = AuthoringService(store, v, author_roles={"question-author"}, require_two_person=two)
+    svc = AuthoringService(store, author_roles={"question-author"}, require_two_person=two)
     warnings = ([] if two else ["two_person_disabled"])
     signals = None
     if env.get("QA_FAILURES_URL"):
-        from boundary_contracts.clients import HttpFailureStore
+        from boundary_contracts.clients import HttpFailureStore   # 진입점에서 이웃 클라이언트를 만들어 서비스에 넘긴다(읽기는 link_failures_read가 한다)
         signals = HttpFailureStore(env["QA_FAILURES_URL"], read_secret(env.get("QA_FAILURES_TOKEN_ENV", "QA_FAILURES_TOKEN")) or "",
                                    timeout=_seconds("QA_FAILURES_TIMEOUT_SECONDS", 5.0))
     return Api(svc, tokens, read_tokens=read_tokens, signals=signals, ready=store.is_ready, db_kind=getattr(store, "kind", None),

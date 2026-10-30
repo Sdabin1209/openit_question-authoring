@@ -1,0 +1,21 @@
+{
+ "$id": "Actor.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "호출자 신원(토큰 또는 gateway 사용자 표에서 정해진다)",
+ "type": "object",
+ "required": [
+  "id",
+  "role"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "id": {
+   "$ref": "_common.schema.json#/$defs/Id"
+  },
+  "role": {
+   "type": "string",
+   "minLength": 1
+  }
+ },
+ "title": "Actor"
+}

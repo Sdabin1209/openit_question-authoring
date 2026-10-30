@@ -1,0 +1,55 @@
+{
+ "$id": "AccessCheckInput.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "접근 판단 입력",
+ "type": "object",
+ "required": [
+  "actor",
+  "allowed_roles",
+  "reviewer_role",
+  "reviewer_ok",
+  "require_two_person",
+  "owner_id"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "actor": {
+   "oneOf": [
+    {
+     "$ref": "Actor.json"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "allowed_roles": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   },
+   "minItems": 1,
+   "uniqueItems": true
+  },
+  "reviewer_role": {
+   "type": "string"
+  },
+  "reviewer_ok": {
+   "type": "boolean"
+  },
+  "require_two_person": {
+   "type": "boolean"
+  },
+  "owner_id": {
+   "oneOf": [
+    {
+     "$ref": "_common.schema.json#/$defs/Id"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  }
+ },
+ "title": "AccessCheckInput"
+}

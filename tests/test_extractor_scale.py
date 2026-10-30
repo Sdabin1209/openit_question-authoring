@@ -8,11 +8,11 @@ import urllib.request
 import pytest
 
 from conftest import example_text
-from question_authoring.extractors.base import ExtractionFailure
-from question_authoring.extractors.textform import (MAX_LINE_CHARS, MAX_QUESTIONS, TextFormExtractor, _kv_split)
+from question_authoring.components.extract_textform import ExtractionFailure
+from question_authoring.components.extract_textform import (MAX_LINE_CHARS, MAX_QUESTIONS, TextFormExtractor, _kv_split)
 from helpers import stop_http
-from question_authoring.http_api import MAX_BODY, Api, make_server
-from question_authoring.service import Actor
+from question_authoring.components.link_authoring_server import MAX_BODY, Api, make_server
+from question_authoring.wiring.service import Actor
 
 LIMIT = 5.0   # 초. 이전 코드는 160,000자 한 줄에 62.9초, 슬롯 16,000줄에 26초, 문항 10,000줄에 44초였다(점검 실측)
 Q = "문항 Q1: 체온\n"

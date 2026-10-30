@@ -1,0 +1,16 @@
+{
+ "$id": "AccessCheckResult.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "접근 허용",
+ "type": "object",
+ "required": [
+  "actor"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "actor": {
+   "$ref": "Actor.json"
+  }
+ },
+ "title": "AccessCheckResult"
+}

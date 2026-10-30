@@ -1,0 +1,29 @@
+{
+ "pipeline_schema_version": "3.1",
+ "classification_id": "cc-abc",
+ "to": {
+  "id": "qs1",
+  "version": "1",
+  "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+ },
+ "from": {
+  "id": "qs1",
+  "version": "0",
+  "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+ },
+ "change_kinds": [
+  "TEXT"
+ ],
+ "affected_slots": [
+  "q1.s1"
+ ],
+ "follow_ups": [
+  "REGENERATE_SAMPLES"
+ ],
+ "created_at": "2026-10-30T10:00:00Z",
+ "ext": {
+  "question-authoring": {
+   "draft_id": "dr-1"
+  }
+ }
+}

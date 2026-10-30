@@ -1,0 +1,44 @@
+{
+ "$id": "ReviewFollowupResult.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "이후 검수 결과",
+ "type": "object",
+ "required": [
+  "action",
+  "review"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "action": {
+   "enum": [
+    "STORE",
+    "RETURN_EXISTING"
+   ]
+  },
+  "review": {
+   "allOf": [
+    {
+     "$ref": "ReviewRecord.schema.json"
+    },
+    {
+     "required": [
+      "ext"
+     ],
+     "properties": {
+      "ext": {
+       "required": [
+        "question-authoring"
+       ],
+       "properties": {
+        "question-authoring": {
+         "$ref": "QuestionAuthoringExt.schema.json#/$defs/ReviewExt"
+        }
+       }
+      }
+     }
+    }
+   ]
+  }
+ },
+ "title": "ReviewFollowupResult"
+}

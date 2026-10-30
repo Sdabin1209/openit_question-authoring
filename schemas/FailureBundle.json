@@ -1,0 +1,33 @@
+{
+ "$id": "FailureBundle.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "읽어 온 실패 사례와 비식별 trace(읽지 못한 trace는 null)",
+ "type": "object",
+ "required": [
+  "cases",
+  "truncated",
+  "traces"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "cases": {
+   "type": "array",
+   "items": {
+    "type": "object"
+   }
+  },
+  "truncated": {
+   "type": "boolean"
+  },
+  "traces": {
+   "type": "object",
+   "additionalProperties": {
+    "type": [
+     "object",
+     "null"
+    ]
+   }
+  }
+ },
+ "title": "FailureBundle"
+}

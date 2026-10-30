@@ -1,0 +1,84 @@
+{
+ "$id": "MaterialExtraction.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "추출 결과. PARSED면 bank가, FAILED면 reason이 있다",
+ "type": "object",
+ "required": [
+  "status",
+  "flags"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "status": {
+   "enum": [
+    "PARSED",
+    "FAILED"
+   ]
+  },
+  "reason": {
+   "type": "string"
+  },
+  "bank": {
+   "type": "object"
+  },
+  "flags": {
+   "type": "array",
+   "items": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "description": "확신하지 못한 항목",
+    "type": "object",
+    "required": [
+     "path",
+     "kind",
+     "message",
+     "raw"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "path": {
+      "type": "string",
+      "pattern": "^/"
+     },
+     "kind": {
+      "enum": [
+       "MISSING",
+       "UNSURE",
+       "UNPARSED"
+      ]
+     },
+     "message": {
+      "type": "string"
+     },
+     "raw": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    }
+   }
+  }
+ },
+ "allOf": [
+  {
+   "if": {
+    "properties": {
+     "status": {
+      "const": "PARSED"
+     }
+    }
+   },
+   "then": {
+    "required": [
+     "bank"
+    ]
+   },
+   "else": {
+    "required": [
+     "reason"
+    ]
+   }
+  }
+ ],
+ "title": "MaterialExtraction"
+}

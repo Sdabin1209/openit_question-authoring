@@ -10,8 +10,8 @@ import threading
 import pytest
 
 from helpers import stop_http
-from question_authoring.http_api import Api, make_server
-from question_authoring.service import Actor
+from question_authoring.components.link_authoring_server import Api, make_server
+from question_authoring.wiring.service import Actor
 
 READ, AUTH, REVIEWER, GW = "read-tok", "auth-tok", "rev-tok", "gw-tok"
 

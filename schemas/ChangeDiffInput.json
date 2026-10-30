@@ -1,0 +1,20 @@
+{
+ "$id": "ChangeDiffInput.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "변경 비교 입력(이전 버전과 새 문항 세트)",
+ "type": "object",
+ "required": [
+  "old",
+  "new"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "old": {
+   "type": "object"
+  },
+  "new": {
+   "type": "object"
+  }
+ },
+ "title": "ChangeDiffInput"
+}

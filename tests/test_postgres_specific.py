@@ -5,15 +5,15 @@ import pytest
 from boundary_contracts.errors import BoundaryError
 
 from conftest import pg_schema
-from question_authoring.service import AuthoringService
-from question_authoring.store import PostgresQuestionStore
+from question_authoring.wiring.service import AuthoringService
+from question_authoring.wiring.stores import PostgresQuestionStore
 from helpers import publish, AUTHOR as AUTHOR_FOR_PG
 
 
 def test_immutable_triggers(validators):
     with pg_schema() as (url, schema):
         s = PostgresQuestionStore(url, schema=schema)
-        svc = AuthoringService(s, validators)
+        svc = AuthoringService(s)
         publish(svc)
         publish(svc, edits=[{"op": "set", "path": "/questions/0/name", "value": "체온 측정"}])
         for sql in ("UPDATE versions SET bank='{}'", "DELETE FROM versions", "UPDATE reviews SET record='{}'",
@@ -26,7 +26,7 @@ def test_immutable_triggers(validators):
 def test_schema_creation_is_idempotent_and_persistent(validators):
     with pg_schema() as (url, schema):
         s = PostgresQuestionStore(url, schema=schema)
-        ref = publish(AuthoringService(s, validators))
+        ref = publish(AuthoringService(s))
         s.close()
         s2 = PostgresQuestionStore(url, schema=schema)   # 두 번째 시작: 스키마 재생성이 데이터를 건드리지 않는다
         s3 = PostgresQuestionStore(url, schema=schema)
@@ -37,7 +37,7 @@ def test_schema_creation_is_idempotent_and_persistent(validators):
 def test_read_only_connection(validators):
     with pg_schema() as (url, schema):
         s = PostgresQuestionStore(url, schema=schema)
-        ref = publish(AuthoringService(s, validators))
+        ref = publish(AuthoringService(s))
         ro = PostgresQuestionStore(url, schema=schema, read_only=True)
         assert ro.reader().get_question_bank(ref)["version"] == 1
         with pytest.raises(BoundaryError) as e:
@@ -51,7 +51,7 @@ def test_read_only_connection(validators):
 def test_reconnects_after_connection_loss(validators):
     with pg_schema() as (url, schema):
         s = PostgresQuestionStore(url, schema=schema)
-        ref = publish(AuthoringService(s, validators))
+        ref = publish(AuthoringService(s))
         s._db.close()
         assert s.latest("qs-main") == ref   # 닫힌 연결은 다음 호출에서 다시 연다
         s.close()
@@ -81,7 +81,7 @@ def _kill_backend(url, s):
 def test_recovers_after_backend_terminated_read_and_write(validators):
     with pg_schema() as (url, schema):
         s = PostgresQuestionStore(url, schema=schema)
-        svc = AuthoringService(s, validators)
+        svc = AuthoringService(s)
         ref = publish(svc)
         _kill_backend(url, s)
         assert s.latest("qs-main") == ref                       # 읽기: 재연결 후 한 번 재시도
@@ -96,7 +96,7 @@ def test_write_retry_after_lost_commit_ack_is_idempotent(validators):
     """커밋은 됐는데 응답을 잃은 경우를 흉내 낸다: 같은 commit_version을 다시 불러도 조용히 성공하고 중복이 없다."""
     with pg_schema() as (url, schema):
         s = PostgresQuestionStore(url, schema=schema)
-        svc = AuthoringService(s, validators, require_two_person=False)
+        svc = AuthoringService(s, require_two_person=False)
         ref = publish(svc)
         bank = s.get_question_bank(ref)
         rv = s.get_reviews(ref)[0]
@@ -121,7 +121,7 @@ def test_unrecoverable_is_unavailable_without_secret(validators):
 def test_non_connection_errors_are_not_retried(validators):
     with pg_schema() as (url, schema):
         s = PostgresQuestionStore(url, schema=schema)
-        publish(AuthoringService(s, validators))
+        publish(AuthoringService(s))
         n = []
         orig = s._conn
         def counting():
@@ -202,10 +202,10 @@ def test_slow_statement_is_cut_by_server_timeout(validators):
 
 def test_lock_wait_in_write_is_bounded(validators):
     """다른 세션이 쓰기 직렬화 락을 쥐고 있으면 쓰기는 statement_timeout 안에 UNAVAILABLE이 된다. 읽기는 영향이 없다."""
-    from question_authoring.store.postgres import _LOCK_KEY
+    from question_authoring.components.store_postgres import _LOCK_KEY
     with pg_schema() as (url, schema):
         s = PostgresQuestionStore(url, schema=schema, statement_timeout=1)
-        ref = publish(AuthoringService(s, validators))
+        ref = publish(AuthoringService(s))
         with psycopg.connect(url, autocommit=True) as holder:
             holder.execute("BEGIN")
             holder.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
@@ -220,10 +220,10 @@ def test_lock_wait_in_write_is_bounded(validators):
 
 def test_readyz_probe_does_not_wait_for_main_connection_or_lock(validators):
     """주 연결이 쓰기(락 대기)에 묶여 있어도 is_ready는 즉시 True다."""
-    from question_authoring.store.postgres import _LOCK_KEY
+    from question_authoring.components.store_postgres import _LOCK_KEY
     with pg_schema() as (url, schema):
         s = PostgresQuestionStore(url, schema=schema, statement_timeout=3)
-        ref = publish(AuthoringService(s, validators))
+        ref = publish(AuthoringService(s))
         with psycopg.connect(url, autocommit=True) as holder:
             holder.execute("BEGIN")
             holder.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
@@ -269,7 +269,7 @@ def test_frozen_server_readyz_503_and_request_path_bounded_then_recovers(validat
     """docker pause: TCP는 받되 응답이 없다. 주 연결이 이미 열려 있는 경우(요청 경로)와 새 접속(/readyz 확인) 모두."""
     with pg_schema() as (url, schema):
         s = PostgresQuestionStore(url, schema=schema, statement_timeout=2, probe_timeout=2)
-        ref = publish(AuthoringService(s, validators))
+        ref = publish(AuthoringService(s))
         paused(url)
         try:
             t = time.monotonic()
@@ -325,7 +325,7 @@ def test_large_path_has_its_own_statement_limit(validators):
 def test_max_body_sized_upload_fits_default_limit(validators):
     """서버가 받는 본문 최대(MAX_BODY, 8MiB)를 기본 상한(문장 3초)으로 삽입한다. 정상 업로드가 끊기지 않아야 한다."""
     import hashlib, os
-    from question_authoring.http_api import MAX_BODY
+    from question_authoring.components.link_authoring_server import MAX_BODY
     with pg_schema() as (url, schema):
         s = PostgresQuestionStore(url, schema=schema)
         for data in (os.urandom(MAX_BODY), b"abc def\n" * (MAX_BODY // 8)):
@@ -341,11 +341,11 @@ def test_commit_is_atomic_when_connection_dies_mid_transaction(validators):
     """트랜잭션 도중(버전 삽입 뒤) 서버 쪽에서 연결이 죽으면 반쯤 저장된 버전이 남지 않는다. 재시도가 끝까지 가면 정확히 한 번 저장된다."""
     with pg_schema() as (url, schema):
         s = PostgresQuestionStore(url, schema=schema)
-        svc = AuthoringService(s, validators)
+        svc = AuthoringService(s)
         ref = publish(svc)
         bank = s.get_question_bank(ref)
         bank2 = json.loads(json.dumps(bank)); bank2["version"] = 2; bank2["questions"][0]["name"] = "체온 측정"
-        from question_authoring.store.base import bank_hash
+        from helpers import bank_hash
         ref2 = {"id": "qs-main", "version": "2", "content_hash": bank_hash(bank2)}
         rv = dict(s.get_reviews(ref)[0], review_id="rv-two", question_set=ref2)
 
@@ -378,13 +378,13 @@ def test_commit_is_atomic_when_connection_dies_mid_transaction(validators):
 
 def test_postgres_restart_keeps_draft_and_confirm_is_idempotent(validators):
     from conftest import example_text
-    from question_authoring.http_api import Api
-    from question_authoring.service import Actor
+    from question_authoring.components.link_authoring_server import Api
+    from question_authoring.wiring.service import Actor
     auth = {"Authorization": "Bearer t"}
     with pg_schema() as (url, schema):
         def boot():
             st = PostgresQuestionStore(url, schema=schema)
-            return st, Api(AuthoringService(st, validators), {"t": Actor("dr-kim", "question-author")})
+            return st, Api(AuthoringService(st), {"t": Actor("dr-kim", "question-author")})
         s1, a1 = boot()
         did = a1.handle("POST", "/v1/materials?question_set_id=qs-main&filename=f.txt", auth, example_text())[1]["draft_id"]
         s1.close()                                                              # 서비스 재시작
@@ -406,7 +406,7 @@ def test_postgres_purge_retention(validators):
     old = (datetime.now(timezone.utc) - timedelta(days=40)).strftime("%Y-%m-%dT%H:%M:%SZ")
     with pg_schema() as (url, schema):
         s = PostgresQuestionStore(url, schema=schema)
-        svc = AuthoringService(s, validators, require_two_person=False)
+        svc = AuthoringService(s, require_two_person=False)
         ref = publish(svc)
         h = s._version_source_hashes()
         assert len(h) == 1
@@ -430,7 +430,7 @@ def test_postgres_purge_conditional_delete(validators):
     h = "sha256:" + "9" * 64
     with pg_schema() as (url, schema):
         s = PostgresQuestionStore(url, schema=schema)
-        svc = AuthoringService(s, validators, require_two_person=False)
+        svc = AuthoringService(s, require_two_person=False)
         s.put_source(h, "f", b"x")
         s._write(lambda c: c.execute("UPDATE blobs SET created_at=%s", (old,)))
         d = svc.create_draft(AUTHOR_FOR_PG, "qs-n"); d["source"] = {"kind": "material", "source_hash": h}; s.save_draft(d)

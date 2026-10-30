@@ -1,0 +1,28 @@
+{
+ "$id": "DraftDiscardInput.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "초안 버리기 입력",
+ "type": "object",
+ "required": [
+  "draft",
+  "reason",
+  "actor_id",
+  "now"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "draft": {
+   "$ref": "AuthoringResponses.schema.json#/$defs/Draft"
+  },
+  "reason": {
+   "$ref": "DiscardReason.json"
+  },
+  "actor_id": {
+   "$ref": "_common.schema.json#/$defs/Id"
+  },
+  "now": {
+   "$ref": "_common.schema.json#/$defs/Timestamp"
+  }
+ },
+ "title": "DraftDiscardInput"
+}

@@ -29,8 +29,9 @@ def make_tree(path, name, version="1.0"):
     return str(path)
 
 
-LOCK = ("boundary-contracts @ git+ssh://git@github.com/x/openit_boundary-contracts.git@v3.0.2\n"
-        "openit-survey-schema @ git+ssh://git@github.com/x/openit_survey-service.git@survey-schema-v2.0.0#subdirectory=schema\n")
+LOCK = ("boundary-contracts @ git+ssh://git@github.com/x/openit_boundary-contracts.git@v3.1.1\n"
+        "openit-survey-schema @ git+ssh://git@github.com/x/openit_survey-service.git@survey-schema-v2.0.0#subdirectory=schema\n"
+        "openit-link @ git+ssh://git@github.com/x/openit_link.git@v0.1.0\n")
 
 
 def write_lock(src, text=LOCK):
@@ -50,8 +51,8 @@ def req(tmp_path):
     (src / "question_authoring" / "m.py").write_text("")
     write_lock(src)
     # 실제 패키지와 같은 이름·버전의 가짜 트리: 라벨은 요청이 아니라 이 wheel의 버전에서 나온다(U50)
-    return {"source_dir": str(src), "revision": "abcdef1", "versions": {"boundary": "v3.0.2", "survey_schema": "v2.0.0"},
-            "dependency_sources": {"boundary": make_tree(tmp_path / "bc", "boundary_contracts", "3.0.2"),
+    return {"source_dir": str(src), "revision": "abcdef1", "versions": {"boundary": "v3.1.1", "survey_schema": "v2.0.0"},
+            "dependency_sources": {"boundary": make_tree(tmp_path / "bc", "boundary_contracts", "3.1.1"),
                                    "survey_schema": make_tree(tmp_path / "ss", "openit_survey_schema", "2.0.0")},
             "image_tag": "question-authoring-test/q:t1"}
 
@@ -59,7 +60,10 @@ def req(tmp_path):
 def run(tmp_path, request, docker="/bin/false"):
     f = tmp_path / "req.json"
     f.write_text(json.dumps(request))
-    env = dict(os.environ, DOCKER=docker, PYTHON=sys.executable, **OFFLINE_WHEEL)
+    lk = tmp_path / "lk"
+    if not lk.exists():
+        make_tree(lk, "openit_link", "0.1.0")
+    env = dict(os.environ, DOCKER=docker, PYTHON=sys.executable, OPENIT_LINK_SPEC=str(lk), **OFFLINE_WHEEL)
     return subprocess.run(["bash", str(SCRIPT), str(f)], env=env, capture_output=True, text=True, timeout=120)
 
 
@@ -133,14 +137,14 @@ def test_result_last_line_matches_contract_and_labels_match_request(tmp_path, re
     assert not list(bc.validator("BuildImageResult").iter_errors(out))
     assert out["image"] == req["image_tag"] and out["image_id"] == "sha256:" + SHA
     assert out["labels"]["io.openit.revision"] == req["revision"]
-    assert out["labels"]["io.openit.contracts.boundary"] == "v3.0.2"
+    assert out["labels"]["io.openit.contracts.boundary"] == "v3.1.1"
     assert out["labels"]["io.openit.contracts.survey-schema"] == "2"          # v2.0.0의 주 버전
     assert "io.openit.turn-engine" not in out["labels"]                       # 3.0.0에서 라벨이 없어졌다
     assert "org.other" not in out["labels"]
     rec = log.read_text()
     assert "-t " + req["image_tag"] in rec
     assert ".git" not in rec.split("build ")[1].splitlines()[1:6] and ".venv" not in rec     # 컨텍스트에 .git, .venv가 없다
-    assert rec.count(".whl") == 2                                             # 두 라이브러리 wheel
+    assert rec.count(".whl") == 3                                             # 계약·문진 스키마·통신 라이브러리 wheel
     assert not (pathlib.Path(req["source_dir"]) / "build").exists()           # source_dir은 고치지 않는다
 
 
@@ -180,9 +184,9 @@ def test_missing_exposure_declaration_fails(tmp_path, req):
 def test_label_values_come_from_the_installed_wheels_not_the_request(tmp_path, req):
     """U50: 요청의 버전 문자열이 아니라 wheel(실제 설치될 것)의 버전에서 라벨 값을 찍는다. 같은 요청이라도 트리가 다르면 요청이 거짓이 된다."""
     r = json.loads(json.dumps(req))
-    r["versions"]["boundary"] = "v3.0.3"          # 요청은 3.0.3이라 하지만 트리는 3.0.2
+    r["versions"]["boundary"] = "v3.1.2"          # 요청은 3.1.2라 하지만 트리는 3.1.1
     p = run(tmp_path, r)
-    assert p.returncode == 2 and "v3.0.2" in p.stderr and "v3.0.3" in p.stderr and "라벨" in p.stderr
+    assert p.returncode == 2 and "v3.1.1" in p.stderr and "v3.1.2" in p.stderr and "라벨" in p.stderr
 
 
 def test_survey_schema_mismatch_between_request_and_tree_fails(tmp_path, req):
@@ -192,7 +196,7 @@ def test_survey_schema_mismatch_between_request_and_tree_fails(tmp_path, req):
     assert p.returncode == 2 and "2.0.0" in p.stderr and "v1.3.0" in p.stderr
 
 
-@pytest.mark.parametrize("lock", [LOCK.replace("@v3.0.2", "@v2.9.0"), LOCK.replace("survey-schema-v2.0.0", "survey-schema-v1.1.0"), ""])
+@pytest.mark.parametrize("lock", [LOCK.replace("@v3.1.1", "@v2.9.0"), LOCK.replace("survey-schema-v2.0.0", "survey-schema-v1.1.0"), ""])
 def test_request_that_differs_from_this_repos_pin_fails(tmp_path, req, lock):
     """요청 버전이 이 영역의 고정(requirements.lock)과 다르면 라벨을 찍지 않고 실패한다(라벨이 거짓이 되지 않게)."""
     write_lock(req["source_dir"], lock)
@@ -211,4 +215,4 @@ def test_docker_gets_the_installed_versions(tmp_path, req):
     finally:
         del os.environ["FAKE_LOG"]
     rec = log.read_text()
-    assert "BOUNDARY_TAG=v3.0.2" in rec and "SURVEY_SCHEMA_TAG=2 " in rec
+    assert "BOUNDARY_TAG=v3.1.1" in rec and "SURVEY_SCHEMA_TAG=2 " in rec

@@ -1,0 +1,19 @@
+{
+ "$id": "PhiScreenResult.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "환자 정보 경고 이름 목록(없으면 빈 목록)",
+ "type": "object",
+ "required": [
+  "warnings"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "warnings": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  }
+ },
+ "title": "PhiScreenResult"
+}

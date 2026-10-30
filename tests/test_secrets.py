@@ -9,7 +9,7 @@ from boundary_contracts import SecretError
 
 from question_authoring.__main__ import build
 from helpers import stop_http
-from question_authoring.http_api import make_server
+from question_authoring.components.link_authoring_server import make_server
 
 AUTH_SECRET = "SECRET-author-tok-9f31"
 READ_SECRET = "SECRET-read-tok-77ab"

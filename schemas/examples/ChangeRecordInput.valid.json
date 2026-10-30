@@ -1,0 +1,27 @@
+{
+ "diff": {
+  "change_kinds": [
+   "TEXT"
+  ],
+  "affected_slots": [
+   "q1.s1"
+  ],
+  "follow_ups": [
+   "REGENERATE_SAMPLES"
+  ],
+  "text": "변경 종류: 문구"
+ },
+ "to": {
+  "id": "qs1",
+  "version": "1",
+  "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+ },
+ "from": {
+  "id": "qs1",
+  "version": "0",
+  "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+ },
+ "created_at": "2026-10-30T10:00:00Z",
+ "draft_id": "dr-1",
+ "pipeline_schema_version": "3.1"
+}

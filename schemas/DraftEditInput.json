@@ -1,0 +1,28 @@
+{
+ "$id": "DraftEditInput.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "초안 편집 입력",
+ "type": "object",
+ "required": [
+  "draft",
+  "edits",
+  "actor_id",
+  "now"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "draft": {
+   "$ref": "AuthoringResponses.schema.json#/$defs/Draft"
+  },
+  "edits": {
+   "$ref": "EditList.json"
+  },
+  "actor_id": {
+   "$ref": "_common.schema.json#/$defs/Id"
+  },
+  "now": {
+   "$ref": "_common.schema.json#/$defs/Timestamp"
+  }
+ },
+ "title": "DraftEditInput"
+}

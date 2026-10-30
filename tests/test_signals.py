@@ -11,9 +11,10 @@ import pytest
 from boundary_contracts import PIPELINE_SCHEMA_VERSION
 from boundary_contracts.clients import HttpFailureStore
 
-from question_authoring.http_api import Api, make_server
-from question_authoring.service import Actor
-from question_authoring.signals import build_signals, question_ids_from_trace
+from question_authoring.components.link_authoring_server import Api, make_server
+from question_authoring.wiring.service import Actor
+from question_authoring.components.signals_build import question_ids_from_trace
+from helpers import build_signals
 
 # failure_type은 FailureCase 스키마에서 열거가 아닌 자유 문자열(minLength 1)이다. 시험은 뜻 없는 이름만 쓴다.
 HASH = "sha256:" + "0" * 64

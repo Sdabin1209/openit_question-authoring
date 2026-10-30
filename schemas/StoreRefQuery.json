@@ -1,0 +1,24 @@
+{
+ "$id": "StoreRefQuery.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "저장소 읽기의 ref(내용 해시가 맞는지는 저장소가 본다)",
+ "type": "object",
+ "required": [
+  "id",
+  "version",
+  "content_hash"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "id": {
+   "type": "string"
+  },
+  "version": {
+   "type": "string"
+  },
+  "content_hash": {
+   "type": "string"
+  }
+ },
+ "title": "StoreRefQuery"
+}

@@ -1,0 +1,6 @@
+{
+ "$id": "QuestionSetId.json",
+ "$ref": "_common.schema.json#/$defs/Id",
+ "description": "문항 세트 ID(계약 Id: 영문·숫자·.·_·:·- , 128자 이하)",
+ "title": "QuestionSetId"
+}
