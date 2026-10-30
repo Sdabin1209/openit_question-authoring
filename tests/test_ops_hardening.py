@@ -93,6 +93,26 @@ def test_sigterm_stops_the_server_promptly(tmp_path):
             p.kill()
 
 
+@pytest.mark.parametrize("ignored", [(), (signal.SIGINT,), (signal.SIGINT, signal.SIGQUIT, signal.SIGHUP)])
+def test_sigterm_stops_the_server_even_when_signals_were_inherited_as_ignored(tmp_path, ignored):
+    """근본 원인 재현(U308): 비대화형 셸이 `&`로 띄운 작업과 E2E 하네스 아래에서 서버는 SIGINT를 '무시' 상태로 물려받는다(POSIX).
+    종료가 SIGINT 전달에 기대면 SIGTERM 뒤에 영원히 안 끝난다. 물려받은 신호 처리와 무관하게 SIGTERM에 제때 끝나야 한다."""
+    def inherit():
+        for sig in ignored:
+            signal.signal(sig, signal.SIG_IGN)
+    env = dict(os.environ, QA_DEV_MODE="1", QA_DB_PATH=str(tmp_path / "q.db"), QA_PORT="0", QA_HOST="127.0.0.1")
+    p = subprocess.Popen([sys.executable, "-m", "question_authoring"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                         preexec_fn=inherit)
+    try:
+        assert "시작" in p.stdout.readline()
+        time.sleep(0.3)
+        p.send_signal(signal.SIGTERM)
+        assert p.wait(timeout=10) == 0
+    finally:
+        if p.poll() is None:
+            p.kill()
+
+
 # ---- P4 / D88 U4 ----
 def _old(days):
     return (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")

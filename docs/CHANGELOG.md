@@ -1,5 +1,10 @@
 # 변경 이력
 
+## 미배포 (2026-10-30) U308: SIGTERM 뒤 서버가 안 끝나던 근본 원인 (ADR 0022)
+
+- 원인: 서버가 종료를 마무리하려고 `raise_signal(SIGINT)`를 썼는데, 비대화형 셸의 `&` 작업(E2E 하네스)은 SIGINT를 무시로 물려받아 신호가 사라졌다.
+- 고침: waitress 트리거로 루프 스레드 안에서 `close_all`을 불러 이벤트 맵을 비워 `run()`이 돌아오게 했다. 시험 `test_sigterm_stops_the_server_even_when_signals_were_inherited_as_ignored`.
+
 ## 미배포 (2026-10-30) 문진 스키마 고정 survey-schema-v1.2.0 -> v2.0.0
 
 - `requirements.lock`, `scripts/build_wheels.sh`, 시험의 표본 값. 이미지 라벨 `io.openit.contracts.survey-schema`는 주 버전 `2`가 된다. v1.2.0..v2.0.0 사이에서 문진 스키마가 바꾼 것은 `SessionResult`(`skipped_details`)이고 `QuestionBank`와 `CONTRACT_VERSION`(1)은 그대로라 이 영역의 문항 은행 검증(`Validators`, 정수 버전 1)은 영향이 없다(두 태그 사이 diff로 확인).

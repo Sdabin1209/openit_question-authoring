@@ -36,7 +36,7 @@ from datetime import datetime, timedelta, timezone
 from boundary_contracts import read_secret
 
 from . import contract
-from .http_api import Api, drain, make_server
+from .http_api import Api, close_all, drain, make_server
 from .service import Actor, AuthoringService
 from .store import AuthoringStore, PostgresQuestionStore, SqliteQuestionStore
 from .validation import Validators
@@ -169,7 +169,10 @@ def main(argv=None) -> int:
         if left:
             print(f"유예 시간 {grace}초가 지나 처리 중인 요청 {left}개를 두고 종료한다", flush=True)
             os._exit(0)   # 왜: 멈춘 요청 스레드는 못 끊고, waitress의 정상 종료는 스레드를 5초 더 기다린다(유예 8초 + 5초 > docker stop 10초 뒤 SIGKILL)
-        signal.raise_signal(signal.SIGINT)   # 주 스레드의 srv.run()을 끝낸다(waitress는 KeyboardInterrupt에서 스레드를 멈추고 돌아온다)
+        # 주 스레드의 srv.run()을 끝낸다: waitress의 트리거로 주 루프 안에서 소켓을 모두 닫으면 이벤트 맵이 비어 루프가 스스로 돌아온다.
+        # 왜 신호(SIGINT)가 아닌가: 비대화형 셸의 `&` 작업과 E2E 하네스 아래에서는 SIGINT를 '무시'로 물려받아 raise_signal이 아무 일도 안 한다(U308 근본 원인, ADR 0022).
+        # 왜 SystemExit이 아닌가: 트리거는 thunk의 예외를 모두 삼켜 기록만 한다(waitress trigger.py).
+        srv.trigger.pull_trigger(lambda: close_all(srv))
 
     def stop(signum, frame):   # PID 1의 Python은 SIGTERM을 기본으로 무시한다. 새 연결을 받지 않고, 진행 중 요청을 유예 시간까지 기다린다
         print("종료 신호를 받았다. 새 요청을 받지 않고 진행 중 요청을 기다린다", flush=True)
@@ -177,7 +180,7 @@ def main(argv=None) -> int:
     signal.signal(signal.SIGTERM, stop)
     print("question-authoring 시작", flush=True)
     srv.run()
-    srv.close()
+    srv.task_dispatcher.shutdown(cancel_pending=True, timeout=2)   # 루프가 끝난 뒤 남은 처리 스레드를 멈춘다(drain이 이미 비웠다)
     return 0
 
 

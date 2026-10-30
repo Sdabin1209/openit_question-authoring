@@ -325,3 +325,8 @@ def drain(srv, grace: float) -> int:
     while time.monotonic() < end and any(getattr(c, "total_outbufs_len", 0) for c in list(srv._map.values())):
         time.sleep(0.05)
     return left
+
+
+def close_all(srv) -> None:
+    """서버 루프 스레드 안에서 부른다(트리거 thunk): 듣는 소켓과 모든 연결을 닫아 이벤트 맵을 비운다. 그러면 srv.run()이 돌아온다."""
+    srv.asyncore.close_all(srv._map)
