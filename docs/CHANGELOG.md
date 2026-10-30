@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 미배포 (2026-10-30) U46: purge 출력을 내보내기 전에 계약으로 검사
+
+- `python -m question_authoring purge`가 출력 한 줄을 내기 전에 계약 `QuestionAuthoringDeployInterface`의 `$defs.PurgeResult`로 검사하고, 위반이면 아무것도 출력하지 않고 `SystemExit`(비0)으로 실패한다. 계약에는 최상위 `PurgeResult` 스키마가 없고 위 스키마의 `$defs`다(`validator("PurgeResult")`는 KeyError).
+
 ## 미배포 (2026-10-30) 계약 핀 v3.0.0 -> v3.0.2
 
 - boundary-contracts v3.0.2(SurveyServiceEnv 필수 조건 수정뿐). 이 영역의 동작은 바뀌지 않았다. 이미지 라벨 `io.openit.contracts.boundary`는 설치된 wheel 버전에서 찍는다(U50).

@@ -212,3 +212,15 @@ def test_purge_result_with_removals_passes_contract_purge_result(tmp_path):
     assert res["drafts_removed"] == 1 and res["sources_removed"] == 1
     assert not list(defv("QuestionAuthoringDeployInterface", "PurgeResult").iter_errors(json.loads(json.dumps(res))))
     store.close()
+
+
+@pytest.mark.parametrize("bad", [{"drafts_removed": -1, "sources_removed": 0}, {"drafts_removed": 0}, {"drafts_removed": 0, "sources_removed": 0, "extra": 1},
+                                 {"drafts_removed": "1", "sources_removed": 0}])
+def test_purge_refuses_to_print_output_that_breaks_the_contract(monkeypatch, tmp_path, capsys, bad):
+    """U46: 내는 쪽이 계약 PurgeResult를 지킨다. 위반이면 한 줄을 내보내지 않고 분명한 오류로 실패한다(종료 코드 비0, 표준 출력에 JSON 없음)."""
+    monkeypatch.setenv("QA_DB_PATH", str(tmp_path / "q.sqlite3"))
+    monkeypatch.setattr(qa_main, "purge_once", lambda store: bad)
+    with pytest.raises(SystemExit) as e:
+        qa_main.main(["purge"])
+    assert "PurgeResult" in str(e.value)
+    assert capsys.readouterr().out.strip() == ""

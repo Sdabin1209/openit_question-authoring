@@ -154,8 +154,13 @@ def main(argv=None) -> int:
         check_environment()
         _require_production_config(need_tokens=False)   # 정리 잡에는 저자 토큰이 필요 없어 DB URL과 개발 플래그만 본다
         store = open_store()
-        print(json.dumps(purge_once(store)), flush=True)   # 왜 JSON: deploy가 한 줄을 읽는다. 계약 PurgeResult(파이썬 dict 표기는 JSON이 아니다)
+        result = purge_once(store)
         store.close()
+        # 왜 내보내기 전에 검사: 받는 쪽(deploy)은 다시 검증하지 않는다(R7). 계약 QuestionAuthoringDeployInterface의 $defs.PurgeResult(최상위 스키마 이름이 아니다)
+        errs = contract.problems("QuestionAuthoringDeployInterface", "PurgeResult", result)
+        if errs:
+            raise SystemExit("purge 출력이 계약 PurgeResult를 어긴다: " + "; ".join(errs[:3]))
+        print(json.dumps(result), flush=True)   # 왜 JSON: deploy가 한 줄을 읽는다(파이썬 dict 표기는 JSON이 아니다)
         return 0
     api, _ = build()
     srv = make_server(api, os.environ.get("QA_HOST", "0.0.0.0"), int(os.environ.get("QA_PORT") or 8080),
