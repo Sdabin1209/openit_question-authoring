@@ -121,7 +121,7 @@ bytes + filename
 세션 설정
 위험 문구: 문구1, 문구2        (또는 '없음')
 확인 한도: N / 인식 실패 연속 한도: N / 질문 횟수 한도: N
-고정 문장 <KEY>: 문장
+고정 문장 <KEY>: 문장      (RISK_NOTICE, CALL_STAFF, RESUME, SURVEY_STOPPED 네 개는 문진 스키마 3.0.0부터 필수)
 안내 <ID>: 기준 | 문항별|전체 | 문장|없음 | REMAINING_COUNT|없음
 문항 <ID>: <이름>
 순서: N / 선행 조건: 없음 | <문항>.<슬롯> = <값>
@@ -130,7 +130,7 @@ bytes + filename
 슬롯 <ID>: 필수|선택
 다시 묻기: ...
 단위: <이름> | 같은 말: a, b | 범위 최소 ~ 최대 | 환산: <배수> <대상 단위>   (여러 줄 가능)
-자료형: boolean|integer|number|option      (선택, 칸 규격. ADR 0018)
+자료형: boolean|integer|number|option      (문진 스키마 3.0.0부터 필수. 없으면 미리보기 validation_errors로 보이고 확인되지 않는다. ADR 0018)
 값 단위: <이름> / 최소: <수> / 최대: <수> / 초과 최소: <수>   (선택, 칸 규격)
 선택지: a, b / 선택지 코드 <코드>: 라벨 | 같은 말: a, b
 예아니오: 예=<값>, 아니오=<값> | 없음

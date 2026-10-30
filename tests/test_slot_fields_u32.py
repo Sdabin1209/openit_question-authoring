@@ -15,6 +15,10 @@ HEAD = """세션 설정
 확인 한도: 3
 인식 실패 연속 한도: 3
 질문 횟수 한도: 30
+고정 문장 RISK_NOTICE: 위험 안내
+고정 문장 CALL_STAFF: 직원 호출
+고정 문장 RESUME: 재개
+고정 문장 SURVEY_STOPPED: 종료
 문항 Q10: 운동
 순서: 1
 선행 조건: 없음
@@ -107,7 +111,7 @@ def test_changing_a_range_value_is_a_clinical_review_change():
 def test_end_to_end_registers_a_version_with_the_attributes(svc):
     from helpers import AUTHOR
     text = example_text().decode().replace("단위: 도 | 같은 말: 도씨, 섭씨 | 범위 34 ~ 42",
-                                           "자료형: number\n값 단위: 도\n최소: 34\n최대: 42\n단위: 도 | 같은 말: 도씨, 섭씨 | 범위 34 ~ 42")
+                                           "값 단위: 도\n최소: 34\n최대: 42\n단위: 도 | 같은 말: 도씨, 섭씨 | 범위 34 ~ 42")
     out = svc.ingest_material(AUTHOR, "qs-main", "form.txt", text.encode())
     assert out["status"] == "PARSED"
     pv = svc.get_preview(out["draft_id"])

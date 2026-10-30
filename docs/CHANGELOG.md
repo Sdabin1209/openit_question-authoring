@@ -1,5 +1,10 @@
 # 변경 이력
 
+## 미배포 (2026-10-30) U410: 최종 고정(문진 스키마 survey-schema-v3.0.0)
+
+- 핀: 문진 스키마 survey-schema-v3.0.0(`requirements.lock`, `scripts/build_wheels.sh`, 시험의 표본). boundary-contracts v3.1.1, openit-link v0.4.1은 그대로.
+- 문진 스키마 3.0.0은 QuestionBank에 거부 조건을 더했다(칸 `data_type` 필수, option이면 선택지, 고정 문장 RISK_NOTICE·CALL_STAFF·RESUME·SURVEY_STOPPED 필수, ID 패턴). 추출기는 값을 추정해 채우지 않으므로 코드는 그대로이고, 양식에 빠진 항목은 미리보기의 `validation_errors`로 저자에게 보인다. 이 영역의 시험 자료를 3.0.0에 맞췄다: `examples/question_form.txt`(자료형 줄, 고정 문장 4개)와 `tests/test_slot_fields_u32.py`의 양식.
+
 ## 미배포 (2026-10-30) U400: 영역 구조 개편(D117), 계약 핀 v3.1.1, 통신 라이브러리 openit-link v0.4.1
 
 - 코드를 `components/`(컴포넌트 23개, [docs/components.md](components.md)), `wiring/`(연결), `types/`(`schemas/`에서 생성)로 옮겼다. 내부 타입 40개의 JSON Schema와 통과·거부 예시가 `schemas/`에 있다. 스키마 밖 조건은 16행([schemas/README.md](../schemas/README.md)). ADR 0023.

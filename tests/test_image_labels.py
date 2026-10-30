@@ -8,7 +8,7 @@ import re
 import pytest
 
 DOCKERFILE = pathlib.Path(__file__).resolve().parent.parent / "Dockerfile"
-SAMPLE_ARGS = {"COMMIT": "85b3552", "BOUNDARY_TAG": "v3.1.1", "SURVEY_SCHEMA_TAG": "2"}
+SAMPLE_ARGS = {"COMMIT": "85b3552", "BOUNDARY_TAG": "v3.1.1", "SURVEY_SCHEMA_TAG": "3"}
 
 
 def dockerfile_labels() -> dict:
