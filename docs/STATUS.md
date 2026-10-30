@@ -19,7 +19,10 @@
 
 - 2026-10-29 단위 4a: HTTP 서버를 WSGI+waitress로(ADR 0016), 스키마를 yoyo 마이그레이션으로(ADR 0017), 계약 핀 v2.2.2. 동작 변경은 docs/CHANGELOG.md의 해당 두 항목.
 
+- 2026-10-30 U400: 영역 구조 개편(D117). 컴포넌트 23개(docs/components.md), schemas 40개, types 생성, wiring, 계약 v3.1.1, openit-link v0.1.0 적용. 시험·build·smoke 결과는 커밋 메시지. 변경 요청 CR-0008(link 라이브러리 부족한 점).
+
 ## 남은 일
+- CR-0008 회신 대기(link의 $defs·쿼리 검증·상수 시간 토큰 비교, BuildImageRequest의 link 키).
 - 관리자 콘솔 UI, 화면 입력용 템플릿(필드 목록)과 코드·단위 사전(내용은 저자가 정한다).
 - 소비 계약: I4 판정 조회, I8 규칙 미리보기 연동. (I7 개선 신호는 구현함. 문항 ID를 trace의 planner_output.directive에서 읽는다는 가정은 ops-feedback과 확인 필요.)
 - PDF·Word 추출기(텍스트 추출 + 기존 문법 파서 재사용 가능). 실제 저자가 쓰는 형식을 확인해야 한다.
@@ -29,4 +32,4 @@
 - 기존 SQLite 파일 데이터를 PostgreSQL로 옮기는 도구는 없다(운영 데이터가 아직 없다고 가정, 확인 필요).
 
 ## 막힌 것
-- 없음. 변경 요청 CR-0001~0005는 모두 승인됨.
+- 없음. 변경 요청 CR-0001~0007은 승인됨. CR-0008은 회신 전.

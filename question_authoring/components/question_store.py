@@ -55,6 +55,13 @@ class QuestionStore:
             raise AttributeError(name)
         return getattr(self._b, name)
 
+    def __setattr__(self, name, value):
+        # 백엔드가 가진 속성을 바꾸면(시험이 연결 함수 등을 갈아 끼울 때) 백엔드에 반영한다. 이 클래스 자신의 속성(_b, _check)만 여기에 둔다
+        if name in ("_b", "_check") or name in self._PRIMITIVES or not hasattr(self.__dict__.get("_b"), name):
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._b, name, value)
+
     def close(self) -> None:
         c = getattr(self._b, "close", None)
         if c:

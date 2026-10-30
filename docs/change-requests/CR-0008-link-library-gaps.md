@@ -1,5 +1,7 @@
 # CR-0008: openit_link v0.1.0에 필요한 것 (헤드 소유 라이브러리)
 
+**처리 상태(2026-10-30)**: 1~3은 link v0.2.0에 반영되어 이 영역이 v0.2.0으로 올리고 우회를 걷어냈다. 4(BuildImageRequest의 link 키)는 계약 고정 중이라 잠금 파일 방식 그대로 둔다. 5는 알림이었고 헤드가 받아들였다.
+
 question-authoring이 link_authoring_server를 openit_link.App/Route 위에 옮기면서 만난 부족한 점이다. 영역에서 우회 구현하지 않고 아래대로 요청한다.
 
 1. **`request_schema`·`response_schema`가 계약 파일 전체만 가리킨다.** 이 영역의 API 계약은 `AuthoringRequests.schema.json#/$defs/<이름>`, `AuthoringResponses.schema.json#/$defs/<이름>`처럼 파일 하나에 $defs 여럿이다. 요청: `"AuthoringRequests#Edit"` 같은 `파일#$defs이름` 지정을 받아 달라. 지금은 `raw_body=True`로 받고 영역 코드가 `$defs`로 검증한다(규칙을 영역에서 다시 구현하는 것이므로 임시).

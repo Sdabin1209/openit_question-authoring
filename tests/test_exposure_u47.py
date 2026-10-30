@@ -81,7 +81,7 @@ def test_roles_are_the_gateway_roles_that_reach_the_author_routes():
 def test_every_known_service_path_is_declared_exposed_or_denied():
     """코드가 서비스하는 경로 묶음이 선언에 빠지지 않는다(새 경로를 만들면 이 시험이 깨져 선언을 고치게 한다)."""
     src = (ROOT / "question_authoring" / "components" / "link_authoring_server.py").read_text(encoding="utf-8")
-    known = set(re.findall(r'W\("[A-Z]+", "(/v1/[a-z-]+)', src)) | set(re.findall(r'sc = "(/v1/[a-z-]+)"', src))
+    known = set(re.findall(r'R\("[A-Z]+", "(/v1/[a-z-]+)', src)) | set(re.findall(r'sc = "(/v1/[a-z-]+)"', src))
     assert {"/v1/drafts", "/v1/materials", "/v1/reviews", "/v1/signals", "/v1/question-sets"} <= known, known
     declared = {p.rstrip("/*").rstrip("/") or p for r in DECL["routes"] for p in r["paths"]}
     assert known <= declared, f"선언에 없는 서비스 경로: {sorted(known - declared)}"

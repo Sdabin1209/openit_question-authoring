@@ -79,7 +79,9 @@ def test_valid_token_wrong_role_is_403(base):
 
 def test_gateway_token_without_user_header_is_401(base):
     check_401(raw(base, "GET", "/v1/drafts", {"Authorization": f"Bearer {GW}"}))
-    check_401(raw(base, "POST", "/v1/reviews", {"Authorization": f"Bearer {GW}"}, b"{}"))
+    # 본문 검증(400)은 라이브러리가 처리 함수보다 먼저 하므로 모양이 맞는 본문을 보낸다(검증 순서 변화는 헤드가 받아들였다, CR-0008)
+    ok = json.dumps({"question_set": {"id": "q", "version": "1", "content_hash": "sha256:" + "a" * 64}, "decision": "APPROVED", "clinical_basis_approved": False}).encode()
+    check_401(raw(base, "POST", "/v1/reviews", {"Authorization": f"Bearer {GW}"}, ok))
     check_401(raw(base, "GET", "/v1/question-sets", {"Authorization": f"Bearer {GW}"}))
 
 

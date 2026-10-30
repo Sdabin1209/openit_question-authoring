@@ -6,21 +6,23 @@
 
 1. 문항 세트 버전은 불변이다. 수정은 새 버전이다(D25).
 2. 저자가 사람이 읽는 미리보기로 확인하기 전에는 버전이 되지 않는다(D31). 확인은 `ReviewRecord`로 정확한 버전에 묶인다. 2026-10-28 묶음(옛 표기 0.7.0)부터 기본(4-eyes, D88 U9, ADR 0006)에서는 저자의 확인이 `clinical_basis_approved=false`이고 임상 근거 승인은 다른 주체의 검수 역할이 `add_review`로 한다(이전 D30의 "저자 확인이 곧 임상 승인"은 `QA_REQUIRE_TWO_PERSON=false`일 때의 동작).
-3. 저장소에 쓰는 길은 저작 서비스(`service.py`) 하나다. 이웃에게는 읽기 전용 뷰(`store.reader()`)와 읽기 전용 SQLite 연결만 준다.
+3. 저장소에 쓰는 길은 저작 서비스(`wiring/service.py`) 하나다. 이웃에게는 읽기 전용 뷰(`store.reader()`)와 읽기 전용 SQLite 연결만 준다.
 4. 파싱은 추정하지 않는다. 확신하지 못한 값은 비우거나 원문을 두고 플래그를 달며, 열린 플래그가 있으면 확인할 수 없다.
 5. 임상 기준의 내용은 정하지 않는다. 기본값을 만들어 넣지 않는다(정책 수치, 위험 기준, 범위는 자료나 저자가 준 것만 쓴다).
 
 ## 2. 컴포넌트 (브리프 시드와의 대응)
 
-| 모듈 | 브리프 시드 | 역할 |
+컴포넌트의 입력·출력 스키마와 목록은 [components.md](components.md)가 정본이다(D117, ADR 0023). 아래는 브리프 시드와의 대응이다.
+
+| 위치 | 브리프 시드 | 역할 |
 | --- | --- | --- |
-| `store/base.py, memory.py, sqlite.py` | 문항 버전 관리자 | 불변 버전·검수·변경 분류 저장, I1 읽기 논리 |
-| `validation.py` | 계약·의미 검증기 | 경계 스키마(ReviewRecord 등)와 QuestionBank 검증, 참조 일관성 검사 |
-| `classify.py` | 변경 영향 분석기 | ChangeClassification 생성 |
-| `extractors/` | 초안 변환기 | 추출기 인터페이스, 레지스트리, 텍스트 양식 추출기 |
-| `preview.py` | 저작 콘솔의 미리보기 | 사람이 읽는 미리보기, 변경 요약, 미리보기 해시 |
-| `service.py` | 검수 워크플로 | 초안, 편집, 자료 등록, 확인, 이후 검수 |
-| `http_api.py`, `__main__.py` | 저작 API | 얇은 HTTP 계층과 진입점(환경 변수는 여기서만 읽는다) |
+| `components/question_store.py`, `store_memory.py`, `store_sqlite.py`, `store_postgres.py` | 문항 버전 관리자 | 불변 버전·검수·변경 분류 저장, I1 읽기 논리 |
+| `components/bank_validate.py`, `schemas/`(계약 스키마는 `$ref`) | 계약·의미 검증기 | QuestionBank 검증과 참조 일관성, 나머지는 스키마 검증 |
+| `components/change_diff.py`, `change_record.py` | 변경 영향 분석기 | 변경 비교, ChangeClassification 생성 |
+| `components/extract_textform.py` | 초안 변환기 | 텍스트 양식 추출기. 형식을 늘리려면 같은 입출력(MaterialExtractRequest, MaterialExtraction)의 컴포넌트를 `wiring/service.py`의 추출기 목록에 붙인다 |
+| `components/preview_build.py`, `preview_hash.py` | 저작 콘솔의 미리보기 | 사람이 읽는 미리보기, 미리보기 해시 |
+| `wiring/service.py`와 draft_*, confirm_*, review_followup, access_policy, phi_screen | 검수 워크플로 | 초안, 편집, 자료 등록, 확인, 이후 검수 |
+| `components/link_authoring_server.py`, `__main__.py` | 저작 API | 계약 HTTP 규약은 openit_link 위, 환경 변수는 진입점에서만 읽는다 |
 | 미구현 | 템플릿, 코드·단위 사전, 규칙 미리보기(I8), 판정 조회(I4), 관리자 콘솔 UI | 7절 이후 "미구현" 참고. 개선 신호 수신함(I7)은 구현했다(11-1절) |
 
 ## 3. 문항 저장소와 버전 관리 (구현)
@@ -104,7 +106,7 @@ bytes + filename
   -> 초안(OPEN) + 플래그 -> 미리보기 -> 확인 (5절과 같은 절차)
 ```
 
-- 추출기 인터페이스(`extractors/base.py`): `name`, `version`, `extensions`, `can_handle(filename, data)`, `extract(data, filename) -> ExtractionResult`. 새 형식은 클래스 하나를 `ExtractorRegistry.register`로 붙이면 된다(시험함). 어떤 추출기든 결과는 같은 초안·미리보기·확인을 거친다. 추출기 예외도 등록을 막지 않고 FALLBACK이 된다.
+- 추출기 인터페이스: 컴포넌트 모듈이 `NAME`, `VERSION`, `can_handle(filename)`, `run(MaterialExtractRequest) -> MaterialExtraction`을 낸다. 새 형식은 모듈 하나를 `AuthoringService(extractors=...)`에 붙이면 된다(`tests/test_extractor.py`). 어떤 추출기든 결과는 같은 초안·미리보기·확인을 거친다. 추출기 예외도 등록을 막지 않고 FALLBACK이 된다.
 - FALLBACK: 파싱 실패(지원하지 않는 형식, 인코딩, 문항이 하나도 없음)면 사유와 안내가 붙은 빈 초안(또는 기반 버전 복사본)을 돌려주고 화면 입력으로 같은 절차를 따라 등록한다. 실패한 원본의 해시도 출처로 남는다. 그래서 등록은 항상 가능하다(D33).
 - 출처 기록: ReviewRecord의 `ext.question-authoring.source`에 `{source_hash, filename, size, extractor, extractor_version}`(화면 입력이면 `{kind: screen}`). 계약 변경은 없다. `QuestionBank`는 `additionalProperties: false`라서 문항 세트 안에는 둘 수 없었고, 첫 버전에는 ChangeClassification이 없으므로 모든 버전에 있는 ReviewRecord를 택했다(CR-0001).
 - 환자 정보 경고: 주민등록번호, 전화번호, 이메일 모양의 단순 패턴. 경고일 뿐 판단은 저자가 한다. 경고를 받아들이지 않으면 자료를 저장하지 않는다.

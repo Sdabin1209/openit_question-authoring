@@ -66,8 +66,10 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 - 승인 철회: `POST /v1/reviews`로 REJECTED 또는 CHANGES_REQUESTED(사유 필수)를 덧붙인다. 그 버전은 `reviewed_only`에서 빠진다. 다시 승인하려면 APPROVED + clinical_basis_approved를 덧붙인다.
 - 백업(PostgreSQL): `pg_dump`로 이 서비스의 데이터베이스를 덤프한다. 복원 후 `PostgresQuestionStore`로 열어 각 버전을 `get_question_bank`로 읽어 해시를 확인한다.
 - 백업(SQLite): 서비스를 멈추거나 `sqlite3 questions.sqlite3 ".backup out.sqlite3"`로 복사한다. 복원 후 `SqliteQuestionStore`로 열어 각 버전을 `get_question_bank`로 읽어 해시를 확인한다.
-- 새 추출기 추가: `extractors/base.py`의 `Extractor` 인터페이스를 구현하고 `default_registry()`에 등록한다. 시험은 `tests/test_extractor.py`를 본뜬다. 새 추출기는 추정하지 않는다는 규칙(UNSURE/MISSING/UNPARSED)을 지켜야 한다.
+- 새 추출기 추가: `components/extract_textform.py`를 본떠 같은 입출력(MaterialExtractRequest, MaterialExtraction)의 컴포넌트를 만들고 `wiring/service.py`의 `DEFAULT_EXTRACTORS`에 붙인다. 시험은 `tests/test_extractor.py`를 본뜬다. 새 추출기는 추정하지 않는다는 규칙(UNSURE/MISSING/UNPARSED)을 지켜야 한다.
 
 ## 이미지 점검
 
 라벨: `io.openit.service`, `io.openit.revision`, `io.openit.contracts.boundary`, `io.openit.contracts.survey-schema`, `io.openit.model-runtime`(D50; 계약 3.0.0에서 turn-engine 라벨은 없어졌다), `io.openit.exposure`. HEALTHCHECK는 `/healthz`를 15초마다 부른다(`docker inspect -f '{{.State.Health.Status}}'`). 스모크는 읽기 토큰으로 I1 읽기 호출과 저작 경로 403도 확인한다.
+
+이미지에는 `schemas/`가 `/app/schemas`로 들어가고 `QA_SCHEMA_DIR`이 그 경로를 가리킨다(Dockerfile). 스키마를 못 찾으면 서비스는 첫 요청에서 실패한다.

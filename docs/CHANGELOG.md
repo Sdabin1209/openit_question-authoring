@@ -1,12 +1,12 @@
 # 변경 이력
 
-## 미배포 (2026-10-30) U400: 영역 구조 개편(D117), 계약 핀 v3.1.1, 통신 라이브러리 openit-link v0.1.0
+## 미배포 (2026-10-30) U400: 영역 구조 개편(D117), 계약 핀 v3.1.1, 통신 라이브러리 openit-link v0.2.0
 
 - 코드를 `components/`(컴포넌트 23개, [docs/components.md](components.md)), `wiring/`(연결), `types/`(`schemas/`에서 생성)로 옮겼다. 내부 타입 40개의 JSON Schema와 통과·거부 예시가 `schemas/`에 있다. 스키마 밖 조건은 16행([schemas/README.md](../schemas/README.md)). ADR 0023.
 - 입력·출력 검증은 스키마 검증 하나(`wiring/schemas.py` bind). 손 검사(`_check_id`, 엄격 파싱, 한도 검사 등)를 스키마로 옮겼다.
-- HTTP 받는 쪽은 `openit_link.App` 위로 옮겼다. 401/403·413·BoundaryError 본문·`/healthz`·`/readyz`는 라이브러리가 낸다. 알려진 경로에 다른 메서드는 405다(이전 404). 토큰 비교가 상수 시간이 아니다(라이브러리 v0.1.0, CR-0008).
+- HTTP 받는 쪽은 `openit_link.App` 위로 옮겼다. 401/403·413·BoundaryError 본문·`/healthz`·`/readyz`는 라이브러리가 낸다. 알려진 경로에 다른 메서드는 405다(이전 404). 토큰 비교가 상수 시간이 아니다(라이브러리 v0.2.0, CR-0008).
 - 와이어 형식(경로, 본문, 응답 상태, purge 출력)은 그대로다. 달라진 것: `Actor.id` 형식 오류와 역할 오류가 함께일 때 INVALID_RECORD가 먼저 나온다, 추출기가 낸 파일 수준 플래그 경로는 `""`에서 `"/"`로(계약 Flag.path는 `/`로 시작해야 한다).
-- 핀: boundary-contracts v3.1.1, openit-link v0.1.0(`requirements.lock`). build-image.sh가 openit-link wheel을 lock 줄로 호스트에서 만든다.
+- 핀: boundary-contracts v3.1.1, openit-link v0.2.0(`requirements.lock`). build-image.sh가 openit-link wheel을 lock 줄로 호스트에서 만든다.
 - 시험: 토큰 비교 내부를 보던 `test_standards_wo3.py`를 의미 시험으로 바꿨고, `test_structure.py`가 DESIGN 6절을 강제한다.
 
 ## 미배포 (2026-10-30) U46: purge 출력을 내보내기 전에 계약으로 검사

@@ -68,7 +68,7 @@ scripts/smoke.sh
 
 ## 현재 상태
 
-**시험 상태(정본, 개수는 여기 한 곳)**: 커밋 9b912e9, 2026-10-28, 새 clone + 새 venv(위 설치 줄 그대로, 당시에는 이웃 폴더 editable 설치), `python -m pytest -q -rs`. PostgreSQL 없음(`TEST_DATABASE_URL` 미설정, 기본 기준): 297 통과, 87 건너뜀, 0 실패(약 62초). 건너뜀 87건은 전부 `TEST_DATABASE_URL` 없음으로 건너뛴 PostgreSQL 시험이다(`-rs` 출력 60줄, 한 줄이 여러 건일 수 있어 건수 합 87). 다른 사유의 건너뜀은 없다. PostgreSQL 포함 전체(일회용 PostgreSQL 한 대, 헤드 지시로 같은 커밋 기준): 384 통과. 이번 세션에서 PostgreSQL 포함 실행은 다시 하지 않았고 384는 이전 실측값이다. 스모크(`scripts/smoke.sh`)는 이번에 돌리지 않았다.
+**시험 상태(정본, 개수는 여기 한 곳)**: 2026-10-30, 구조 개편(U400) 커밋, 개발 venv(requirements.lock 그대로)에서 PostgreSQL 포함 전체 `python -m pytest -q -rsf`: 717 통과, 0 건너뜀, 0 실패(약 164초). 이미지: `scripts/build-image.sh` 1회 통과, `scripts/smoke.sh` SMOKE OK (sqlite). 깨끗한 두 번째 환경에서의 재현은 하지 않았다.
 
 2026-10-28 묶음(옛 표기 0.7.0, 패키지 버전은 pyproject의 0.1.0; 시험 개수는 위 "시험 상태" 문단, SQLite·PostgreSQL 스모크 SMOKE OK): 전수 점검 반영(추출기 선형화, 4-eyes 기본, 엄격 입력, 환자 정보 탐지 확대, 운영 구성 거부, 동시 요청 상한, SIGTERM, 보존 `purge`, v2 Trace 문항 ID). 상세와 한계는 docs/CHANGELOG.md, docs/boundary.md.
 

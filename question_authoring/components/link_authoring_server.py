@@ -66,27 +66,8 @@ STATUS = {"NOT_FOUND": 404, "INVALID_RECORD": 400, "UNSUPPORTED_VERSION": 422, "
           "INTEGRITY_ERROR": 422, "FAILED_PRECONDITION": 412, "PERMISSION_DENIED": 403, "UNAVAILABLE": 503}
 
 
-def _json(body: bytes) -> dict:
-    try:
-        v = json.loads(body.decode("utf-8") or "{}")
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        raise BoundaryError("INVALID_RECORD", "JSON 본문이 아니다")
-    if not isinstance(v, dict):
-        raise BoundaryError("INVALID_RECORD", "JSON 객체가 필요하다")
-    return v
-
-
-def _body(def_name: str, body: bytes) -> dict:
-    """요청 본문을 읽고 계약 AuthoringRequests의 $defs로 검사한다(필수 키, 형식, 모르는 키 거부). 이 뒤의 코드는 키가 있다고 믿는다(R7)."""
-    b = _json(body)
-    contract.check_request(def_name, b)
-    return b
-
-
-
 # gateway 사용자 ID: 일반 ID 또는 이메일형(local@domain). 문자 집합과 길이를 제한한다(총 길이가 계약 Id의 128자 안에 들도록 local 60, domain 60).
 _USER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,59}(?:@[A-Za-z0-9][A-Za-z0-9.-]{0,59})?$")
-_SEP = "\x1f"   # 토큰이 가리키는 호출자를 라이브러리의 '역할' 문자열에 싣는 구분자(ID·역할 문자에 없다)
 
 # 왜 8MiB: 도입 시 근거 기록 없음. 문항 자료는 작은 텍스트 양식이라 넉넉한 선이다. 라이브러리 Route.max_body와 waitress max_request_body_size가 강제한다(초과는 413). ADR 0016
 MAX_BODY = 8 * 1024 * 1024
@@ -107,14 +88,13 @@ class Api:
         self.signals = signals                         # FailureSource | None (I7 미설정이면 None)
         self.ready = ready
         self.db_kind = db_kind                         # 'sqlite' | 'postgres' (종류만. 접속 정보는 절대 쓰지 않는다)
-        # 토큰 -> 역할 문자열. 같은 토큰이 여러 표에 있으면 정적 > gateway > 읽기 순으로 이긴다
+        # 토큰 -> {역할, 호출자 ID}(라이브러리 0.2.0). 같은 토큰이 여러 표에 있으면 정적 > gateway > 읽기 순으로 이긴다
         tm = {t: "reader" for t in (read_tokens or {})}
         tm.update({t: "gateway" for t in (gateway_tokens or ())})
         actor_roles = set()
         for t, a in dict(tokens).items():
-            code = "actor" + _SEP + a.id + _SEP + a.role
-            tm[t] = code
-            actor_roles.add(code)
+            tm[t] = {"role": a.role, "actor": a.id}
+            actor_roles.add(a.role)
         write = frozenset(actor_roles | ({"gateway"} if gateway_tokens else set()))
         read = frozenset(write | {"reader"})
         self.app = App(self._routes(read, write), tm, ready=self._readyz)
@@ -158,8 +138,7 @@ class Api:
                 raise BoundaryError("PERMISSION_DENIED", "권한이 없다")      # 신원은 왔으나 이 서비스가 아는 사용자가 아니다
             # 계약의 Id(reviewer_id)는 '@'를 허용하지 않는다. 이메일형 ID는 '@'를 ':at:'로 바꿔 기록한다(역변환 가능, 충돌 없음: 입력에 ':'를 허용하지 않는다)
             return Actor(user.replace("@", ":at:"), r)
-        _, aid, arole = role.split(_SEP)
-        return Actor(aid, arole)
+        return Actor(req.actor, role)
 
     def _wrap(self, fn):
         def handler(req):
@@ -176,78 +155,74 @@ class Api:
         return handler
 
     def _routes(self, read, write):
-        W = lambda m, p, fn, roles=write: Route(m, p, self._wrap(fn), roles=roles, raw_body=True, max_body=MAX_BODY)   # noqa: E731
+        D = lambda n: "AuthoringResponses#/$defs/" + n   # noqa: E731  응답 스키마 이름(계약)
+        RQ = lambda n: "AuthoringRequests#/$defs/" + n   # noqa: E731
         sc = "/v1/question-sets"
-        return [
-            W("GET", sc, lambda r, a: self._read(r), read),
-            W("GET", sc + "/{qsid}/latest", lambda r, a: self._read(r), read),
-            W("GET", sc + "/{qsid}/versions", lambda r, a: self._read(r), read),
-            W("GET", sc + "/{qsid}/versions/{ver}", lambda r, a: self._read(r), read),
-            W("GET", sc + "/{qsid}/versions/{ver}/reviews", lambda r, a: self._read(r), read),
-            W("GET", sc + "/{qsid}/versions/{ver}/change", lambda r, a: self._read(r), read),
-            W("GET", "/v1/signals", self._signals),
-            W("POST", "/v1/drafts", self._create),
-            W("GET", "/v1/drafts", self._list),
-            W("POST", "/v1/materials", self._material),
-            W("POST", "/v1/reviews", self._review),
-            W("GET", "/v1/drafts/{did}", lambda r, a: self._out("Draft", self._need_reader(a) and self.svc.get_draft(r.params["did"]))),
-            W("GET", "/v1/drafts/{did}/preview", lambda r, a: self._out("Preview", self._need_reader(a) and self.svc.get_preview(r.params["did"]))),
-            W("POST", "/v1/drafts/{did}/edits", lambda r, a: self._out("Draft", self.svc.apply_edits(a, r.params["did"], _body("EditsRequest", r.raw)["edits"]))),
-            W("POST", "/v1/drafts/{did}/acknowledge", lambda r, a: self._out("Draft", self.svc.acknowledge_flags(a, r.params["did"], _body("AcknowledgeRequest", r.raw)["flag_ids"]))),
-            W("POST", "/v1/drafts/{did}/confirm", lambda r, a: self._out("ConfirmResponse", self.svc.confirm(a, r.params["did"], _body("ConfirmRequest", r.raw)["preview_hash"]))),
-            W("POST", "/v1/drafts/{did}/discard", lambda r, a: self._out("Draft", self.svc.discard_draft(a, r.params["did"], _body("DiscardRequest", r.raw)["reason"]))),
-        ]
 
-    # 응답은 계약 스키마로 자기 검사를 거쳐 나간다(AuthoringResponses, SignalsResponse). 서버가 키를 늘리면 여기서 먼저 깨진다.
-    # 왜 라이브러리의 response_schema가 아닌가: 라이브러리는 계약 파일 전체만 가리키고 $defs 하나(예: AuthoringResponses.Draft)를 못 가리킨다(docs/change-requests/CR-0008).
-    @staticmethod
-    def _out(name, value):
-        return contract.check_response("AuthoringResponses", name, value)
+        def R(method, pattern, fn, roles=write, request=None, response=None, query=None, raw=False):
+            return Route(method, pattern, self._wrap(fn), roles=roles, request_schema=request, response_schema=response,
+                         query_schema=query, raw_body=raw, max_body=MAX_BODY)
+        d = lambda r: r.params["did"]    # noqa: E731
+        return [
+            R("GET", sc, lambda r, a: self._read(r), read),
+            R("GET", sc + "/{qsid}/latest", lambda r, a: self._read(r), read),
+            R("GET", sc + "/{qsid}/versions", lambda r, a: self._read(r), read),
+            R("GET", sc + "/{qsid}/versions/{ver}", lambda r, a: self._read(r), read),
+            R("GET", sc + "/{qsid}/versions/{ver}/reviews", lambda r, a: self._read(r), read),
+            R("GET", sc + "/{qsid}/versions/{ver}/change", lambda r, a: self._read(r), read),
+            R("GET", "/v1/signals", self._signals, query=RQ("SignalsQuery"), response="SignalsResponse"),
+            R("POST", "/v1/drafts", self._create, request=RQ("CreateDraftRequest"), response=D("Draft")),
+            R("GET", "/v1/drafts", self._list, response=D("DraftList")),
+            R("POST", "/v1/materials", self._material, query=RQ("MaterialQuery"), response=D("MaterialIngested"), raw=True),
+            R("POST", "/v1/reviews", self._review, request=RQ("AddReviewRequest"), response=D("AddReviewResponse")),
+            R("GET", "/v1/drafts/{did}", lambda r, a: self._need_reader(a) and self.svc.get_draft(d(r)), response=D("Draft")),
+            R("GET", "/v1/drafts/{did}/preview", lambda r, a: self._need_reader(a) and self.svc.get_preview(d(r)), response=D("Preview")),
+            R("POST", "/v1/drafts/{did}/edits", lambda r, a: self.svc.apply_edits(a, d(r), r.body["edits"]), request=RQ("EditsRequest"), response=D("Draft")),
+            R("POST", "/v1/drafts/{did}/acknowledge", lambda r, a: self.svc.acknowledge_flags(a, d(r), r.body["flag_ids"]), request=RQ("AcknowledgeRequest"), response=D("Draft")),
+            R("POST", "/v1/drafts/{did}/confirm", lambda r, a: self.svc.confirm(a, d(r), r.body["preview_hash"]), request=RQ("ConfirmRequest"), response=D("ConfirmResponse")),
+            R("POST", "/v1/drafts/{did}/discard", lambda r, a: self.svc.discard_draft(a, d(r), r.body["reason"]), request=RQ("DiscardRequest"), response=D("Draft")),
+        ]
 
     def _need_reader(self, actor) -> bool:
         self.svc.require_reader(actor)      # 저자 또는 검수자. 읽기 토큰은 라이브러리가 이 경로 앞에서 403
         return True
 
     def _create(self, req, actor):
-        b = _body("CreateDraftRequest", req.raw)
-        return self._out("Draft", self.svc.create_draft(actor, b["question_set_id"], base_version=b.get("base_version", "latest")))
+        b = req.body
+        return self.svc.create_draft(actor, b["question_set_id"], base_version=b.get("base_version", "latest"))
 
     def _list(self, req, actor):
         self.svc.require_reader(actor)
-        return self._out("DraftList", {"drafts": self.svc.list_drafts(req.query.get("question_set_id"))})
+        return {"drafts": self.svc.list_drafts(req.query.get("question_set_id"))}
 
     def _material(self, req, actor):
         q = req.query
-        contract.check_request("MaterialQuery", q)
-        return self._out("MaterialIngested", self.svc.ingest_material(
+        return self.svc.ingest_material(
             actor, q["question_set_id"], q["filename"], req.raw, base_version=q.get("base_version", "latest"),
-            extractor=q.get("extractor"), accept_phi_warning=q.get("accept_phi_warning") == "true"))
+            extractor=q.get("extractor"), accept_phi_warning=q.get("accept_phi_warning") == "true")
 
     def _review(self, req, actor):
-        b = _body("AddReviewRequest", req.raw)
-        return self._out("AddReviewResponse", self.svc.add_review(
+        b = req.body
+        return self.svc.add_review(
             actor, b["question_set"], decision=b["decision"], clinical_basis_approved=b["clinical_basis_approved"],
-            reason=b.get("reason"), review_id=b.get("review_id")))
+            reason=b.get("reason"), review_id=b.get("review_id"))
 
     def _signals(self, req, actor):
         q = req.query
         self.svc.require_reader(actor)                 # 저자 또는 검수자. 읽기 토큰은 여기 오기 전에 403
         if self.signals is None:
-            return contract.check_response("SignalsResponse", None, {
-                "status": "DISABLED", "reason": "I7(ops-feedback)가 설정되지 않았다(QA_FAILURES_URL)"})
-        contract.check_request("SignalsQuery", q)
+            return {"status": "DISABLED", "reason": "I7(ops-feedback)가 설정되지 않았다(QA_FAILURES_URL)"}
         mx = int(q.get("max_cases", 2000))
         if not 1 <= mx <= 20000:                       # 형식(숫자)은 스키마가, 범위는 여기서(스키마 설명: 1~20000)
             raise BoundaryError("INVALID_RECORD", "max_cases는 1~20000이어야 한다")
         try:
-            res = self.svc.build_signals(self.signals, question_set_id=q.get("question_set_id"),
-                                         review_status=q.get("review_status"), max_cases=mx,
-                                         deadline_seconds=self.signals_deadline)
+            return self.svc.build_signals(self.signals, question_set_id=q.get("question_set_id"),
+                                          review_status=q.get("review_status"), max_cases=mx,
+                                          deadline_seconds=self.signals_deadline)
         except BoundaryError as e:
             if e.code in ("INTEGRITY_ERROR", "INVALID_RECORD", "UNSUPPORTED_VERSION"):   # 상류의 깨진 응답은 성공으로 취급하지 않는다(FAULT_POLICY 10)
                 raise BoundaryError("UNAVAILABLE", "ops-feedback의 응답이 올바르지 않다") from None
             raise
-        return contract.check_response("SignalsResponse", None, res)
 
     def _page(self, q) -> tuple[Optional[str], int]:
         try:

@@ -1,6 +1,6 @@
 """토큰 의미 시험(표준성 점검 #12의 후속). 인증·401/403 규약은 openit_link.App이 맡는다(D118)이므로 여기서는 이 영역이 토큰에 붙이는 의미만 본다:
 정적 토큰은 X-Openit-User를 무시하고, gateway 토큰은 그 사용자와 역할표를 쓰며, 읽기 토큰은 저작 경로에서 403이다.
-상수 시간 비교(hmac.compare_digest)는 라이브러리 몫이다: 현재 v0.1.0은 dict 조회라 이 시험은 그것을 확인하지 않는다(docs/change-requests/CR-0008)."""
+상수 시간 비교(hmac.compare_digest)는 라이브러리 몫이다: v0.2.0부터 상수 시간 비교이고 이 시험은 그것을 확인하지 않는다(CR-0008)."""
 from question_authoring.components.link_authoring_server import Api
 from question_authoring.wiring.service import Actor
 
