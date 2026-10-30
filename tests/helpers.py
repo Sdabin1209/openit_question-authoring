@@ -28,16 +28,31 @@ def start_server(api, **kw):
     import threading
     from question_authoring.components.link_authoring_server import make_server
     srv = make_server(api, "127.0.0.1", 0, **kw)
-    threading.Thread(target=srv.run, daemon=True).start()
+    th = threading.Thread(target=srv.run, daemon=True)
+    th.start()
 
     def stop():
-        srv.close(); srv.task_dispatcher.shutdown(cancel_pending=True, timeout=2)
+        stop_http(srv, th)
     return srv.effective_port, stop
 
 
-def stop_http(srv):
-    """start_server를 쓰지 않고 make_server로 직접 띄운 waitress 서버를 닫는다."""
-    srv.close(); srv.task_dispatcher.shutdown(cancel_pending=True, timeout=2)
+def stop_http(srv, thread=None):
+    """start_server를 쓰지 않고 make_server로 직접 띄운 waitress 서버를 닫는다.
+    왜 srv.close()가 아닌가: 다른 스레드에서 소켓을 닫으면 서버 루프가 닫힌 소켓을 select해 죽거나 닫는 중에 연결을 받는 경쟁이 생긴다(부하에서 흔들림).
+    서버 루프 안에서 닫고(link_authoring_server.close_all, __main__의 종료와 같은 방법) 루프가 끝나기를 기다려, 이 함수가 돌아온 뒤에는 아무도 듣지 않는다."""
+    import time
+    from question_authoring.components.link_authoring_server import close_all
+    try:
+        srv.trigger.pull_trigger(lambda: close_all(srv))
+    except OSError:
+        pass                                 # 이미 닫혔다(시험이 서버를 내렸고 fixture가 다시 내린다): 두 번 불러도 안전하다
+    if thread is not None:
+        thread.join(30)
+    else:
+        end = time.monotonic() + 30         # 바깥 마감(매달리지 않음)일 뿐 판정 값이 아니다
+        while srv._map and time.monotonic() < end:
+            time.sleep(0.01)
+    srv.task_dispatcher.shutdown(cancel_pending=True, timeout=5)
 
 
 def bank_hash(bank):

@@ -117,7 +117,7 @@ def test_server_down_is_unavailable(served):
     publish(svc)
     c = HttpQuestionReader(url, READ, timeout=2)
     assert c.list_ids()[0] == ["qs-main"]
-    stop_http(srv)
+    stop_http(srv)       # 돌아온 뒤에는 아무도 듣지 않는다(서버 루프가 끝나기를 기다린다): 닫는 중에 연결을 받는 경쟁이 없다
     e = err("UNAVAILABLE", c.list_ids)
     assert e.retryable
     s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()   # 아무도 듣지 않는 포트

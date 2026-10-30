@@ -28,7 +28,7 @@ def base(svc):
 
 
 def raw(port, method, path, headers=None, body=None):
-    c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
     c.request(method, path, body=body, headers=headers or {})
     r = c.getresponse()
     data = r.read()

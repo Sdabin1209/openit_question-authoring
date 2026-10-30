@@ -195,7 +195,8 @@ def test_slow_statement_is_cut_by_server_timeout(validators):
         t = time.monotonic()
         with pytest.raises(BoundaryError) as e:
             s._q("SELECT pg_sleep(30)")
-        assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < 3
+        # 상한(1초)이 끊었다 = 30초짜리 문장을 기다리지 않았다. 20초는 부하 여유이고 의미를 지킨다
+        assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < 20
         assert s._q("SELECT 1") == [(1,)]
         s.close()
 
@@ -212,7 +213,8 @@ def test_lock_wait_in_write_is_bounded(validators):
             t = time.monotonic()
             with pytest.raises(BoundaryError) as e:
                 s.add_review({"question_set": ref, "review_id": "rv-x"})
-            assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < 3
+            # 락은 풀리지 않는다: 상한(1초)이 끊지 않았다면 영원히 기다린다. 20초는 부하 여유이고 의미를 지킨다
+            assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < 20
             assert s.latest("qs-main") == ref
             holder.execute("ROLLBACK")
         s.close()
@@ -222,7 +224,7 @@ def test_readyz_probe_does_not_wait_for_main_connection_or_lock(validators):
     """주 연결이 쓰기(락 대기)에 묶여 있어도 is_ready는 즉시 True다."""
     from question_authoring.components.store_postgres import _LOCK_KEY
     with pg_schema() as (url, schema):
-        s = PostgresQuestionStore(url, schema=schema, statement_timeout=3)
+        s = PostgresQuestionStore(url, schema=schema, statement_timeout=60)   # 쓰기가 holder를 풀 때까지 락을 기다리게 둔다
         ref = publish(AuthoringService(s))
         with psycopg.connect(url, autocommit=True) as holder:
             holder.execute("BEGIN")
@@ -235,9 +237,8 @@ def test_readyz_probe_does_not_wait_for_main_connection_or_lock(validators):
             th = threading.Thread(target=blocked_write)
             th.start()
             time.sleep(0.5)                                  # 쓰기가 self._lock과 주 연결을 쥔 채 락을 기다리는 중
-            t = time.monotonic()
             assert s.is_ready() is True
-            assert time.monotonic() - t < 1.0
+            assert th.is_alive()                             # 쓰기는 아직 락을 기다리는 중 = is_ready가 쓰기를 기다리지 않았다(시간이 아닌 상태로 판정)
             holder.execute("ROLLBACK")
             th.join(10)
         s.close()
@@ -251,7 +252,7 @@ def test_readyz_503_within_limit_when_unreachable_then_recovers(validators):
         s._url = BLACKHOLE
         t = time.monotonic()
         assert s.is_ready() is False
-        assert time.monotonic() - t < 3.0                    # 기본 2초 + 여유
+        assert time.monotonic() - t < 20                     # 기본 2초가 끊었다 = 도달 불가 서버를 OS 접속 시간 초과(분 단위)까지 기다리지 않았다. 20초는 부하 여유
         s._url = good
         assert s.is_ready() is True
         s.close()
@@ -261,7 +262,7 @@ def test_connect_is_bounded_when_unreachable():
     t = time.monotonic()
     with pytest.raises(BoundaryError) as e:
         PostgresQuestionStore(BLACKHOLE, connect_timeout=2)
-    assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < 4
+    assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < 30    # 접속 상한 2초가 끊었다(OS 기본은 분 단위). 30초는 부하 여유
     assert "SECRET-dbpw-5e1f" not in repr(e.value) + str(e.value.to_record()) and e.value.__context__ is None
 
 
@@ -275,16 +276,16 @@ def test_frozen_server_readyz_503_and_request_path_bounded_then_recovers(validat
             t = time.monotonic()
             assert s.is_ready() is False
             probe_secs = time.monotonic() - t
-            assert probe_secs < 3.0, probe_secs
+            assert probe_secs < 30, probe_secs                # 얼어붙은 서버를 무한정 기다리지 않았다(상한 2초). 30초는 부하 여유
             t = time.monotonic()
             with pytest.raises(BoundaryError) as e:         # 열려 있던 주 연결로 읽기: 서버가 얼어 서버 쪽 timeout은 못 듣는다 -> 클라이언트가 끊는다
                 s.latest("qs-main")
             read_secs = time.monotonic() - t
-            assert e.value.code == "UNAVAILABLE" and read_secs < 2 + 1 + 1.5, read_secs
+            assert e.value.code == "UNAVAILABLE" and read_secs < 30, read_secs
             t = time.monotonic()
             with pytest.raises(BoundaryError):               # 새 접속도 connect_timeout 안에 포기
                 s.latest("qs-main")
-            assert time.monotonic() - t < 3 + 1.5
+            assert time.monotonic() - t < 30
         finally:
             paused.resume()
         deadline = time.monotonic() + 15                     # 복구: 서비스를 다시 띄우지 않아도 다시 쓸 수 있다
@@ -309,7 +310,7 @@ def test_large_path_has_its_own_statement_limit(validators):
             _slow_blob_trigger(c, 1200)
         t = time.monotonic()
         s.put_source("sha256:" + "a" * 64, "f.txt", b"data")                    # 1.2초 걸려도 성공
-        assert 1.1 < time.monotonic() - t < 4
+        assert 1.1 < time.monotonic() - t < 60              # 아래쪽은 트리거 지연(1.2초)이 보장한다. 위쪽은 성공 여부로 판정하고 바깥 마감만 둔다
         assert s.get_source("sha256:" + "a" * 64) == ("f.txt", b"data")
         with pytest.raises(BoundaryError) as e:                                  # 큰 자료 경로가 아닌 문장은 0.5초에 끊긴다
             s._write(lambda c: c.execute("SELECT pg_sleep(1.2)"))

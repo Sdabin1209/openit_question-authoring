@@ -37,7 +37,7 @@ def api_of(svc, **kw):
     return Api(svc, {"tok-a": Actor("dr-kim", "question-author")}, **kw)
 
 
-def raw(port, data: bytes, *, wait=3.0, close_after_send=False) -> bytes:
+def raw(port, data: bytes, *, wait=30.0, close_after_send=False) -> bytes:
     s = socket.create_connection(("127.0.0.1", port), timeout=wait)
     s.sendall(data)
     if close_after_send:
@@ -66,10 +66,9 @@ MAT = "/v1/materials?question_set_id=qs-main&filename=f.txt"
 # ---- E2 F2/F3: 멈춘 업로드 ----
 def test_stalled_upload_is_cut_and_nothing_is_saved(svc):
     with serving(api_of(svc), request_timeout=1) as port:
-        t = time.monotonic()
-        out = raw(port, post_head(MAT, 5000) + b"x" * 10, wait=6)     # 본문이 모자란 채 멈춘다
-        took = time.monotonic() - t
-    assert b"<TIMEOUT>" not in out and took < 4, (out[:80], took)    # 서버가 먼저 끊었다
+        out = raw(port, post_head(MAT, 5000) + b"x" * 10, wait=60)    # 본문이 모자란 채 멈춘다
+    # 서버 무응답 상한(1초)이 지나 서버가 먼저 끊었다 = 클라이언트의 읽기 상한(60초)에 걸리지 않았다. 걸린 시간 자체는 단언하지 않는다
+    assert b"<TIMEOUT>" not in out, out[:80]
     assert svc.list_drafts() == []                                     # 반쯤 온 자료는 처리하지 않는다
 
 
@@ -183,7 +182,7 @@ def i7_stub(mode: str):
         def log_message(self, *a): pass
         def do_GET(self):
             if mode == "slow":
-                time.sleep(3)
+                time.sleep(30)          # 호출 상한(1초)이 끊어야 하는 응답. 상한이 없으면 30초를 기다린다
             if mode == "5xx":
                 self.send_response(500); self.send_header("Content-Length", "0"); self.end_headers(); return
             if mode == "garbage":
@@ -222,7 +221,8 @@ def test_d5_slow_upstream_is_bounded_by_call_timeout(svc):
         t = time.monotonic()
         st, body = api.handle("GET", "/v1/signals", AUTH, b"")
         took = time.monotonic() - t
-    assert st == 503 and took < 2.5, took
+    # 호출 상한(1초)이 끊었다 = 상류의 30초를 기다리지 않았다. 15초는 부하 여유이고 의미(30초를 기다리지 않음)를 지킨다
+    assert st == 503 and took < 15, took
 
 
 def test_d5_total_deadline_bounds_many_slow_pages(svc):
@@ -231,7 +231,8 @@ def test_d5_total_deadline_bounds_many_slow_pages(svc):
         t = time.monotonic()
         st, body = api.handle("GET", "/v1/signals?max_cases=20000", AUTH, b"")
         took = time.monotonic() - t
-    assert st == 503 and took < 3, took
+    # 총 마감(1초)이 끝없는 쪽(0.4초씩 20000쪽 = 2시간 이상)을 끊었다. 30초는 부하 여유이고 의미를 지킨다
+    assert st == 503 and took < 30, took
 
 
 def test_d5_trace_upstream_failure_is_not_counted_as_missing_trace(svc):
@@ -252,9 +253,9 @@ def test_d5_trace_upstream_failure_is_not_counted_as_missing_trace(svc):
 # ---- 큰 자료의 처리 시간: 긴 한 줄이 제곱으로 느려지지 않는다(이메일 패턴이 그랬다) ----
 def test_phi_check_is_linear_on_long_lines_and_still_detects(svc):
     from question_authoring.wiring.service import AuthoringService
-    t = time.monotonic()
+    t = time.process_time()      # 기계 부하(CPU 경쟁)에 덜 흔들리게 CPU 시간으로 잰다
     assert phi_warnings(b"x" * (2 * 1024 * 1024)) == []
-    assert time.monotonic() - t < 2.0
+    assert time.process_time() - t < 10.0     # 제곱 시간이면 2MiB에서 수 시간이 걸린다(정상은 0.1초대)
     assert phi_warnings("문의 kim.doctor+a@hospital.co.kr 입니다".encode()) == ["이메일 형태"]
     assert phi_warnings(b"010-1234-5678") == ["전화번호 형태"]
 

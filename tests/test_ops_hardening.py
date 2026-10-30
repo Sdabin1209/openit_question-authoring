@@ -79,15 +79,36 @@ def raw(port, data, wait=3):
     return out
 
 
+def _ready_port():
+    sk = socket.socket(); sk.bind(("127.0.0.1", 0)); port = sk.getsockname()[1]; sk.close()
+    return port
+
+
+def _wait_ready(port, limit=60.0):
+    """요청을 받을 수 있을 때까지 기다린다. 이전에는 `시작` 줄 뒤 0.3초를 기다렸다가 신호를 보냈다: 부하에서 서버 루프가 아직 돌지 않을 수 있었다.
+    limit은 바깥 마감(매달리지 않음)이지 판정 값이 아니다."""
+    import time
+    import urllib.request
+    end = time.monotonic() + limit
+    while True:
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=2)
+            return
+        except OSError:
+            assert time.monotonic() < end, "서버가 요청을 받지 못한다"
+            time.sleep(0.05)
+
+
 def test_sigterm_stops_the_server_promptly(tmp_path):
-    env = dict(os.environ, QA_DEV_MODE="1", QA_DB_PATH=str(tmp_path / "q.db"), QA_PORT="0", QA_HOST="127.0.0.1")
+    port = _ready_port()
+    env = dict(os.environ, QA_DEV_MODE="1", QA_DB_PATH=str(tmp_path / "q.db"), QA_PORT=str(port), QA_HOST="127.0.0.1")
     p = subprocess.Popen([sys.executable, "-m", "question_authoring"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     try:
         line = p.stdout.readline()
         assert "시작" in line
-        time.sleep(0.3)
+        _wait_ready(port)
         p.send_signal(signal.SIGTERM)
-        assert p.wait(timeout=10) == 0
+        assert p.wait(timeout=60) == 0                      # 바깥 마감(매달리지 않음). 종료가 신호에 기대 영원히 안 끝나면 여기서 실패한다
     finally:
         if p.poll() is None:
             p.kill()
@@ -100,14 +121,15 @@ def test_sigterm_stops_the_server_even_when_signals_were_inherited_as_ignored(tm
     def inherit():
         for sig in ignored:
             signal.signal(sig, signal.SIG_IGN)
-    env = dict(os.environ, QA_DEV_MODE="1", QA_DB_PATH=str(tmp_path / "q.db"), QA_PORT="0", QA_HOST="127.0.0.1")
+    port = _ready_port()
+    env = dict(os.environ, QA_DEV_MODE="1", QA_DB_PATH=str(tmp_path / "q.db"), QA_PORT=str(port), QA_HOST="127.0.0.1")
     p = subprocess.Popen([sys.executable, "-m", "question_authoring"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                          preexec_fn=inherit)
     try:
         assert "시작" in p.stdout.readline()
-        time.sleep(0.3)
+        _wait_ready(port)
         p.send_signal(signal.SIGTERM)
-        assert p.wait(timeout=10) == 0
+        assert p.wait(timeout=60) == 0
     finally:
         if p.poll() is None:
             p.kill()

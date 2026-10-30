@@ -220,7 +220,7 @@ def test_phi_check_scales_linearly_with_phone_and_date_text():
     unit = "방문 2012-01-01 010-2012 0101 20120101 02-".encode()
     def t(n):
         data = unit * n
-        t0 = time.perf_counter(); phi_warnings(data); return time.perf_counter() - t0
+        t0 = time.process_time(); phi_warnings(data); return time.process_time() - t0     # CPU 시간: 부하에 덜 흔들린다
     t(500)
     small, big = min(t(2000) for _ in range(3)), min(t(8000) for _ in range(3))
     assert big < small * 4 * 3 + 0.05, (small, big)
