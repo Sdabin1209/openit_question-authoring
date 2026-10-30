@@ -173,6 +173,7 @@ class Api:
             R("GET", "/v1/signals", self._signals, query=RQ("SignalsQuery"), response="SignalsResponse"),
             R("POST", "/v1/drafts", self._create, request=RQ("CreateDraftRequest"), response=D("Draft")),
             R("GET", "/v1/drafts", self._list, response=D("DraftList")),
+            # raw_body: 환자 정보 점검·해시·추출·보관이 모두 전체 바이트를 쓰고 상한이 8MiB라 stream_body(수 GiB용)를 쓰지 않는다(ADR 0023)
             R("POST", "/v1/materials", self._material, query=RQ("MaterialQuery"), response=D("MaterialIngested"), raw=True),
             R("POST", "/v1/reviews", self._review, request=RQ("AddReviewRequest"), response=D("AddReviewResponse")),
             R("GET", "/v1/drafts/{did}", lambda r, a: self._need_reader(a) and self.svc.get_draft(d(r)), response=D("Draft")),

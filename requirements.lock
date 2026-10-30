@@ -1,7 +1,7 @@
 # 런타임 의존 잠금. 개발 설치는 scripts/setup-env.sh가 이 파일 그대로 설치한다.
 # 이미지: 두 패키지는 태그 시점 소스로 만든 wheel을 설치한다(scripts/build_wheels.sh).
 boundary-contracts @ git+ssh://git@github.com/Sdabin1209/openit_boundary-contracts.git@v3.1.1
-openit-link @ git+ssh://git@github.com/Sdabin1209/openit_link.git@v0.2.0
+openit-link @ git+ssh://git@github.com/Sdabin1209/openit_link.git@v0.3.0
 openit-survey-schema @ git+ssh://git@github.com/Sdabin1209/openit_survey-service.git@survey-schema-v2.0.0#subdirectory=schema
 attrs==26.1.0
 jsonschema==4.26.0
