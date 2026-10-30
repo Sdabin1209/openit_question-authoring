@@ -27,6 +27,8 @@ rc=0
   retry "${PIP[@]}" install -q --force-reinstall -r requirements.lock || exit 1
   # 시험 도구. 버전은 lock이 정하지 않은 도구라 최신을 쓴다(psycopg는 lock에 있다).
   retry "${PIP[@]}" install -q pytest setuptools wheel || exit 1   # setuptools·wheel: 빌드 진입점 시험이 네트워크 없이 wheel을 만든다
+  # 타입 생성 도구(datamodel-code-generator). tests/test_structure.py가 types/를 다시 생성해 비교하므로 시험 명령에 필요하다. 버전은 requirements-gen.lock이 정한다
+  retry "${PIP[@]}" install -q -r requirements-gen.lock || exit 1
   # 이 리포 자체. 의존은 위에서 lock대로 설치했으므로 --no-deps.
   "${PIP[@]}" install -q -e . --no-deps || { echo "setup-env: 이 리포 설치 실패" >&2; exit 1; }
 
