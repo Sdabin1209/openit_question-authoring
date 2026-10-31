@@ -3,6 +3,7 @@
 ## 미배포 (2026-10-31) U424
 
 - `wiring/contract.py`의 `check_ext`를 지웠다: 호출처가 없는 죽은 함수였다(전체 소스·시험 검색으로 확인). 생산자 검증은 이미 컴포넌트 출력 스키마(`ChangeRecord`, `ConfirmFinalizeResult`, `ReviewFollowupResult`)가 ReviewExt·ChangeExt까지 한다. 동작 변화 없음.
+- 계약 검사 정의를 한 곳으로 모았다: `wiring/contract.py`의 쓰이지 않는 `check_request`·`check_response`·`ResponseContractError`를 지우고, 서버 면(`components/link_authoring_server.py`)에는 쓰이는 `/readyz` 본문 검사(`_check_response`, `ResponseContractError`)만 남겼다. 서버의 죽은 `contract.check_request`도 지웠다(요청은 Route의 request_schema가 검사). 동작 변화 없음.
 
 ## 미배포 (2026-10-31) U422: 시험에서 실제 시간을 없앤다
 

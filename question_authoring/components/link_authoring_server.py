@@ -44,22 +44,13 @@ INPUT_SCHEMA = "AuthoringRequests"     # 이 면은 계약 스키마가 입출�
 OUTPUT_SCHEMA = "AuthoringResponses"
 
 
-class contract:   # noqa: N801  이 파일이 쓰는 계약 검사 묶음(요청 AuthoringRequests, 응답 AuthoringResponses·SignalsResponse·QuestionAuthoringDeployInterface)
-    ResponseContractError = ResponseContractError
+def _check_response(schema: str, def_name: Optional[str], value):
+    """/readyz 본문을 내보내기 전에 계약으로 검사한다(생산자 검증, R7). 나머지 응답은 Route의 response_schema가 라이브러리에서 검사한다."""
+    errs = _problems(schema, def_name, value)
+    if errs:
+        raise ResponseContractError(f"{schema}{'.' + def_name if def_name else ''} 위반: {errs[0]}")
+    return value
 
-    @staticmethod
-    def check_request(def_name: str, value) -> None:
-        """요청 본문·쿼리를 AuthoringRequests의 $defs 하나로 검사한다. 모르는 키는 거부한다(MANIFEST note)."""
-        errs = _problems("AuthoringRequests", def_name, value)
-        if errs:
-            raise BoundaryError("INVALID_RECORD", f"AuthoringRequests.{def_name} 위반: {errs[0]}", {"errors": errs[:20]})
-
-    @staticmethod
-    def check_response(schema: str, def_name: Optional[str], value):
-        errs = _problems(schema, def_name, value)
-        if errs:
-            raise ResponseContractError(f"{schema}{'.' + def_name if def_name else ''} 위반: {errs[0]}")
-        return value
 
 STATUS = {"NOT_FOUND": 404, "INVALID_RECORD": 400, "UNSUPPORTED_VERSION": 422, "CONFLICT": 409,
           "INTEGRITY_ERROR": 422, "FAILED_PRECONDITION": 412, "PERMISSION_DENIED": 403, "UNAVAILABLE": 503}
@@ -118,7 +109,7 @@ class Api:
         if self.warnings:
             body["warnings"] = list(self.warnings)     # 200을 막지 않는다(경고만)
         try:
-            contract.check_response("QuestionAuthoringDeployInterface", "ReadyzResponse", body)
+            _check_response("QuestionAuthoringDeployInterface", "ReadyzResponse", body)
         except ResponseContractError as e:   # 서버 결함: 계약을 어긴 본문은 내보내지 않는다
             print(f"응답 계약 위반: {e}", flush=True)
             return False, {"status": "not-ready"}
@@ -145,7 +136,7 @@ class Api:
                 return Response(200, fn(req, self._actor(req)))
             except BoundaryError:
                 raise
-            except contract.ResponseContractError as e:   # 서버 결함: 계약을 어긴 응답은 내보내지 않는다. 메시지는 위치와 규칙 이름뿐이다
+            except ResponseContractError as e:   # 서버 결함: 계약을 어긴 응답은 내보내지 않는다. 메시지는 위치와 규칙 이름뿐이다
                 print(f"응답 계약 위반: {e}", flush=True)
                 raise BoundaryError("UNAVAILABLE", "내부 오류") from None
             except Exception as e:  # 예상 밖의 오류. 연결을 끊지 않고 JSON 503(UNAVAILABLE)으로 답한다. 원문 메시지는 쓰지 않는다(접속 정보·자료가 섞일 수 있다)

@@ -13,7 +13,7 @@ import pytest
 import conformance
 import boundary_contracts as bc
 from question_authoring import __main__ as qa_main
-from question_authoring.wiring import contract
+from question_authoring.wiring import schemas
 from question_authoring.components.link_authoring_server import Api
 from question_authoring.wiring.service import Actor
 from conftest import example_text
@@ -97,7 +97,7 @@ def test_signals_query_rejected(svc):
 
 def test_valid_request_examples_pass_the_request_check():
     for name in list(BODY_ROUTES) + ["MaterialQuery", "SignalsQuery"]:
-        contract.check_request(name, ex("valid", f"AuthoringRequests.{name}"))
+        assert schemas.problems("AuthoringRequests#" + name, ex("valid", f"AuthoringRequests.{name}")) == []
 
 
 # ---------- 응답 자기 검사 ----------

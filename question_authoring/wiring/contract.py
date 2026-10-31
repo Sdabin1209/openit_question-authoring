@@ -1,4 +1,4 @@
-"""경계 계약 스키마(boundary-contracts, D107 승격)로 요청·응답·배포 인터페이스를 검사한다(ext는 컴포넌트 출력 스키마가 검사한다).
+"""경계 계약 스키마(boundary-contracts, D107 승격)로 진입점의 환경 변수와 purge 출력을 배포 인터페이스 계약으로 검사한다(요청·응답·ext는 각각 서버 면과 컴포넌트 출력 스키마가 검사한다).
 
 왜 한 곳: 손으로 키와 형식을 검사하던 코드는 스키마와 어긋나도 아무것도 깨지지 않았다. 계약 스키마가 정본이고
 이 모듈은 이름으로 검증기를 찾아 쓰기만 한다(스키마 사본을 두지 않는다, 워크스페이스 규칙).
@@ -9,7 +9,6 @@ from __future__ import annotations
 from typing import Any, Optional
 
 import boundary_contracts
-from boundary_contracts.errors import BoundaryError
 
 _cache: dict = {}
 
@@ -28,24 +27,6 @@ def problems(schema: str, def_name: Optional[str], value: Any) -> list[str]:
     for e in sorted(_validator(schema, def_name).iter_errors(value), key=lambda e: list(map(str, e.absolute_path))):
         out.append("/" + "/".join(map(str, e.absolute_path)) + f": {e.validator} 규칙 위반")
     return out
-
-
-def check_request(def_name: str, value: Any) -> None:
-    """AuthoringRequests의 $defs 하나로 요청 본문·쿼리를 검사한다. 모르는 키는 거부한다(MANIFEST note)."""
-    errs = problems("AuthoringRequests", def_name, value)
-    if errs:
-        raise BoundaryError("INVALID_RECORD", f"AuthoringRequests.{def_name} 위반: {errs[0]}", {"errors": errs[:20]})
-
-
-class ResponseContractError(Exception):
-    """서버가 계약을 어기는 응답을 만들었다(서버 결함). 호출자에게는 UNAVAILABLE로만 나간다."""
-
-
-def check_response(schema: str, def_name: Optional[str], value: Any) -> Any:
-    errs = problems(schema, def_name, value)
-    if errs:
-        raise ResponseContractError(f"{schema}{'.' + def_name if def_name else ''} 위반: {errs[0]}")
-    return value
 
 
 def environment_problems(env: dict) -> list[str]:
