@@ -15,8 +15,8 @@ from typing import Any, Optional
 
 INPUT_SCHEMA = "SignalsBuildInput"
 OUTPUT_SCHEMA = "SignalsResponse"
-DEFAULT_MAX_CASES = 2000
-CONFUSION_MIN = 2
+DEFAULT_MAX_CASES = 2000      # 읽을 사례 수 기본: 계약 SignalsQuery.max_cases 기본값과 같다(1~20000). 이 영역이 측정한 값이 아니다
+CONFUSION_MIN = 2             # 같은 유형이 이 건수 이상이면 '혼동'으로 보여 준다. 한 번뿐인 실패는 혼동이 아니라는 판단값(측정·표준 근거 없음)
 SKIP_NO_SET = "NO_QUESTION_SET"          # 사례에 question_set이 없다(문항 세트 수준에서도 제외)
 SKIP_NO_QUESTION = "NO_QUESTION_ID"      # trace에 문항 ID가 없다(문항 수준에서만 제외)
 SKIP_TRACE = "TRACE_UNREADABLE"          # trace를 읽지 못했다(문항 수준에서만 제외)

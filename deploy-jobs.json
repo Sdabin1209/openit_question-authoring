@@ -1,0 +1,18 @@
+{
+  "jobs": [
+    {
+      "name": "purge",
+      "argv": ["python", "-m", "question_authoring", "purge"],
+      "idempotent": true,
+      "secret_files": ["QA_DATABASE_URL_FILE"],
+      "needs": ["postgres"],
+      "env": [
+        "QA_DRAFT_RETENTION_DAYS",
+        "QA_SOURCE_RETENTION_DAYS",
+        "QA_DB_CONNECT_TIMEOUT_SECONDS",
+        "QA_DB_STATEMENT_TIMEOUT_SECONDS",
+        "QA_DB_LARGE_STATEMENT_TIMEOUT_SECONDS"
+      ]
+    }
+  ]
+}

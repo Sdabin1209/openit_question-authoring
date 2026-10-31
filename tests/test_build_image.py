@@ -45,6 +45,7 @@ def req(tmp_path):
     src.mkdir()
     (src / "Dockerfile").write_text("FROM scratch\n")
     (src / "deploy-exposure.json").write_text((ROOT / "deploy-exposure.json").read_text(encoding="utf-8"))
+    (src / "deploy-jobs.json").write_text((ROOT / "deploy-jobs.json").read_text(encoding="utf-8"))
     (src / ".git").mkdir()
     (src / ".git" / "HEAD").write_text("x")
     (src / ".venv").mkdir()

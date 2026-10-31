@@ -84,7 +84,7 @@ def test_time_budget_is_enforced_with_an_injected_clock():
 
 
 def test_time_budget_value_is_the_documented_one():
-    assert TextFormExtractor.time_budget == 20.0          # 설계 문서·ADR의 값. 실제 시간으로 재지 않고 값을 확인한다
+    assert TextFormExtractor.time_budget == 6.0          # 설계 문서·ADR의 값. 실제 시간으로 재지 않고 값을 확인한다
 
 
 def test_example_form_result_unchanged():

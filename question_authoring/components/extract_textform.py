@@ -41,13 +41,13 @@ NUM = r"-?\d+(?:\.\d+)?"
 _num_re = re.compile(rf"^{NUM}$")
 _Q_HEAD = re.compile(r"^문항\s+(\S+?)\s*:\s*(.+)$")
 _S_HEAD = re.compile(r"^슬롯\s+(\S+?)\s*:\s*(필수|선택)\s*$")
-# 입력 한도(근거: 전수 점검 P1 실측과 ADR 0004. 숫자 자체는 정상 자료의 수십~수백 배 여유값이며 측정·표준에서 나온 값이 아니다, 근거 기록 없음)
 # 입력 한도(제곱·무한 시간 방지, 모두 선형 시간으로 처리하되 상한을 둔다). 넘으면 추측하지 않고 알린다.
+# 근거: 전수 점검 P1 실측과 ADR 0004. 숫자 자체는 정상 자료의 수십~수백 배 여유값이며 측정·표준에서 나온 값이 아니다(근거 기록 없음)
 MAX_LINE_CHARS = 4096          # 한 줄. 넘는 줄은 UNPARSED로 알리고 내용은 읽지 않는다
 MAX_QUESTIONS = 2000           # 문항 수
 MAX_SLOTS_PER_QUESTION = 200   # 문항당 슬롯 수
 MAX_FLAGS = 5000               # 플래그 수. 이만큼 해석하지 못하면 양식이 아니라고 보고 화면 입력으로 이어 간다
-TIME_BUDGET_SECONDS = 20.0     # 추출 전체의 시간 예산(넘으면 ExtractionFailure -> 화면 입력으로 이어 감)
+TIME_BUDGET_SECONDS = 6.0      # 추출 전체의 시간 예산(넘으면 ExtractionFailure -> 화면 입력으로 이어 감). 요청 전체 마감(12초, D120)의 절반: 추출 뒤에 원본·초안 저장이 남는다. 정상 8MiB 입력은 수 초 안(측정: 이 PC 시험 모음)이라 측정값이 아니라 마감에서 거꾸로 정한 값이다 (ADR 0025)
 
 
 # 칸 규격 줄(문진 스키마 SlotDef의 선택 속성 5개, survey-schema 1.2.0). '단위:' 줄(UnitDef, 사용자 말의 단위 환산)과 다르다 - 그래서 '값 단위'다. ADR 0018
@@ -383,7 +383,7 @@ class TextFormExtractor:
         if ok and key == "minimum" and "maximum" in s and val > s["maximum"]:
             return self._flag(path, UNSURE, "최소가 최대보다 크다. 값을 비워 두었다", raw)
         if not ok:
-            what = {"data_type": f"boolean, integer, number, option 중 하나", "unit": "값 단위 이름 하나"}.get(key, "숫자(예: 0, 7, 0.5)")
+            what = {"data_type": "boolean, integer, number, option 중 하나", "unit": "값 단위 이름 하나"}.get(key, "숫자(예: 0, 7, 0.5)")
             return self._flag(path, UNSURE, f"{what}로 읽지 못했다. 값을 비워 두었다", raw)
         s[key] = val
 

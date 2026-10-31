@@ -1,11 +1,9 @@
 """통신(보내는 쪽): ops-feedback의 실패 사례(I7)를 읽어 개선 신호의 재료로 넘긴다. 입력 FailureReadRequest -> 출력 FailureBundle.
 
-계약 클라이언트(boundary_contracts.clients.HttpFailureStore)만 쓴다. 담는 것은 사례와 비식별 trace뿐이다.
+이웃과의 HTTP는 계약 클라이언트(boundary_contracts.clients.HttpFailureStore)만 쓴다(`http_failure_source`가 만든다). 담는 것은 사례와 비식별 trace뿐이다.
 상류 장애·인증 실패를 "trace 없음"으로 조용히 세지 않는다(FAULT_POLICY 9·10): UNAVAILABLE·PERMISSION_DENIED는 그대로 올린다.
 """
 from __future__ import annotations
-
-from typing import Optional
 
 from boundary_contracts.clients import HttpFailureStore
 from boundary_contracts.errors import BoundaryError
@@ -14,11 +12,16 @@ INPUT_SCHEMA = "FailureReadRequest"
 OUTPUT_SCHEMA = "FailureBundle"
 
 
+def http_failure_source(url: str, token: str, timeout: float) -> HttpFailureStore:
+    """ops-feedback(I7)의 실패 사례 읽기 클라이언트. 호출 하나의 읽기 상한이 timeout이다. 진입점이 만들어 서비스에 넘긴다."""
+    return HttpFailureStore(url, token, timeout=timeout)
+
+
 class FailureReader:
-    def __init__(self, source=None, *, clock, url: Optional[str] = None, token: str = "", timeout: float = 5.0):
-        """source가 있으면(메모리 구현·시험) 그것을 쓰고, 없으면 url의 HttpFailureStore를 만든다."""
+    def __init__(self, source, *, clock):
+        """source: list_cases/get_trace를 가진 읽기 클라이언트(http_failure_source 또는 메모리 구현·시험 대역)."""
         self._clock = clock       # 시계 주입(초 단위 단조 시계). 마감 판단만 한다. 컴포넌트는 시간을 직접 읽지 않는다(ADR 0024)
-        self.source = source if source is not None else HttpFailureStore(url, token, timeout=timeout)
+        self.source = source
 
     def run(self, inp: dict) -> dict:
         """deadline_seconds: 이 호출 전체의 상한(호출 하나의 timeout은 클라이언트가 가진다). 넘으면 부분 결과를 내지 않고 UNAVAILABLE."""

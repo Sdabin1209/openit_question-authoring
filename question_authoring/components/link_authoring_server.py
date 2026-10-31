@@ -13,7 +13,7 @@ from urllib.parse import unquote, urlparse
 
 from boundary_contracts.errors import BoundaryError
 from openit_link import App, Response, Route
-from openit_link.server import STATUS
+from openit_link.server import STATUS  # noqa: F401  상태 코드 표는 라이브러리 것을 다시 내보낸다(시험이 계약 표와 대조한다)
 from waitress import create_server
 
 import boundary_contracts
@@ -51,10 +51,6 @@ def _check_response(schema: str, def_name: Optional[str], value):
     if errs:
         raise ResponseContractError(f"{schema}{'.' + def_name if def_name else ''} 위반: {errs[0]}")
     return value
-
-
-STATUS = {"NOT_FOUND": 404, "INVALID_RECORD": 400, "UNSUPPORTED_VERSION": 422, "CONFLICT": 409,
-          "INTEGRITY_ERROR": 422, "FAILED_PRECONDITION": 412, "PERMISSION_DENIED": 403, "UNAVAILABLE": 503}
 
 
 # gateway 사용자 ID: 일반 ID 또는 이메일형(local@domain). 문자 집합과 길이를 제한한다(총 길이가 계약 Id의 128자 안에 들도록 local 60, domain 60).

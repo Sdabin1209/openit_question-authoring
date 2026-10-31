@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import copy
+from collections import Counter
 from typing import Any
 
 import jsonschema
@@ -14,6 +15,7 @@ from boundary_contracts.errors import BoundaryError
 
 INPUT_SCHEMA = "BankValidateInput"
 OUTPUT_SCHEMA = "BankValidateResult"
+# 문진 스키마의 정수 CONTRACT_VERSION(런타임 호환 번호). openit-survey-schema 3.0.0 패키지의 CONTRACT_VERSION 파일이 1이다(D14: 정확히 일치해야 한다). 올릴 때는 패키지와 함께 바꾼다
 SUPPORTED_RUNTIME_CONTRACT_VERSION = 1
 _V = None
 
@@ -48,8 +50,9 @@ def semantic_errors(bank: dict) -> list[str]:
     qs = bank.get("questions")
     if not isinstance(qs, list):
         return errs
-    ids = [q.get("question_id") for q in qs if isinstance(q, dict)]
-    for qid in sorted({i for i in ids if ids.count(i) > 1}, key=str):
+    # 중복 찾기는 Counter로 한 번 훑는다(문항 2000개까지 허용하는데 list.count는 제곱 시간)
+    ids = Counter(q.get("question_id") for q in qs if isinstance(q, dict))
+    for qid in sorted((i for i, n in ids.items() if n > 1), key=str):
         errs.append(f"문항 ID가 중복된다: {qid}")
     slots = {q.get("question_id"): [s.get("slot_id") for s in q.get("slots", []) if isinstance(s, dict)]
              for q in qs if isinstance(q, dict)}
@@ -57,8 +60,8 @@ def semantic_errors(bank: dict) -> list[str]:
         if not isinstance(q, dict):
             continue
         qid = q.get("question_id")
-        sids = slots.get(qid, [])
-        for sid in sorted({i for i in sids if sids.count(i) > 1}, key=str):
+        sids = Counter(slots.get(qid, []))
+        for sid in sorted((i for i, n in sids.items() if n > 1), key=str):
             errs.append(f"/questions/{qi}: 슬롯 ID가 중복된다: {sid}")
         pre = q.get("prerequisite")
         if isinstance(pre, dict) and isinstance(pre.get("slot"), dict):
@@ -73,7 +76,7 @@ def semantic_errors(bank: dict) -> list[str]:
         for si, s in enumerate(q.get("slots", []) or []):
             if not isinstance(s, dict):
                 continue
-            cat = [c.get("code") for c in s.get("choice_catalog", []) or [] if isinstance(c, dict)]
-            for c in sorted({i for i in cat if cat.count(i) > 1}, key=str):
+            cat = Counter(c.get("code") for c in s.get("choice_catalog", []) or [] if isinstance(c, dict))
+            for c in sorted((i for i, n in cat.items() if n > 1), key=str):
                 errs.append(f"/questions/{qi}/slots/{si}: 선택지 코드가 중복된다: {c}")
     return errs

@@ -100,6 +100,7 @@ def test_build_image_attaches_the_declaration_as_label(tmp_path):
     src.mkdir()
     (src / "Dockerfile").write_text("FROM scratch\n")
     (src / "deploy-exposure.json").write_text((ROOT / "deploy-exposure.json").read_text(encoding="utf-8"))
+    (src / "deploy-jobs.json").write_text((ROOT / "deploy-jobs.json").read_text(encoding="utf-8"))
     write_lock(src)
     req = {"source_dir": str(src), "revision": "abcdef1", "versions": {"boundary": "v3.1.1", "survey_schema": "v3.0.0"},
            "dependency_sources": {"boundary": make_tree(tmp_path / "bc", "boundary_contracts", "3.1.1"), "survey_schema": make_tree(tmp_path / "ss", "openit_survey_schema", "3.0.0")},

@@ -56,7 +56,7 @@
 - `/readyz`는 저장소의 주 연결과 락을 쓰지 않고 별도의 짧은 연결 하나로 형식 표지를 읽는다(쓰기가 락을 기다리는 중에도 막히지 않는다). 작업 스레드를 기다리다 상한이 되면 소켓을 닫고 503을 낸다.
 - 기본값의 근거[제안, 이 영역이 정한 값]: 정상일 때 문장은 수 ms이고 쓰기 하나는 몇 문장이라 3초면 느린 디스크·잠깐의 락 대기는 견디고 이웃(게이트, 합성 데이터)의 호출 대기보다 짧다. 2초는 로드 밸런서·오케스트레이터 검사 제한이 보통 수 초이고 libpq 접속 최소 단위가 2초라서다. 관리자만 쓰는 영역이라 상한을 보수적으로 짧게 잡았고, 큰 원본 자료(`blobs`) 삽입이 문장 상한을 넘으면 설정을 올려야 한다.
 - SQLite 경로는 바뀌지 않았다.
-- 확인한 것(이 PC, 일회용 PostgreSQL 컨테이너 한 대, 이 영역 시험): `docker pause` 중 `/readyz` 확인 2.0초에 실패, 열려 있던 연결로 읽기 4.0초 `UNAVAILABLE`, 새 접속 3.0초 `UNAVAILABLE`, 응답 없는 주소(10.255.255.1)도 상한 안에 503, 해제 뒤 즉시 복구. 이전 코드는 같은 `docker pause`에서 120초 넘게 돌아오지 않았다(중단하고 되돌림). 시험은 `tests/test_postgres_specific.py`.
+- 이전 확인(2026-10-28, 이 PC, 일회용 PostgreSQL 한 대, `docker pause`): `/readyz` 확인 2.0초에 실패, 열려 있던 연결로 읽기 4.0초 `UNAVAILABLE`, 새 접속 3.0초 `UNAVAILABLE`, 해제 뒤 즉시 복구. 이전 코드는 같은 `docker pause`에서 120초 넘게 돌아오지 않았다. 이 실측 시험은 U422에서 영역 시험 밖으로 뺐다(라이브러리·서버 동작은 smoke·E2E의 몫). 영역 시험은 넘기는 값과 즉시 실패하는 가짜에 대한 우리 결과만 본다: `tests/test_postgres_specific.py`(`test_limits_are_passed_to_the_driver`, `test_frozen_server_is_cut_by_the_clients_own_watchdog`, `test_readyz_gives_up_when_the_probe_does_not_answer` 등), `tests/TIMING.md`.
 - 확인하지 못한 것: 컨테이너 조합(gateway, 다른 영역과 함께)에서의 재측정은 deploy E2E 5p에서 헤드가 한다. 호출자(이웃 영역)가 이 영역의 HTTP 응답을 기다리는 시간과의 맞물림, 진짜 네트워크 단절(패킷 손실)과 느린 디스크는 시험하지 않았다. 문장 하나가 길게 걸리는 큰 쓰기의 실제 분포는 측정하지 않았다.
 
 ## 저자 클라이언트와 개선 신호 읽기의 장애 (FAULT_MATRIX E2, D5)
@@ -84,7 +84,7 @@
 
 | 상황 | 동작 | 시험 |
 | --- | --- | --- |
-| 상류 느림 | 호출 하나의 읽기 상한 `QA_FAILURES_TIMEOUT_SECONDS`(기본 5초; 이전에는 클라이언트 기본 10초). 목록·trace를 여러 번 부르는 한 번의 `GET /v1/signals`에는 총 마감 `QA_SIGNALS_DEADLINE_SECONDS`(기본 20초)를 걸었다(이전에는 최대 수십 번 × 10초). 넘으면 부분 결과 없이 503 | `test_d5_slow_upstream...`, `test_d5_total_deadline...` |
+| 상류 느림 | 호출 하나의 읽기 상한 `QA_FAILURES_TIMEOUT_SECONDS`(기본 5초; 이전에는 클라이언트 기본 10초). 목록·trace를 여러 번 부르는 한 번의 `GET /v1/signals`에는 총 마감 `QA_SIGNALS_DEADLINE_SECONDS`(기본 20초)를 걸었다(이전에는 최대 수십 번 × 10초). 넘으면 부분 결과 없이 503 | `test_d5_upstream_timeout_is_503_retryable_and_authoring_is_unaffected`, `test_d5_total_deadline_stops_endless_pages_with_an_injected_clock` |
 | 상류 5xx | 503 `UNAVAILABLE`(재시도 가능). 저작·I1 읽기는 영향 없음 | `test_d5_upstream_5xx...` |
 | 깨진 응답(JSON 아님, 형식 틀림) | 성공으로 취급하지 않고 503 `UNAVAILABLE` | 같은 시험 |
 | trace 읽기 실패 | `NOT_FOUND`처럼 그 사례만 못 읽는 경우는 건너뛰고 세지만, 상류 장애(`UNAVAILABLE`)·인증 실패는 이제 건너뛰지 않고 전체를 실패시킨다(이전에는 "trace 없음"으로 조용히 세어 OK 응답이 나갔다) | `test_d5_trace_upstream_failure...` |

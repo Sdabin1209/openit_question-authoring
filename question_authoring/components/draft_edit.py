@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 import copy
+import re
 from typing import Any
 
 from boundary_contracts.errors import BoundaryError
 
 INPUT_SCHEMA = "DraftEditInput"
 OUTPUT_SCHEMA = "AuthoringResponses#Draft"
+
+
+_INDEX = re.compile(r"^(0|[1-9][0-9]*)$")   # JSON 포인터(RFC 6901 4절)의 배열 위치: 0 또는 앞에 0이 없는 10진수. int()는 '-1'(뒤에서부터), ' 1', '+1', 전각 숫자도 받아 엉뚱한 원소를 고친다
+
+
+def _index(t: str) -> int:
+    if not _INDEX.match(t):
+        raise BoundaryError("INVALID_RECORD", f"배열 위치가 아니다: {t}")
+    return int(t)
 
 
 def _unescape(p: str) -> str:
@@ -20,8 +30,8 @@ def _walk(root: Any, tokens: list[str], create: bool):
     for t in tokens:
         if isinstance(cur, list):
             try:
-                cur = cur[int(t)]
-            except (ValueError, IndexError):
+                cur = cur[_index(t)]
+            except IndexError:
                 raise BoundaryError("INVALID_RECORD", f"경로를 찾을 수 없다: {t}")
         elif isinstance(cur, dict):
             if t not in cur:
@@ -49,8 +59,8 @@ def apply_edit(bank: dict, edit: dict) -> None:
     elif op == "set":
         if isinstance(parent, list):
             try:
-                parent[int(last)] = copy.deepcopy(edit.get("value"))
-            except (ValueError, IndexError):
+                parent[_index(last)] = copy.deepcopy(edit.get("value"))
+            except IndexError:
                 raise BoundaryError("INVALID_RECORD", f"경로를 찾을 수 없다: {path}")
         elif isinstance(parent, dict):
             parent[last] = copy.deepcopy(edit.get("value"))
@@ -59,10 +69,10 @@ def apply_edit(bank: dict, edit: dict) -> None:
     else:
         try:
             if isinstance(parent, list):
-                del parent[int(last)]
+                del parent[_index(last)]
             else:
                 del parent[last]
-        except (KeyError, ValueError, IndexError, TypeError):
+        except (KeyError, IndexError, TypeError):
             raise BoundaryError("INVALID_RECORD", f"경로를 찾을 수 없다: {path}")
 
 

@@ -1,4 +1,5 @@
-"""문항 저장소 추상. I1 QuestionReader의 읽기 논리는 여기 한 곳에 있고, 구현(메모리, SQLite)은 원시 연산만 낸다.
+"""문항 저장소 컴포넌트. I1 QuestionReader의 읽기 논리와 보존·정리(purge)는 여기 한 곳에 있고, 백엔드(메모리, SQLite, PostgreSQL)는
+원시 연산과 쓰기 연산만 낸다(wiring이 주입).
 
 쓰기 연산(commit_version, add_review, 초안, 원본 자료)은 저작 서비스만 부른다. 이웃 영역에는 읽기 전용 `reader()`
 뷰(QuestionReader)만 내보낸다.
@@ -11,6 +12,8 @@ from typing import Optional
 from boundary_contracts import canonical
 from boundary_contracts.errors import BoundaryError
 
+# 쪽 하나의 최대 크기. HTTP 읽기 면은 limit을 500까지만 받는다(link_authoring_server._page). 이 값(1000)은 저장소를 직접 부르는 호출(이웃 시험의 메모리 구현 등)이
+# 한 번에 메모리를 크게 쥐지 않게 하는 방어 상한이다. 측정한 값이 아니라 HTTP 상한의 두 배로 잡은 판단값이다(근거 기록 없음, D89 한계)
 MAX_LIMIT = 1000
 
 

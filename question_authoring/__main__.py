@@ -38,6 +38,7 @@ from datetime import datetime, timedelta, timezone
 from boundary_contracts import read_secret
 
 from .components.link_authoring_server import Api, Actor, close_all, drain, make_server
+from .components.link_failures_read import http_failure_source
 from .components.question_store import QuestionStore as AuthoringStore
 from .wiring import contract
 from .wiring.deadline import DEFAULT_REQUEST_DEADLINE_SECONDS, RequestDeadline
@@ -135,9 +136,8 @@ def build() -> tuple[Api, AuthoringStore]:
     warnings = ([] if two else ["two_person_disabled"])
     signals = None
     if env.get("QA_FAILURES_URL"):
-        from boundary_contracts.clients import HttpFailureStore   # 진입점에서 이웃 클라이언트를 만들어 서비스에 넘긴다(읽기는 link_failures_read가 한다)
-        signals = HttpFailureStore(env["QA_FAILURES_URL"], read_secret(env.get("QA_FAILURES_TOKEN_ENV", "QA_FAILURES_TOKEN")) or "",
-                                   timeout=_seconds("QA_FAILURES_TIMEOUT_SECONDS", 5.0))
+        signals = http_failure_source(env["QA_FAILURES_URL"], read_secret(env.get("QA_FAILURES_TOKEN_ENV", "QA_FAILURES_TOKEN")) or "",
+                                      _seconds("QA_FAILURES_TIMEOUT_SECONDS", 5.0))    # 이웃 HTTP 클라이언트는 통신 컴포넌트가 만든다
     return Api(svc, tokens, read_tokens=read_tokens, signals=signals, ready=store.is_ready, db_kind=getattr(store, "kind", None),
                signals_deadline=_seconds("QA_SIGNALS_DEADLINE_SECONDS", 20.0), gateway_tokens=gateway_tokens,
                user_roles=user_roles, warnings=warnings, deadline=deadline), store

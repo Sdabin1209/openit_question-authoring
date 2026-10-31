@@ -99,3 +99,18 @@ def test_registry_pluggable(store):
     assert c["status"] == "FALLBACK"
     d = svc.ingest_material(AUTHOR, "qs-x", "a.txt", example_text(), extractor="nope")
     assert d["status"] == "FALLBACK"
+
+
+def test_edit_paths_accept_only_json_pointer_array_positions():
+    """배열 위치는 0 또는 앞에 0이 없는 10진수다(RFC 6901). int()가 받던 '-1'(뒤에서부터), ' 1', '+1', '01'로 엉뚱한 원소를 고치지 않는다."""
+    from question_authoring.components.draft_edit import apply_edit
+    from boundary_contracts.errors import BoundaryError
+    bank = {"questions": [{"name": "A"}, {"name": "B"}]}
+    for bad in ("-1", " 1", "+1", "01", "１", "a"):
+        for op in ("set", "remove"):
+            with pytest.raises(BoundaryError) as e:
+                apply_edit(bank, {"op": op, "path": f"/questions/{bad}", "value": {"name": "X"}})
+            assert e.value.code == "INVALID_RECORD"
+    assert bank == {"questions": [{"name": "A"}, {"name": "B"}]}      # 거부된 편집은 아무것도 고치지 않았다
+    apply_edit(bank, {"op": "set", "path": "/questions/1/name", "value": "C"})
+    assert bank["questions"][1]["name"] == "C"
