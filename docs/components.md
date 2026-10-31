@@ -1,6 +1,6 @@
 # 컴포넌트 (D117, 2026-10-30)
 
-영역의 일을 업무 단계로 나눈 결과다. 입력은 계약(boundary-contracts v3.1.1)과 [브리프](brief.md)이고, 기존 코드는 빠진 업무 규칙·거부 조건을 찾는 대조에만 썼다. 컴포넌트는 "입력 스키마 하나 -> 출력 스키마 하나"인 함수 모양이고(저장소·통신은 바깥 자원을 다루는 컴포넌트), 서로 import하지 않는다. 연결은 `question_authoring/wiring/`이 한다. 스키마 파일은 `schemas/<이름>.json`, 계약 타입은 `파일#$defs이름`으로 표시한다. 스키마 밖 조건은 [schemas/README.md](../schemas/README.md).
+영역의 일을 업무 단계로 나눈 결과다. 입력은 계약(boundary-contracts v3.1.2)과 [브리프](brief.md)이고, 기존 코드는 빠진 업무 규칙·거부 조건을 찾는 대조에만 썼다. 컴포넌트는 "입력 스키마 하나 -> 출력 스키마 하나"인 함수 모양이고(저장소·통신은 바깥 자원을 다루는 컴포넌트), 서로 import하지 않는다. 연결은 `question_authoring/wiring/`이 한다. 스키마 파일은 `schemas/<이름>.json`, 계약 타입은 `파일#$defs이름`으로 표시한다. 스키마 밖 조건은 [schemas/README.md](../schemas/README.md).
 
 ## 업무 흐름
 

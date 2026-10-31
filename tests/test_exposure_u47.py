@@ -102,8 +102,8 @@ def test_build_image_attaches_the_declaration_as_label(tmp_path):
     (src / "deploy-exposure.json").write_text((ROOT / "deploy-exposure.json").read_text(encoding="utf-8"))
     (src / "deploy-jobs.json").write_text((ROOT / "deploy-jobs.json").read_text(encoding="utf-8"))
     write_lock(src)
-    req = {"source_dir": str(src), "revision": "abcdef1", "versions": {"boundary": "v3.1.1", "survey_schema": "v3.0.0"},
-           "dependency_sources": {"boundary": make_tree(tmp_path / "bc", "boundary_contracts", "3.1.1"), "survey_schema": make_tree(tmp_path / "ss", "openit_survey_schema", "3.0.0")},
+    req = {"source_dir": str(src), "revision": "abcdef1", "versions": {"boundary": "v3.1.2", "survey_schema": "v3.0.0"},
+           "dependency_sources": {"boundary": make_tree(tmp_path / "bc", "boundary_contracts", "3.1.2"), "survey_schema": make_tree(tmp_path / "ss", "openit_survey_schema", "3.0.0")},
            "image_tag": "question-authoring-test/q:t1"}
     fake = tmp_path / "docker"
     fake.write_text(FAKE_DOCKER.replace("__SHA__", SHA))

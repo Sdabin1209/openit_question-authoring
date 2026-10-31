@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 미배포 (2026-10-31) U431: 고정 갱신
+
+- boundary-contracts v3.1.1 → v3.1.2(스키마 변경 없음), openit-link v0.4.1 → v0.4.2(`requirements.lock`, `scripts/build_wheels.sh`, 시험의 표본). 문진 스키마 survey-schema-v3.0.0은 그대로. 이 영역은 model-runtime을 쓰지 않는다.
+
 ## 미배포 (2026-10-31) U430: 생산자 검증 빠짐 2건과 점검에서 찾은 결함
 
 - 잡 선언(계약 JobsDeclaration): 리포 루트 `deploy-jobs.json`(purge 잡)이 정본이고, `scripts/build-image.sh`가 내보내기 전에 계약으로 검증해 이미지 라벨 `io.openit.jobs`로 단다. 어기면 라벨을 달지 않고 종료 코드 2로 실패한다(`tests/test_jobs_declaration.py`).
