@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 미배포 (2026-10-31) U424
+
+- `wiring/contract.py`의 `check_ext`를 지웠다: 호출처가 없는 죽은 함수였다(전체 소스·시험 검색으로 확인). 생산자 검증은 이미 컴포넌트 출력 스키마(`ChangeRecord`, `ConfirmFinalizeResult`, `ReviewFollowupResult`)가 ReviewExt·ChangeExt까지 한다. 동작 변화 없음.
+
 ## 미배포 (2026-10-31) U422: 시험에서 실제 시간을 없앤다
 
 - 동작 코드: 컴포넌트가 시간을 직접 읽지 않고 시계를 주입받는다(ADR 0024): 추출기 시간 예산, 개선 신호 읽기 총 마감, 종료 유예(`drain`), 저장소 시각·감시 타이머·/readyz 기다림. 실제 시계는 wiring과 진입점이 넣는다. 와이어 형식·HTTP 응답·잡 출력은 그대로다.

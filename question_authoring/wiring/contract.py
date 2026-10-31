@@ -1,4 +1,4 @@
-"""경계 계약 스키마(boundary-contracts, D107 승격)로 요청·응답·ext·배포 인터페이스를 검사한다.
+"""경계 계약 스키마(boundary-contracts, D107 승격)로 요청·응답·배포 인터페이스를 검사한다(ext는 컴포넌트 출력 스키마가 검사한다).
 
 왜 한 곳: 손으로 키와 형식을 검사하던 코드는 스키마와 어긋나도 아무것도 깨지지 않았다. 계약 스키마가 정본이고
 이 모듈은 이름으로 검증기를 찾아 쓰기만 한다(스키마 사본을 두지 않는다, 워크스페이스 규칙).
@@ -46,13 +46,6 @@ def check_response(schema: str, def_name: Optional[str], value: Any) -> Any:
     if errs:
         raise ResponseContractError(f"{schema}{'.' + def_name if def_name else ''} 위반: {errs[0]}")
     return value
-
-
-def check_ext(def_name: str, value: Any) -> None:
-    """ReviewRecord.ext / ChangeClassification.ext의 question-authoring 값(ReviewExt, ChangeExt)을 쓰기 전에 검사한다."""
-    errs = problems("QuestionAuthoringExt", def_name, value)
-    if errs:
-        raise BoundaryError("INVALID_RECORD", f"QuestionAuthoringExt.{def_name} 위반: {errs[0]}", {"errors": errs[:20]})
 
 
 def environment_problems(env: dict) -> list[str]:
