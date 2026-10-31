@@ -32,7 +32,7 @@ def make_tree(path, name, version="1.0"):
 
 LOCK = ("boundary-contracts @ git+ssh://git@github.com/x/openit_boundary-contracts.git@v3.1.2\n"
         "openit-survey-schema @ git+ssh://git@github.com/x/openit_survey-service.git@survey-schema-v3.0.0#subdirectory=schema\n"
-        "openit-link @ git+ssh://git@github.com/x/openit_link.git@v0.4.2\n")
+        "openit-link @ git+ssh://git@github.com/x/openit_link.git@v0.4.3\n")
 
 
 def write_lock(src, text=LOCK):

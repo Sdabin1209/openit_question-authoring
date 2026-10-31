@@ -2,7 +2,7 @@
 
 ## 미배포 (2026-10-31) U431: 고정 갱신
 
-- boundary-contracts v3.1.1 → v3.1.2(스키마 변경 없음), openit-link v0.4.1 → v0.4.2(`requirements.lock`, `scripts/build_wheels.sh`, 시험의 표본). 문진 스키마 survey-schema-v3.0.0은 그대로. 이 영역은 model-runtime을 쓰지 않는다.
+- boundary-contracts v3.1.1 → v3.1.2(스키마 변경 없음), openit-link v0.4.1 → v0.4.3(v0.4.2는 계약 v3.1.1을 고정해 v3.1.2와 함께 설치되지 않았다)(`requirements.lock`, `scripts/build_wheels.sh`, 시험의 표본). 문진 스키마 survey-schema-v3.0.0은 그대로. 이 영역은 model-runtime을 쓰지 않는다.
 
 ## 미배포 (2026-10-31) U430: 생산자 검증 빠짐 2건과 점검에서 찾은 결함
 
