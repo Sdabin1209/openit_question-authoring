@@ -19,8 +19,8 @@
       "upstream_token": "qa-gateway-token",
       "user_header": "set",
       "timeouts_ms": {
-        "dial": 2000,
-        "response_header": 15000
+        "dial": 1000,
+        "response_header": 13000
       }
     },
     {
@@ -42,8 +42,8 @@
       "upstream_token": "qa-gateway-token",
       "user_header": "set",
       "timeouts_ms": {
-        "dial": 2000,
-        "response_header": 15000
+        "dial": 1000,
+        "response_header": 13000
       }
     },
     {

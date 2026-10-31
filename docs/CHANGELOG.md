@@ -1,5 +1,10 @@
 # 변경 이력
 
+## 미배포 (2026-10-31) U427: 노출 선언 시한 갱신
+
+- `deploy-exposure.json`: 저작 경로(`/v1/materials`, `/v1/reviews`, `/v1/drafts`, `/v1/drafts/*`)의 `timeouts_ms`를 `{dial: 1000, response_header: 13000}`로(deploy ADR 0048, D119 시간 사슬). 값은 선언일 뿐 서버 동작은 그대로다.
+- 서버 쪽 최악 시간과 비교(설정 값, 실제 시간 재지 않음): PostgreSQL 운영 구성에서 큰 자료 쓰기 문장 하나가 최악 31초(상한 30초 + 감시 1초), 자료 올리기는 원본·초안 두 번이라 62초로 13초보다 길다. 일반 문장 하나는 4초로 짧다. 헤드가 사슬을 다시 정한다(`tests/test_exposure_timeouts.py`가 값을 고정). model-runtime은 이 영역이 쓰지 않아 고정 변경 없음.
+
 ## 미배포 (2026-10-31) U424
 
 - `wiring/contract.py`의 `check_ext`를 지웠다: 호출처가 없는 죽은 함수였다(전체 소스·시험 검색으로 확인). 생산자 검증은 이미 컴포넌트 출력 스키마(`ChangeRecord`, `ConfirmFinalizeResult`, `ReviewFollowupResult`)가 ReviewExt·ChangeExt까지 한다. 동작 변화 없음.
