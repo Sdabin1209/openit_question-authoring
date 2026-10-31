@@ -57,8 +57,10 @@ class AuthoringService:
                  require_two_person: bool = True,
                  clock: Callable = now_default,
                  monotonic: Callable[[], float] = time.monotonic,
+                 deadline=None,
                  new_id: Callable[[str], str] = new_id_default):
         self.store = store
+        self._deadline = deadline       # RequestDeadline | None: 요청 전체 마감(D120). 쓰기 직전마다 확인한다
         self._monotonic = monotonic     # 마감 판단용 단조 시계(주입). 시각(clock)과 다르다
         self.extractors = [_with_clock(e, monotonic) for e in extractors]
         self.author_roles = frozenset(author_roles)
@@ -112,7 +114,12 @@ class AuthoringService:
             raise BoundaryError("NOT_FOUND", f"초안이 없다: {draft_id}")
         return d
 
+    def _check_deadline(self, what: str) -> None:
+        if self._deadline is not None:
+            self._deadline.check(what)
+
     def _save(self, d: dict) -> None:
+        self._check_deadline("초안 저장")
         self.store.save_draft(d)
 
     def _touch(self, d: dict) -> None:
@@ -217,6 +224,7 @@ class AuthoringService:
             p = Path(td) / "material"
             p.write_bytes(bytes(data))
             source_hash = canonical.file_hash(p)
+        self._check_deadline("원본 자료 저장")
         self.store.put_source(source_hash, filename, bytes(data))
         d = self.create_draft(actor, question_set_id, base_version=base_version)
         ex, why = self._select(filename, bytes(data), extractor)
@@ -277,6 +285,7 @@ class AuthoringService:
         if plan["reserved_now"]:
             # 번호와 시각은 처음 시도에서 예약해 재시도해도 같은 레코드가 나오게 한다
             d["confirming"] = plan["reservation"]
+            self._check_deadline("번호 예약")
             self.store.save_draft(d)
         bank = copy.deepcopy(d["bank"])
         bank["version"] = n
@@ -298,6 +307,7 @@ class AuthoringService:
                 self.store.save_draft(d)
             raise
         review = fin["review"]
+        self._check_deadline("버전 저장")     # 마감을 넘겼으면 저장하지 않는다(반쯤 쓴 상태 없음). 같은 확인 요청을 다시 보내면 예약한 번호로 이어진다
         try:
             self.store.commit_version(bank, ref, review, change, d["source"] or {"kind": "screen"})
         except BoundaryError as e:
@@ -309,7 +319,7 @@ class AuthoringService:
             raise
         d["status"], d["confirmed"] = "CONFIRMED", {"ref": ref, "preview_hash": preview_hash, "review_id": review["review_id"]}
         d["updated_at"] = self.now()
-        self._save(d)
+        self.store.save_draft(d)      # 버전은 이미 저장됐다: 이 기록은 마감 확인 없이 끝낸다(다시 보내도 같은 해시라 멱등)
         return ref
 
     # ---------- 이후 검수 ----------
@@ -324,6 +334,7 @@ class AuthoringService:
             "new_review_id": self._new_id("rv"), "existing_reviews": self.store.get_reviews(ref),
             "now": self.now(), "pipeline_schema_version": PIPELINE_SCHEMA_VERSION})
         if res["action"] == "STORE":
+            self._check_deadline("검수 저장")
             self.store.add_review(res["review"])
         return res["review"]
 

@@ -25,6 +25,7 @@ QA_DRAFT_RETENTION_DAYS          처리되지 않은(OPEN, DISCARDED) 초안의 
 QA_SOURCE_RETENTION_DAYS         어떤 버전·초안도 참조하지 않는 원본 자료의 보존 일수(기본 30, 양의 정수만)
 QA_FAILURES_TIMEOUT_SECONDS      I7(ops-feedback) 호출 하나의 읽기 상한(초, 기본 5)
 QA_SIGNALS_DEADLINE_SECONDS      GET /v1/signals 한 번의 총 마감(초, 기본 20)
+QA_REQUEST_DEADLINE_SECONDS      사람용 요청 하나의 서버 쪽 전체 마감(초, 기본 12.0 = gateway 응답 머리글 상한 13초 - 여유 1초, D120, ADR 0025)
 """
 import json
 import os
@@ -39,6 +40,7 @@ from boundary_contracts import read_secret
 from .components.link_authoring_server import Api, Actor, close_all, drain, make_server
 from .components.question_store import QuestionStore as AuthoringStore
 from .wiring import contract
+from .wiring.deadline import DEFAULT_REQUEST_DEADLINE_SECONDS, RequestDeadline
 from .wiring.service import AuthoringService
 from .wiring.stores import PostgresQuestionStore, SqliteQuestionStore
 
@@ -64,14 +66,14 @@ def _seconds(name: str, default: float) -> float:
     return v
 
 
-def open_store() -> AuthoringStore:
+def open_store(remaining=lambda: None) -> AuthoringStore:
     url = read_secret("QA_DATABASE_URL")
     if url:
         return PostgresQuestionStore(
             url, connect_timeout=_seconds("QA_DB_CONNECT_TIMEOUT_SECONDS", 3.0),
             statement_timeout=_seconds("QA_DB_STATEMENT_TIMEOUT_SECONDS", 3.0),
             probe_timeout=_seconds("QA_READYZ_DB_TIMEOUT_SECONDS", 2.0),
-            large_statement_timeout=_seconds("QA_DB_LARGE_STATEMENT_TIMEOUT_SECONDS", 30.0))
+            large_statement_timeout=_seconds("QA_DB_LARGE_STATEMENT_TIMEOUT_SECONDS", 30.0), remaining=remaining)
     return SqliteQuestionStore(os.environ.get("QA_DB_PATH", "/data/questions.sqlite3"))
 
 
@@ -122,13 +124,14 @@ def build() -> tuple[Api, AuthoringStore]:
     if not dev:
         if gateway_tokens and not user_roles:
             raise SystemExit("QA_GATEWAY_TOKENS가 있는데 QA_USER_ROLES가 비어 있다")
-    store = open_store()
+    deadline = RequestDeadline(time.monotonic, _seconds("QA_REQUEST_DEADLINE_SECONDS", DEFAULT_REQUEST_DEADLINE_SECONDS))   # 사람용 요청 전체 마감(D120)
+    store = open_store(deadline.remaining)
     read_tokens = {}
     for item in filter(None, (read_secret("QA_READ_TOKENS") or "").split(",")):
         role, tok = item.split("=", 1)
         read_tokens[tok] = role
     two = _bool("QA_REQUIRE_TWO_PERSON", True)
-    svc = AuthoringService(store, author_roles={"question-author"}, require_two_person=two)
+    svc = AuthoringService(store, author_roles={"question-author"}, require_two_person=two, deadline=deadline)
     warnings = ([] if two else ["two_person_disabled"])
     signals = None
     if env.get("QA_FAILURES_URL"):
@@ -137,7 +140,7 @@ def build() -> tuple[Api, AuthoringStore]:
                                    timeout=_seconds("QA_FAILURES_TIMEOUT_SECONDS", 5.0))
     return Api(svc, tokens, read_tokens=read_tokens, signals=signals, ready=store.is_ready, db_kind=getattr(store, "kind", None),
                signals_deadline=_seconds("QA_SIGNALS_DEADLINE_SECONDS", 20.0), gateway_tokens=gateway_tokens,
-               user_roles=user_roles, warnings=warnings), store
+               user_roles=user_roles, warnings=warnings, deadline=deadline), store
 
 
 def purge_once(store: AuthoringStore, now: datetime | None = None) -> dict:

@@ -30,6 +30,7 @@ def PostgresQuestionStore(*a, **kw) -> QuestionStore:   # noqa: N802
     kw.setdefault("now_ts", now_ts)
     kw.setdefault("timer", _real_timer)
     kw.setdefault("wait", _real_wait)
+    # remaining=: 요청 전체 마감까지 남은 초(wiring/deadline.py). 진입점이 RequestDeadline.remaining을 넘긴다
     return QuestionStore(store_postgres.PostgresQuestionStore(*a, **kw), schemas.check)
 
 

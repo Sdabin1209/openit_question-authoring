@@ -49,6 +49,7 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 | QA_REQUEST_TIMEOUT_SECONDS | HTTP 요청 소켓이 이 시간 멈추면 끊는다(멈춘 업로드) | 30 |
 | QA_FAILURES_TIMEOUT_SECONDS | I7 호출 하나의 읽기 상한(초) | 5 |
 | QA_SIGNALS_DEADLINE_SECONDS | `GET /v1/signals` 한 번의 총 마감(초) | 20 |
+| QA_REQUEST_DEADLINE_SECONDS | 사람용 요청 하나의 서버 쪽 전체 마감(초). 각 DB 문장은 남은 시간을 상한으로 쓰고, 넘기면 저장하지 않고 503(D120, ADR 0025) | 12 |
 | QA_READYZ_DB_TIMEOUT_SECONDS | `/readyz`의 DB 확인 상한(초) | 2 |
 
 로그는 표준 출력. 운영 데이터는 PostgreSQL 서버에 있다(서비스별 데이터베이스·계정, 이 서비스 계정에는 이 데이터베이스만 준다). SQLite 경로를 쓸 때만 `/data` 볼륨이 필요하다. `/readyz`는 DB 종류(`"db": "sqlite"|"postgres"`)만 보여주고 접속 정보는 절대 쓰지 않는다. 시작 시 스키마를 멱등하게 만든다(`CREATE TABLE IF NOT EXISTS`, advisory lock 아래). 버전·검수·변경 분류는 DB 트리거가 UPDATE/DELETE를 막는다.

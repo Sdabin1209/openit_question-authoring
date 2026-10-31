@@ -449,3 +449,50 @@ def test_postgres_purge_conditional_delete(validators):
         s._write(lambda c: c.execute("UPDATE blobs SET created_at=%s", (old,)))
         assert s._delete_blob_if_stale(h, cutoff) is True and s.get_source(h) is None
         s.close()
+
+
+# ---- 요청 전체 마감(D120, ADR 0025): 남은 시간이 각 문장의 상한으로 넘어간다(넘긴 값 확인, 시간을 재지 않는다) ----
+def test_remaining_request_time_caps_each_statement(validators, monkeypatch):
+    monkeypatch.setattr(sp.PostgresQuestionStore, "_abort", staticmethod(lambda c: c.kill()))
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema, statement_timeout=3, large_statement_timeout=30)
+        left = [2.5]
+        s._remaining = lambda: left[0]
+        seen_timers = []
+
+        class RecordingTimer:
+            def __init__(self, seconds, fn):
+                seen_timers.append(seconds)
+                self.daemon = False
+
+            def start(self):
+                pass
+
+            def cancel(self):
+                pass
+        s._timer = RecordingTimer
+        fake = FakeConn(lambda conn, sql: type("R", (), {"fetchall": lambda self: [], "fetchone": lambda self: None})())
+        s._conn = lambda: fake
+        s._q("SELECT 1")                                       # 고정 상한 3+1=4초, 남은 2.5초가 더 짧다 -> 2.5
+        s._write(lambda c: None, large=True)                    # 고정 30+1=31초 -> 2.5, 서버 쪽 문장 상한도 2500ms
+        left[0] = 100.0
+        s._q("SELECT 1")                                       # 남은 시간이 더 길면 고정 상한(4초)
+        assert seen_timers == [2.5, 2.5, 4.0]
+        assert "SET LOCAL statement_timeout = 2500" in fake.sql
+        s._conn = PostgresQuestionStore.__dict__.get("_conn") or s._conn
+        s.close()
+
+
+def test_no_statement_runs_once_the_request_deadline_has_passed(validators):
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema)
+        s._remaining = lambda: 0.0
+        called = []
+        s._conn = lambda: called.append(1)
+        with pytest.raises(BoundaryError) as e:
+            s._q("SELECT 1")
+        assert e.value.code == "UNAVAILABLE" and e.value.retryable and called == []     # 연결도 문장도 시작하지 않았다
+        with pytest.raises(BoundaryError):
+            s._write(lambda c: None)
+        assert called == []
+        s.close()

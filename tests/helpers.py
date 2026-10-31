@@ -125,3 +125,15 @@ def run_bounded(fn):
     if "e" in box:
         raise box["e"]
     return box["r"]
+
+
+class FakeMonotonic:
+    """시험이 쥔 단조 시계(U422). 시간은 advance()를 부를 때만 흐른다."""
+    def __init__(self, now=0.0):
+        self.now = now
+
+    def __call__(self):
+        return self.now
+
+    def advance(self, secs):
+        self.now += secs

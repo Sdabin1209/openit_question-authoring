@@ -52,13 +52,14 @@ class PostgresQuestionStore:
 
     kind = "postgres"
 
-    def __init__(self, url: str, *, now_ts, timer, wait, read_only: bool = False, schema: Optional[str] = None,
+    def __init__(self, url: str, *, now_ts, timer, wait, remaining=lambda: None, read_only: bool = False, schema: Optional[str] = None,
                  connect_timeout: float = DEFAULT_CONNECT_TIMEOUT, statement_timeout: float = DEFAULT_STATEMENT_TIMEOUT,
                  probe_timeout: float = DEFAULT_PROBE_TIMEOUT,
                  large_statement_timeout: float = DEFAULT_LARGE_STATEMENT_TIMEOUT):
         # 시간은 모두 주입받는다(ADR 0024): now_ts() 저장 시각 문자열, timer(초, 함수) 시간이 지나면 함수를 부르는 타이머(threading.Timer 모양: start/cancel/daemon),
         # wait(이벤트, 초) 이벤트를 최대 그 초 기다려 켜졌는지 돌려주는 함수. 컴포넌트는 시계·타이머를 직접 쓰지 않는다
         self._now_ts, self._timer, self._wait = now_ts, timer, wait
+        self._remaining = remaining   # remaining(): 요청 전체 마감까지 남은 초(없으면 None). 각 문장은 남은 시간을 상한으로 쓴다(D120, ADR 0025)
         for name, v in (("connect_timeout", connect_timeout), ("statement_timeout", statement_timeout), ("probe_timeout", probe_timeout),
                           ("large_statement_timeout", large_statement_timeout)):
             if not (isinstance(v, (int, float)) and 0 < v <= 600):
@@ -174,12 +175,17 @@ class PostgresQuestionStore:
                 timer = None
                 aborted = threading.Event()
                 try:
+                    rem = self._remaining()
+                    if rem is not None and rem <= 0:      # 마감을 넘기면 더 진행하지 않는다(트랜잭션은 시작하지 않았다)
+                        err = f"저장소 {what} 전에 요청 전체 마감을 넘었다"
+                        break
                     conn = self._conn()
 
                     def fire(c=conn):
                         aborted.set()
                         self._abort(c)
-                    timer = self._timer((budget or self.statement_timeout) + 1.0, fire)
+                    limit = (budget or self.statement_timeout) + 1.0
+                    timer = self._timer(limit if rem is None else min(limit, rem), fire)   # 남은 시간이 고정 상한보다 짧으면 남은 시간. 감시가 닫으면 서버가 트랜잭션을 되돌린다
                     timer.daemon = True
                     timer.start()
                     return op(conn)
@@ -211,8 +217,11 @@ class PostgresQuestionStore:
         def op(c):
             with c.transaction():
                 c.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
-                if large:
-                    c.execute(f"SET LOCAL statement_timeout = {int(self.large_statement_timeout * 1000)}")
+                rem = self._remaining()
+                lim = self.large_statement_timeout if large else self.statement_timeout
+                if large or rem is not None:
+                    eff = lim if rem is None else max(0.001, min(lim, rem))   # 남은 시간이 고정 상한보다 짧으면 남은 시간
+                    c.execute(f"SET LOCAL statement_timeout = {max(1, int(eff * 1000))}")
                 return fn(c)
         return self._run(op, "쓰기", budget=(self.large_statement_timeout if large else None))
 

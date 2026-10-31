@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 미배포 (2026-10-31) U428: 사람용 요청 전체 마감 (D120, ADR 0025)
+
+- 사람용 요청마다 서버 쪽 요청 전체 마감(기본 12.0초, `QA_REQUEST_DEADLINE_SECONDS`)을 둔다. 각 DB 문장은 남은 시간을 상한으로 쓰고, 마감을 넘기면 저장하지 않고 503 UNAVAILABLE(retryable)이다. 시계는 주입한다. 정상 요청의 응답 모양·상태는 그대로다. 노출 선언 시험은 U427의 알려진 간극을 "요청 전체 마감 < response_header"로 뒤집었다.
+
 ## 미배포 (2026-10-31) U427: 노출 선언 시한 갱신
 
 - `deploy-exposure.json`: 저작 경로(`/v1/materials`, `/v1/reviews`, `/v1/drafts`, `/v1/drafts/*`)의 `timeouts_ms`를 `{dial: 1000, response_header: 13000}`로(deploy ADR 0048, D119 시간 사슬). 값은 선언일 뿐 서버 동작은 그대로다.

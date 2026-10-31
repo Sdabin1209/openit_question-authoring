@@ -4,6 +4,7 @@ handle()은 소켓 없이 시험할 수 있는 입구이고, app이 WSGI 앱, ma
 """
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
 import json
 import re
@@ -68,13 +69,14 @@ class Api:
                  read_tokens: Optional[Mapping[str, str]] = None, signals=None, ready: Callable[[], bool] = lambda: True,
                  db_kind: Optional[str] = None, signals_deadline: Optional[float] = 20.0,
                  gateway_tokens: Optional[Iterable[str]] = None, user_roles: Optional[Mapping[str, str]] = None,
-                 warnings: Optional[list] = None):
+                 warnings: Optional[list] = None, deadline=None):
         self.signals_deadline = signals_deadline
         # gateway 경유 인증(D88 E2): gateway가 사람 인증을 마치고 서비스 토큰(gateway_tokens)과 X-Openit-User를 붙인다.
         # 사람의 역할은 이 서비스의 user_roles(사용자 ID -> 역할) 표가 정한다. 헤더를 믿는 것은 gateway 토큰을 가진 호출뿐이다.
         self.user_roles = dict(user_roles or {})
         self.warnings = list(warnings or [])
         self.svc = service
+        self.deadline = deadline        # RequestDeadline | None: 사람용 요청 전체 마감(D120, ADR 0025). 요청마다 scope()로 시작한다
         self.signals = signals                         # FailureSource | None (I7 미설정이면 None)
         self.ready = ready
         self.db_kind = db_kind                         # 'sqlite' | 'postgres' (종류만. 접속 정보는 절대 쓰지 않는다)
@@ -133,7 +135,8 @@ class Api:
     def _wrap(self, fn):
         def handler(req):
             try:
-                return Response(200, fn(req, self._actor(req)))
+                with (self.deadline.scope() if self.deadline is not None else contextlib.nullcontext()):
+                    return Response(200, fn(req, self._actor(req)))
             except BoundaryError:
                 raise
             except ResponseContractError as e:   # 서버 결함: 계약을 어긴 응답은 내보내지 않는다. 메시지는 위치와 규칙 이름뿐이다
