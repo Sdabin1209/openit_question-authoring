@@ -134,48 +134,46 @@ def test_non_connection_errors_are_not_retried(validators):
 
 
 # ---- DB 대기 상한 (FAULT_MATRIX P0-3 / E1) ----
-import subprocess
+# U422: PostgreSQL이 statement_timeout에 문장을 자르는가, psycopg가 접속 시한에 포기하는가, docker pause로 얼린 서버가 어떻게 보이는가는
+# 라이브러리·서버의 동작이라 영역 시험이 아니다(smoke·E2E의 몫). 영역의 책임은 (1) 서버·DB·클라이언트에 올바른 값을 넘기는가
+# (2) 시간 초과·연결 실패 예외가 났을 때 우리 결과(UNAVAILABLE, 재시도 여부, 비밀 비노출)가 맞는가이다. 아래 시험은 시간을 재지 않는다.
 import threading
-import time
-from urllib.parse import urlparse
 
-BLACKHOLE = "postgresql://qa:SECRET-dbpw-5e1f@10.255.255.1:5432/q"   # 응답하지 않는 주소(SYN을 버린다)
-
-
-def _container_of(url):
-    """TEST_DATABASE_URL의 호스트 포트를 게시한 docker 컨테이너 이름. docker가 없거나 못 찾으면 SKIP."""
-    port = urlparse(url).port
-    try:
-        rows = subprocess.run(["docker", "ps", "--format", "{{.Names}}\t{{.Ports}}"],
-                              capture_output=True, text=True, timeout=20).stdout.splitlines()
-        out = [r.split("\t")[0] for r in rows if f":{port}->5432" in r]
-    except (OSError, subprocess.TimeoutExpired):
-        out = []
-    if not out:
-        pytest.skip("TEST_DATABASE_URL의 컨테이너를 docker에서 찾지 못해 pause 시험 건너뜀")
-    return out[0]
+from helpers import HANG_GUARD_SECONDS, wait_until
+from question_authoring.components import store_postgres as sp
 
 
-@pytest.fixture
-def paused(request):
-    """docker pause로 PostgreSQL을 얼린다(TCP는 받되 응답이 없다). 끝나면 반드시 되돌린다."""
-    state = {"name": None}
+class FakeConn:
+    """psycopg 연결 대역. behavior(sql)이 예외를 던지거나 값을 돌려준다. 실제 소켓·시계를 쓰지 않는다."""
+    closed = False
+    broken = False
 
-    def pause(url):
-        state["name"] = _container_of(url)
-        subprocess.run(["docker", "pause", state["name"]], check=True, capture_output=True, timeout=30)
+    def __init__(self, behavior):
+        self.behavior, self.sql, self.dead = behavior, [], threading.Event()
 
-    def resume():
-        if state["name"]:
-            subprocess.run(["docker", "unpause", state["name"]], capture_output=True, timeout=30)
-            state["name"] = None
-    request.addfinalizer(resume)
-    pause.resume = resume
-    return pause
+    def fileno(self):
+        return -1
+
+    def kill(self):
+        self.dead.set()
+
+    def transaction(self):
+        import contextlib
+        return contextlib.nullcontext()
+
+    def execute(self, sql, args=()):
+        self.sql.append(sql)
+        return self.behavior(self, sql)
+
+    def fetchall(self):
+        return []
+
+    def close(self):
+        self.closed = True
 
 
 def test_timeout_settings_are_validated():
-    for bad in (0, -1, 601, "3"):
+    for bad in (0, -1, 601, "3", None):
         with pytest.raises(ValueError):
             PostgresQuestionStore("postgresql://u@h/d", connect_timeout=bad)
     with pytest.raises(ValueError):
@@ -189,46 +187,120 @@ def test_server_side_statement_timeout_is_set(validators):
         s.close()
 
 
-def test_slow_statement_is_cut_by_server_timeout(validators):
+def test_limits_are_passed_to_the_driver(validators):
+    """(1) 넘기는 값: 접속 인자(접속 시한, 서버 쪽 문장 상한)와 /readyz 확인 연결의 인자."""
     with pg_schema() as (url, schema):
-        s = PostgresQuestionStore(url, schema=schema, statement_timeout=1)
-        t = time.monotonic()
+        s = PostgresQuestionStore(url, schema=schema, connect_timeout=2, statement_timeout=3, probe_timeout=4, large_statement_timeout=9)
+        p = s._params(s.connect_timeout, s.statement_timeout)
+        assert p["connect_timeout"] == 2 and "-c statement_timeout=3000" in p["options"]
+        seen = {}
+
+        def fake_connect(**kw):
+            seen.update(kw)
+            raise sp.psycopg.OperationalError("연결 대역")
+        orig = sp.psycopg.connect
+        sp.psycopg.connect = fake_connect
+        try:
+            assert s.is_ready() is False                                      # 연결이 안 되면 준비되지 않은 것이다
+        finally:
+            sp.psycopg.connect = orig
+        assert seen["connect_timeout"] == 4 and "-c statement_timeout=4000" in seen["options"]   # 확인 연결은 probe_timeout을 쓴다
+        s.close()
+
+
+def test_large_write_uses_the_large_statement_limit_and_plain_write_does_not(validators):
+    """(1) 큰 자료 경로만 문장 상한이 large_statement_timeout으로 바뀐다. 트리거가 삽입 순간의 상한 값을 적는다(시간이 아니라 설정 값을 본다)."""
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema, statement_timeout=0.5, large_statement_timeout=5)
+        with psycopg.connect(url, autocommit=True, options=f"-c search_path={schema}") as c:
+            c.execute("CREATE TABLE stmt_log(v text)")
+            c.execute("CREATE FUNCTION log_stmt() RETURNS trigger AS $$ BEGIN INSERT INTO stmt_log VALUES (current_setting('statement_timeout')); RETURN NEW; END $$ LANGUAGE plpgsql")
+            c.execute("CREATE TRIGGER log_stmt BEFORE INSERT ON blobs FOR EACH ROW EXECUTE FUNCTION log_stmt()")
+            s.put_source("sha256:" + "a" * 64, "f.txt", b"data")
+            assert c.execute("SELECT v FROM stmt_log").fetchall() == [("5s",)]            # 큰 자료 경로: large_statement_timeout
+        assert s._write(lambda c2: c2.execute("SELECT current_setting('statement_timeout')").fetchone())[0] == "500ms"   # 일반 쓰기: statement_timeout
+        s.close()
+
+
+@pytest.mark.parametrize("exc", [sp.psycopg.errors.QueryCanceled, sp.psycopg.errors.LockNotAvailable])
+def test_server_side_timeout_is_unavailable_and_not_retried(validators, exc):
+    """(2) 서버가 문장을 시간 초과로 취소했을 때(문장 상한, 락 대기): UNAVAILABLE이고 같은 호출을 다시 걸지 않는다."""
+    with pg_schema() as (url, schema):
+        s = PostgresQuestionStore(url, schema=schema)
+        calls = []
+
+        def behavior(conn, sql):
+            calls.append(sql)
+            raise exc("취소 대역")
+        fake = FakeConn(behavior)
+        s._conn = lambda: fake
         with pytest.raises(BoundaryError) as e:
-            s._q("SELECT pg_sleep(30)")
-        # 상한(1초)이 끊었다 = 30초짜리 문장을 기다리지 않았다. 20초는 부하 여유이고 의미를 지킨다
-        assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < 20
-        assert s._q("SELECT 1") == [(1,)]
+            s._q("SELECT 1")
+        assert e.value.code == "UNAVAILABLE" and e.value.retryable and len(calls) == 1
+        s._conn = PostgresQuestionStore.__dict__.get("_conn", None) and s._conn
         s.close()
 
 
-def test_lock_wait_in_write_is_bounded(validators):
-    """다른 세션이 쓰기 직렬화 락을 쥐고 있으면 쓰기는 statement_timeout 안에 UNAVAILABLE이 된다. 읽기는 영향이 없다."""
-    from question_authoring.components.store_postgres import _LOCK_KEY
+class ImmediateTimer:
+    """threading.Timer 대역: start()하면 곧바로 시한이 지난 것으로 보고 함수를 부른다. 넘겨받은 초를 기록한다."""
+    seconds = []
+
+    def __init__(self, seconds, fn):
+        ImmediateTimer.seconds.append(seconds)
+        self.fn, self.daemon = fn, False
+
+    def start(self):
+        self.fn()
+
+    def cancel(self):
+        pass
+
+
+def test_frozen_server_is_cut_by_the_clients_own_watchdog(validators, monkeypatch):
+    """서버가 얼어 응답이 없으면 서버 쪽 상한은 소용없다. 우리 감시 타이머가 시한(문장 상한 + 1초, 큰 자료는 큰 상한 + 1초)에 소켓을 닫아 UNAVAILABLE로 끝낸다.
+    시험은 타이머를 주입해 시한이 '지났다'고 하고, 넘긴 시한 값과 결과를 본다. docker pause도 실제 시간도 쓰지 않는다."""
+    monkeypatch.setattr(sp.PostgresQuestionStore, "_abort", staticmethod(lambda c: c.kill()))
     with pg_schema() as (url, schema):
-        s = PostgresQuestionStore(url, schema=schema, statement_timeout=1)
-        ref = publish(AuthoringService(s))
-        with psycopg.connect(url, autocommit=True) as holder:
-            holder.execute("BEGIN")
-            holder.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
-            t = time.monotonic()
-            with pytest.raises(BoundaryError) as e:
-                s.add_review({"question_set": ref, "review_id": "rv-x"})
-            # 락은 풀리지 않는다: 상한(1초)이 끊지 않았다면 영원히 기다린다. 20초는 부하 여유이고 의미를 지킨다
-            assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < 20
-            assert s.latest("qs-main") == ref
-            holder.execute("ROLLBACK")
+        s = PostgresQuestionStore(url, schema=schema, statement_timeout=2, large_statement_timeout=7)
+        s._timer = ImmediateTimer                                           # 만든 뒤에 바꾼다(만드는 동안 실제 연결을 건드리지 않게)
+        ImmediateTimer.seconds.clear()
+
+        def hang_until_killed(conn, sql):
+            conn.dead.wait(HANG_GUARD_SECONDS)                              # 매달림 감시: 감시 타이머가 닫으면 곧바로 풀린다
+            raise sp.psycopg.OperationalError("소켓이 닫혔다")
+        fake = FakeConn(hang_until_killed)
+        s._conn = lambda: fake
+        with pytest.raises(BoundaryError) as e:
+            s._q("SELECT 1")
+        assert e.value.code == "UNAVAILABLE" and "시간 초과" in e.value.message and len(fake.sql) == 1   # 다시 걸지 않는다
+        with pytest.raises(BoundaryError):
+            s._write(lambda c: None, large=True)
+        assert ImmediateTimer.seconds == [3.0, 8.0]                         # 일반 읽기 2+1, 큰 자료 쓰기 7+1
         s.close()
+
+
+def test_readyz_gives_up_when_the_probe_does_not_answer(validators):
+    """/readyz 확인이 probe_timeout 안에 끝나지 않으면 준비되지 않은 것으로 답한다. 기다림을 주입한 함수로 '시한이 지났다'고 한다."""
+    with pg_schema() as (url, schema):
+        asked = []
+        s = PostgresQuestionStore(url, schema=schema, probe_timeout=4, wait=lambda ev, secs: (asked.append(secs), False)[1])
+        assert s.is_ready() is False and asked == [4.0]
+        s.close()
+        ok = PostgresQuestionStore(url, schema=schema)
+        assert ok.is_ready() is True                                         # 같은 DB, 실제 기다림: 준비됨
+        ok.close()
 
 
 def test_readyz_probe_does_not_wait_for_main_connection_or_lock(validators):
-    """주 연결이 쓰기(락 대기)에 묶여 있어도 is_ready는 즉시 True다."""
+    """주 연결이 쓰기(락 대기)에 묶여 있어도 is_ready는 돌아온다(별도 연결). 순서는 조건으로 정한다: 쓰기가 락을 기다리는 것이 보인 뒤에 확인한다."""
     from question_authoring.components.store_postgres import _LOCK_KEY
     with pg_schema() as (url, schema):
-        s = PostgresQuestionStore(url, schema=schema, statement_timeout=60)   # 쓰기가 holder를 풀 때까지 락을 기다리게 둔다
+        s = PostgresQuestionStore(url, schema=schema, statement_timeout=HANG_GUARD_SECONDS)   # 쓰기가 holder를 풀 때까지 락을 기다리게 둔다
         ref = publish(AuthoringService(s))
         with psycopg.connect(url, autocommit=True) as holder:
             holder.execute("BEGIN")
             holder.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
+
             def blocked_write():
                 try:
                     s.add_review({"question_set": ref, "review_id": "rv-y"})
@@ -236,104 +308,39 @@ def test_readyz_probe_does_not_wait_for_main_connection_or_lock(validators):
                     pass
             th = threading.Thread(target=blocked_write)
             th.start()
-            time.sleep(0.5)                                  # 쓰기가 self._lock과 주 연결을 쥔 채 락을 기다리는 중
+            wait_until(lambda: holder.execute("SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND NOT granted").fetchone()[0] == 1,
+                       "쓰기가 락을 기다림")
             assert s.is_ready() is True
-            assert th.is_alive()                             # 쓰기는 아직 락을 기다리는 중 = is_ready가 쓰기를 기다리지 않았다(시간이 아닌 상태로 판정)
+            assert th.is_alive()                             # 쓰기는 아직 락을 기다리는 중 = is_ready가 쓰기를 기다리지 않았다
             holder.execute("ROLLBACK")
-            th.join(10)
+            th.join(HANG_GUARD_SECONDS)
         s.close()
 
 
-def test_readyz_503_within_limit_when_unreachable_then_recovers(validators):
-    with pg_schema() as (url, schema):
-        s = PostgresQuestionStore(url, schema=schema)
-        assert s.is_ready() is True
-        good = s._url
-        s._url = BLACKHOLE
-        t = time.monotonic()
-        assert s.is_ready() is False
-        assert time.monotonic() - t < 20                     # 기본 2초가 끊었다 = 도달 불가 서버를 OS 접속 시간 초과(분 단위)까지 기다리지 않았다. 20초는 부하 여유
-        s._url = good
-        assert s.is_ready() is True
-        s.close()
+def test_connect_failure_is_unavailable_without_secrets(monkeypatch):
+    """(2) 접속 실패(접속 시한 초과 포함)는 UNAVAILABLE이고 접속 문자열의 비밀이 오류·문맥에 남지 않는다."""
+    secret_url = "postgresql://qa:SECRET-dbpw-5e1f@db.invalid:5432/q"
 
-
-def test_connect_is_bounded_when_unreachable():
-    t = time.monotonic()
+    def fake_migrate(params):
+        raise sp.psycopg.OperationalError(f"connection timeout expired {secret_url}")
+    monkeypatch.setattr(sp, "migrate_postgres", fake_migrate)
+    monkeypatch.setattr(sp.psycopg, "connect", lambda **kw: (_ for _ in ()).throw(sp.psycopg.errors.ConnectionTimeout(f"timeout {secret_url}")))
     with pytest.raises(BoundaryError) as e:
-        PostgresQuestionStore(BLACKHOLE, connect_timeout=2)
-    assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < 30    # 접속 상한 2초가 끊었다(OS 기본은 분 단위). 30초는 부하 여유
+        PostgresQuestionStore(secret_url, connect_timeout=2)
+    assert e.value.code == "UNAVAILABLE"
     assert "SECRET-dbpw-5e1f" not in repr(e.value) + str(e.value.to_record()) and e.value.__context__ is None
 
 
-def test_frozen_server_readyz_503_and_request_path_bounded_then_recovers(validators, paused):
-    """docker pause: TCP는 받되 응답이 없다. 주 연결이 이미 열려 있는 경우(요청 경로)와 새 접속(/readyz 확인) 모두."""
-    with pg_schema() as (url, schema):
-        s = PostgresQuestionStore(url, schema=schema, statement_timeout=2, probe_timeout=2)
-        ref = publish(AuthoringService(s))
-        paused(url)
-        try:
-            t = time.monotonic()
-            assert s.is_ready() is False
-            probe_secs = time.monotonic() - t
-            assert probe_secs < 30, probe_secs                # 얼어붙은 서버를 무한정 기다리지 않았다(상한 2초). 30초는 부하 여유
-            t = time.monotonic()
-            with pytest.raises(BoundaryError) as e:         # 열려 있던 주 연결로 읽기: 서버가 얼어 서버 쪽 timeout은 못 듣는다 -> 클라이언트가 끊는다
-                s.latest("qs-main")
-            read_secs = time.monotonic() - t
-            assert e.value.code == "UNAVAILABLE" and read_secs < 30, read_secs
-            t = time.monotonic()
-            with pytest.raises(BoundaryError):               # 새 접속도 connect_timeout 안에 포기
-                s.latest("qs-main")
-            assert time.monotonic() - t < 30
-        finally:
-            paused.resume()
-        deadline = time.monotonic() + 15                     # 복구: 서비스를 다시 띄우지 않아도 다시 쓸 수 있다
-        while not s.is_ready() and time.monotonic() < deadline:
-            time.sleep(0.5)
-        assert s.is_ready() is True
-        assert s.latest("qs-main") == ref
-        s.close()
-
-
-# ---- 큰 자료 경로의 별도 상한, 원자성, 재시작 (E2 보강) ----
-def _slow_blob_trigger(c, ms):
-    c.execute(f"CREATE FUNCTION slow_blob() RETURNS trigger AS $$ BEGIN PERFORM pg_sleep({ms / 1000}); RETURN NEW; END $$ LANGUAGE plpgsql")
-    c.execute("CREATE TRIGGER slow_blob BEFORE INSERT ON blobs FOR EACH ROW EXECUTE FUNCTION slow_blob()")
-
-
-def test_large_path_has_its_own_statement_limit(validators):
-    """원본 자료 삽입이 일반 문장 상한(여기 0.5초)보다 오래 걸려도 큰 자료 상한 안이면 성공한다. 같은 지연의 일반 쓰기는 끊긴다."""
-    with pg_schema() as (url, schema):
-        s = PostgresQuestionStore(url, schema=schema, statement_timeout=0.5, large_statement_timeout=5)
-        with psycopg.connect(url, autocommit=True, options=f"-c search_path={schema}") as c:
-            _slow_blob_trigger(c, 1200)
-        t = time.monotonic()
-        s.put_source("sha256:" + "a" * 64, "f.txt", b"data")                    # 1.2초 걸려도 성공
-        assert 1.1 < time.monotonic() - t < 60              # 아래쪽은 트리거 지연(1.2초)이 보장한다. 위쪽은 성공 여부로 판정하고 바깥 마감만 둔다
-        assert s.get_source("sha256:" + "a" * 64) == ("f.txt", b"data")
-        with pytest.raises(BoundaryError) as e:                                  # 큰 자료 경로가 아닌 문장은 0.5초에 끊긴다
-            s._write(lambda c: c.execute("SELECT pg_sleep(1.2)"))
-        assert e.value.code == "UNAVAILABLE"
-        s2 = PostgresQuestionStore(url, schema=schema, statement_timeout=0.5, large_statement_timeout=0.6)
-        with pytest.raises(BoundaryError) as e:                                  # 큰 자료 상한도 무한이 아니다
-            s2.put_source("sha256:" + "b" * 64, "g.txt", b"x")
-        assert e.value.code == "UNAVAILABLE"
-        assert s.get_source("sha256:" + "b" * 64) is None                        # 끊긴 쓰기는 남지 않는다
-        s.close(); s2.close()
-
-
-def test_max_body_sized_upload_fits_default_limit(validators):
-    """서버가 받는 본문 최대(MAX_BODY, 8MiB)를 기본 상한(문장 3초)으로 삽입한다. 정상 업로드가 끊기지 않아야 한다."""
+# ---- 큰 자료 경로의 원자성, 재시작 (E2 보강) ----
+def test_max_body_sized_upload_round_trips(validators):
+    """서버가 받는 본문 최대(MAX_BODY, 8MiB)가 큰 자료 경로로 저장되고 그대로 읽힌다. 속도는 보지 않는다(문장 상한은 매달림 감시 값)."""
     import hashlib, os
     from question_authoring.components.link_authoring_server import MAX_BODY
     with pg_schema() as (url, schema):
-        s = PostgresQuestionStore(url, schema=schema)
+        s = PostgresQuestionStore(url, schema=schema, statement_timeout=HANG_GUARD_SECONDS, large_statement_timeout=HANG_GUARD_SECONDS)
         for data in (os.urandom(MAX_BODY), b"abc def\n" * (MAX_BODY // 8)):
             h = "sha256:" + hashlib.sha256(data).hexdigest()
-            t = time.monotonic()
             s.put_source(h, "big", data)
-            assert time.monotonic() - t < 3.0
             assert s.get_source(h)[1] == data
         s.close()
 

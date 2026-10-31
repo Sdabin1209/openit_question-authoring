@@ -1,180 +1,153 @@
-"""HTTP 서버 구현을 표준 서버(waitress)로 바꿔도 지켜야 하는 성질(단위 4a, D111).
-느린 클라이언트가 다른 요청을 막지 않는다 / 멈춘 업로드는 정해진 시간에 끊긴다 /
-종료 신호에 진행 중 요청을 마치고 유예 시간이 지나면 포기한다 / 요청 수가 한도를 넘으면 기다린다."""
-import json
-import os
-import signal
-import socket
-import subprocess
-import sys
+"""HTTP 서버에 넘기는 설정과 종료 절차(단위 4a, D111; U421 정정).
+waitress가 느린 연결을 N초에 끊는가, 실제 SIGTERM에 프로세스가 끝나는가는 라이브러리·운영체제의 동작이라 영역 시험이 아니다(deploy smoke/E2E의 몫).
+이 영역의 책임은 (1) 서버에 올바른 값을 넘겼는가 (2) 우리 종료 절차(drain, close_all)가 맞게 동작하는가이다. 시간을 재지 않는다."""
 import threading
-import time
-import urllib.request
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import types
 
 import pytest
 
-from helpers import start_server
-from question_authoring.components.link_authoring_server import Api
+from helpers import HANG_GUARD_SECONDS, start_server, stop_http
+from question_authoring import __main__ as qa_main
+from question_authoring.components.link_authoring_server import MAX_BODY, Api, drain, make_server
+from question_authoring.components.link_authoring_server import close_all   # noqa: F401
 from question_authoring.wiring.service import Actor
 
-AUTH = {"Authorization": "Bearer t"}
+
+def _api(svc):
+    return Api(svc, {"t": Actor("dr-kim", "question-author")})
 
 
-class SlowI7:
-    """ops-feedback 대역: 목록 요청을 받으면 `entered`를 켜고 `release`가 켜질 때까지(최대 hold초) 붙잡았다가 빈 목록으로 답한다.
-    왜 고정 지연이 아닌가: 고정 지연은 부하에서 '요청이 이미 도착했다'·'아직 끝나지 않았다'를 보장하지 못한다. 이벤트로 순서를 정한다."""
-    def __init__(self, hold=60.0):
-        self.entered, self.release = threading.Event(), threading.Event()
-        entered, release = self.entered, self.release
-
-        class H(BaseHTTPRequestHandler):
-            def log_message(self, *a): pass
-            def do_GET(self):
-                entered.set()
-                release.wait(hold)
-                d = json.dumps({"items": [], "next_cursor": None}).encode()
-                self.send_response(200); self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(d))); self.end_headers()
-                try: self.wfile.write(d)
-                except OSError: pass
-        self.srv = ThreadingHTTPServer(("127.0.0.1", 0), H); self.srv.daemon_threads = True
-        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
-        self.url = f"http://127.0.0.1:{self.srv.server_address[1]}"
-
-    def close(self):
-        self.release.set()
-        self.srv.shutdown(); self.srv.server_close()
-
-
-def get(port, path, headers=AUTH, timeout=10):
-    req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", headers=headers)
+# ---- (1) 서버에 넘기는 값 ----
+def test_make_server_passes_the_limits_to_waitress(svc):
+    srv = make_server(_api(svc), "127.0.0.1", 0, request_timeout=7, max_concurrent=3)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return r.status
-    except urllib.error.HTTPError as e:
-        return e.code
+        a = srv.adj
+        assert a.channel_timeout == 7                    # 멈춘 연결을 끊는 시간 = 요청 무응답 상한
+        assert a.threads == 3                            # 동시 처리 요청 수 = max_concurrent (넘으면 줄 서서 기다린다)
+        assert a.max_request_body_size == MAX_BODY       # 본문 상한 초과는 헤더 단계에서 413
+        assert a.cleanup_interval == 1                   # channel_timeout이 늦게 적용되지 않게 하는 최솟값
+        assert a.clear_untrusted_proxy_headers is True
+    finally:
+        srv.close()
 
 
-def test_stalled_client_does_not_block_other_requests(svc):
-    api = Api(svc, {"t": Actor("dr-kim", "question-author")})
-    port, stop = start_server(api, request_timeout=30)
+def test_make_server_defaults(svc):
+    srv = make_server(_api(svc), "127.0.0.1", 0)
     try:
-        stalled = socket.create_connection(("127.0.0.1", port), timeout=5)
-        stalled.sendall(b"POST /v1/drafts HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer t\r\nContent-Length: 100\r\n\r\n{")
-        # 판정은 걸린 시간이 아니라 '멈춘 연결이 살아 있는 동안(서버 무응답 상한 30초) 다른 요청이 응답을 받았다'이다.
-        # 막혔다면 이 요청은 30초 뒤에야 끊기므로 읽기 상한 10초(정상은 수 밀리초, 여유 1000배 이상)에서 실패한다
-        assert get(port, "/v1/drafts", timeout=10) == 200
-        stalled.close()
+        assert srv.adj.channel_timeout == 30 and srv.adj.threads == 32
+    finally:
+        srv.close()
+
+
+def test_every_route_has_the_body_limit(svc):
+    routes = [r for r, _ in _api(svc).app._routes]
+    assert routes and all(r.max_body == MAX_BODY for r in routes)    # 라이브러리 Route.max_body도 같은 상한(초과는 413)
+
+
+def test_entry_point_passes_env_limits_to_the_server(monkeypatch, tmp_path):
+    seen = {}
+
+    def fake_make_server(api, host, port, **kw):
+        seen.update(host=host, port=port, **kw)
+        raise SystemExit(0)                              # 서버를 띄우지 않고 넘긴 값만 본다
+    monkeypatch.setattr(qa_main, "make_server", fake_make_server)
+    monkeypatch.setenv("QA_DB_PATH", str(tmp_path / "q.db"))
+    monkeypatch.setenv("QA_REQUEST_TIMEOUT_SECONDS", "7")
+    monkeypatch.setenv("QA_MAX_CONCURRENT_REQUESTS", "3")
+    monkeypatch.setenv("QA_HOST", "127.0.0.1")
+    monkeypatch.setenv("QA_PORT", "8123")
+    with pytest.raises(SystemExit):
+        qa_main.main([])
+    assert seen == {"host": "127.0.0.1", "port": 8123, "request_timeout": 7.0, "max_concurrent": 3}
+
+
+def test_entry_point_passes_signal_timeouts_to_the_api(monkeypatch, tmp_path):
+    monkeypatch.setenv("QA_DB_PATH", str(tmp_path / "q.db"))
+    monkeypatch.setenv("QA_FAILURES_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("QA_FAILURES_TOKEN", "x")
+    monkeypatch.setenv("QA_FAILURES_TIMEOUT_SECONDS", "7")
+    monkeypatch.setenv("QA_SIGNALS_DEADLINE_SECONDS", "11")
+    api, store = qa_main.build()
+    try:
+        assert api.signals._timeout == 7.0               # 호출 하나의 읽기 상한(I7 클라이언트에 넘긴 값)
+        assert api.signals_deadline == 11.0              # GET /v1/signals 한 번의 총 마감
+    finally:
+        store.close()
+
+
+# ---- (2) 종료 절차 ----
+class FakeClock:
+    """시험이 쥔 시계. 시간은 sleep을 부를 때만 흐른다(실제로 기다리지 않는다)."""
+    def __init__(self):
+        self.now = 0.0
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, secs):
+        self.now += secs
+
+
+class _Dispatcher:
+    def __init__(self, active, queue=0):
+        self.active_count, self.queue = active, [0] * queue
+
+
+def _srv(active, queue=0, outbuf=0):
+    conn = types.SimpleNamespace(total_outbufs_len=outbuf)
+    return types.SimpleNamespace(accepting=True, task_dispatcher=_Dispatcher(active, queue), _map={1: conn})
+
+
+def test_drain_stops_accepting_and_reports_requests_unfinished_after_the_grace_period():
+    clock, busy = FakeClock(), _srv(active=2, queue=1)
+    assert drain(busy, 1.0, clock=clock.monotonic, sleep=clock.sleep) == 3    # 유예(시험 시계로 1초)가 지나도 못 끝낸 요청 수: 처리 중 2 + 대기 1
+    assert busy.accepting is False                                              # 새 연결을 받지 않는다
+    assert clock.now >= 1.0                                                     # 유예를 다 기다렸다(시험 시계 기준)
+
+
+def test_drain_returns_immediately_when_nothing_is_in_flight():
+    clock, idle = FakeClock(), _srv(active=0)
+    assert drain(idle, 8.0, clock=clock.monotonic, sleep=clock.sleep) == 0 and idle.accepting is False
+    assert clock.now == 0.0                                                     # 기다리지 않았다
+
+
+def test_drain_returns_as_soon_as_in_flight_requests_finish():
+    clock, srv = FakeClock(), _srv(active=1)
+    polls = []
+
+    class Finishing:
+        queue = []
+
+        @property
+        def active_count(self):                                                 # 세 번 확인한 뒤 요청이 끝난다
+            polls.append(1)
+            return 1 if len(polls) < 3 else 0
+    srv.task_dispatcher = Finishing()
+    assert drain(srv, 8.0, clock=clock.monotonic, sleep=clock.sleep) == 0
+    assert clock.now < 8.0                                                      # 유예를 다 쓰기 전에 돌아왔다(시험 시계 기준)
+
+
+def test_drain_waits_for_pending_response_bytes_until_the_grace_period_ends():
+    clock, srv = FakeClock(), _srv(active=0, outbuf=10)                         # 요청은 끝났지만 응답이 아직 안 나갔다
+    assert drain(srv, 2.0, clock=clock.monotonic, sleep=clock.sleep) == 0
+    assert clock.now >= 2.0
+
+
+def test_close_all_ends_the_server_loop_without_any_signal(svc):
+    """근본 원인 재현(U308)의 영역 몫: 종료가 SIGINT 전달에 기대지 않는다. 서버 루프 안에서 소켓을 모두 닫으면 run()이 스스로 돌아온다."""
+    srv = make_server(_api(svc), "127.0.0.1", 0)
+    th = threading.Thread(target=srv.run, daemon=True)
+    th.start()
+    srv.trigger.pull_trigger(lambda: close_all(srv))
+    th.join(HANG_GUARD_SECONDS)                                  # 매달림 감시: 정상은 수 ms
+    assert not th.is_alive()
+    srv.task_dispatcher.shutdown(cancel_pending=True, timeout=HANG_GUARD_SECONDS)    # 매달림 감시
+
+
+def test_start_server_helper_serves_one_round_trip(svc):
+    import urllib.request
+    port, stop = start_server(_api(svc))
+    try:
+        assert urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=HANG_GUARD_SECONDS).status == 200   # 매달림 감시
     finally:
         stop()
-
-
-def test_requests_over_the_limit_wait_instead_of_failing(svc):
-    """처리 스레드가 1개일 때 두 번째 요청은 거절(이전: 503)되지 않고 첫 요청이 끝나기를 기다렸다가 정상 응답을 받는다."""
-    slow = SlowI7(hold=1.0)     # 첫 요청이 스레드를 붙잡는 시간. 두 요청 어느 순서로 끝나도 판정(둘 다 200)은 같다
-    try:
-        from boundary_contracts.clients import HttpFailureStore
-        api = Api(svc, {"t": Actor("dr-kim", "question-author")}, signals=HttpFailureStore(slow.url, "x", timeout=5))
-        port, stop = start_server(api, request_timeout=5, max_concurrent=1)
-        try:
-            codes = []
-            th = threading.Thread(target=lambda: codes.append(get(port, "/v1/signals")))
-            th.start(); time.sleep(0.3)
-            assert get(port, "/v1/drafts") == 200
-            th.join(); assert codes == [200]
-        finally:
-            stop()
-    finally:
-        slow.close()
-
-
-def _free_port():
-    sk = socket.socket(); sk.bind(("127.0.0.1", 0)); port = sk.getsockname()[1]; sk.close()
-    return port
-
-
-def _wait_healthy(port, limit=60.0):
-    """서버가 요청을 받을 수 있을 때까지 기다린다(바깥 마감일 뿐 판정 값이 아니다. 부하에서 기동이 느릴 수 있다)."""
-    end = time.monotonic() + limit
-    while True:
-        try:
-            urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=2)
-            return
-        except OSError:
-            assert time.monotonic() < end, "서버가 요청을 받지 못한다"
-            time.sleep(0.05)
-
-
-def _start(tmp_path, stub_url, grace):
-    port = _free_port()
-    env = dict(os.environ, QA_DEV_MODE="1", QA_DB_PATH=str(tmp_path / "q.db"), QA_PORT=str(port), QA_HOST="127.0.0.1",
-               QA_AUTHOR_TOKENS="t:dr-kim:question-author", QA_SHUTDOWN_GRACE_SECONDS=str(grace),
-               QA_REQUEST_TIMEOUT_SECONDS="30", QA_FAILURES_URL=stub_url, QA_FAILURES_TOKEN="x", QA_FAILURES_TIMEOUT_SECONDS="20",
-               QA_SIGNALS_DEADLINE_SECONDS="30")
-    p = subprocess.Popen([sys.executable, "-m", "question_authoring"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    assert "시작" in p.stdout.readline()
-    _wait_healthy(port)
-    return p, port
-
-
-def _wait_line(p, needle, limit=60.0):
-    """서버 표준 출력에서 needle이 든 줄을 기다린다(신호를 받아 처리했다는 사실을 시간이 아닌 출력으로 확인한다)."""
-    found = []
-
-    def reader():
-        for line in p.stdout:
-            if needle in line:
-                found.append(line); return
-    th = threading.Thread(target=reader, daemon=True); th.start(); th.join(limit)
-    assert found, f"서버 출력에 {needle!r}이 없다"
-
-
-def _signals_request(port):
-    c = socket.create_connection(("127.0.0.1", port), timeout=20)
-    c.sendall(b"GET /v1/signals HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer t\r\nConnection: close\r\n\r\n")
-    return c
-
-
-def test_sigterm_finishes_in_flight_request(tmp_path):
-    slow = SlowI7()
-    p, port = _start(tmp_path, slow.url, grace=30)
-    try:
-        c = _signals_request(port)
-        assert slow.entered.wait(60)                       # 앱이 요청을 처리 중이다(대역이 요청을 받았다)
-        p.send_signal(signal.SIGTERM)
-        _wait_line(p, "종료 신호를 받았다")                  # 서버가 신호를 처리했다
-        assert p.poll() is None                            # 요청이 끝나지 않았으므로 서버는 기다리고 있다
-        slow.release.set()                                 # 이제 요청이 끝난다
-        out = b""
-        while True:
-            chunk = c.recv(65536)
-            if not chunk:
-                break
-            out += chunk
-        assert b" 200 " in out.split(b"\r\n")[0]           # 진행 중이던 요청이 정상 응답을 받았다
-        assert p.wait(timeout=60) == 0                     # 바깥 마감(매달리지 않음)
-    finally:
-        if p.poll() is None:
-            p.kill()
-        slow.close()
-
-
-def test_sigterm_gives_up_after_grace(tmp_path):
-    slow = SlowI7(hold=120.0)                              # 유예(1초)가 지나도 끝나지 않는 요청
-    p, port = _start(tmp_path, slow.url, grace=1)
-    try:
-        c = _signals_request(port)
-        assert slow.entered.wait(60)
-        t = time.monotonic()
-        p.send_signal(signal.SIGTERM)
-        assert p.wait(timeout=60) == 0
-        took = time.monotonic() - t
-        # 아래 한계는 시간 자체를 재는 것이 아니다. 아래쪽(>=1초)은 유예를 기다렸다는 뜻이라 부하가 깨지 못한다.
-        # 위쪽(<100초)은 '끝나지 않는 요청(120초)을 기다리지 않고 포기했다'는 뜻이다: 부하로 몇 초 늦어도 지나가고, 기다렸다면 120초에 걸린다
-        assert 1.0 <= took < 100, took
-        c.close()
-    finally:
-        if p.poll() is None:
-            p.kill()
-        slow.close()

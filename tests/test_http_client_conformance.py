@@ -1,4 +1,5 @@
 """I1 서버 적합성 시험: 우리 서버를 띄워 boundary_contracts.clients.HttpQuestionReader(읽기 모드 검증, 해시 재계산)로 읽는다."""
+from helpers import HANG_GUARD_SECONDS
 import socket
 import threading
 
@@ -115,13 +116,13 @@ def test_tampered_content_integrity(served, store):
 def test_server_down_is_unavailable(served):
     svc, url, srv = served
     publish(svc)
-    c = HttpQuestionReader(url, READ, timeout=2)
+    c = HttpQuestionReader(url, READ, timeout=HANG_GUARD_SECONDS)
     assert c.list_ids()[0] == ["qs-main"]
     stop_http(srv)       # 돌아온 뒤에는 아무도 듣지 않는다(서버 루프가 끝나기를 기다린다): 닫는 중에 연결을 받는 경쟁이 없다
     e = err("UNAVAILABLE", c.list_ids)
     assert e.retryable
     s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()   # 아무도 듣지 않는 포트
-    err("UNAVAILABLE", HttpQuestionReader(f"http://127.0.0.1:{port}", READ, timeout=2).latest, "qs-main")
+    err("UNAVAILABLE", HttpQuestionReader(f"http://127.0.0.1:{port}", READ, timeout=HANG_GUARD_SECONDS).latest, "qs-main")
 
 
 def test_client_reads_id_with_colon(served):

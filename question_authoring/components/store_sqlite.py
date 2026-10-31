@@ -16,10 +16,6 @@ from ..store.migrate import migrate_sqlite, schema_matches
 # 스키마는 question_authoring/migrations/sqlite/ 의 yoyo 마이그레이션이 만든다(ADR 0017)
 
 
-def _now_ts() -> str:
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
 
 def _dump(o) -> str:
     return json.dumps(o, ensure_ascii=False, sort_keys=True)
@@ -31,7 +27,8 @@ class SqliteQuestionStore:
 
     kind = "sqlite"
 
-    def __init__(self, path: str | Path | None = None, *, read_only: bool = False):
+    def __init__(self, path: str | Path | None = None, *, now_ts, read_only: bool = False):
+        self._now_ts = now_ts      # 저장 시각 시계(주입). 컴포넌트는 시간을 직접 읽지 않는다(ADR 0024)
         self._lock = threading.RLock()
         self._read_only = read_only
         self._tmpdir = None
@@ -169,7 +166,7 @@ class SqliteQuestionStore:
         self._write(lambda: self._db.execute(
             "INSERT INTO blobs(source_hash, filename, data, created_at) VALUES(?,?,?,?) "
             "ON CONFLICT(source_hash) DO UPDATE SET created_at=excluded.created_at",      # 다시 올리면 보존 기간이 새로 센다
-            (source_hash, filename, bytes(data), _now_ts())))
+            (source_hash, filename, bytes(data), self._now_ts())))
 
     def get_source(self, source_hash):
         r = self._q("SELECT filename, data FROM blobs WHERE source_hash=?", (source_hash,))

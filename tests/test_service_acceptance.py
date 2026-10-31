@@ -98,6 +98,7 @@ def test_confirm_idempotent_and_hash_stable(svc, store):
 def test_confirm_retry_after_crash(validators):
     from question_authoring.components.question_store import QuestionStore
     from question_authoring.components.store_memory import MemoryQuestionStore
+    from question_authoring.wiring.stores import now_ts
     from question_authoring.wiring import schemas
 
     class Flaky(MemoryQuestionStore):
@@ -108,7 +109,7 @@ def test_confirm_retry_after_crash(validators):
                 raise BoundaryError("UNAVAILABLE", "일시 장애")
             super().save_draft(draft)
 
-    s = QuestionStore(Flaky(), schemas.check)
+    s = QuestionStore(Flaky(now_ts=now_ts), schemas.check)
     svc = AuthoringService(s)
     out = svc.ingest_material(AUTHOR, "qs-main", "f.txt", example_text())
     ph = svc.get_preview(out["draft_id"])["preview_hash"]

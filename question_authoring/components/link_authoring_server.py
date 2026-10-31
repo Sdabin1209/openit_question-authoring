@@ -7,7 +7,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import re
-import time
 from typing import Callable, Iterable, Mapping, Optional
 from urllib.parse import unquote, urlparse
 
@@ -280,17 +279,18 @@ def make_server(api: Api, host: str, port: int, request_timeout: float = 30.0, m
         cleanup_interval=1, max_request_body_size=MAX_BODY, clear_untrusted_proxy_headers=True, map={})
 
 
-def drain(srv, grace: float) -> int:
+def drain(srv, grace: float, *, clock, sleep) -> int:
     """종료 신호 처리: 새 연결을 받지 않고, 처리 중인 요청과 그 응답 전송을 유예 시간까지 기다린다. 못 끝낸 요청 수를 돌려준다.
-    왜 직접: waitress는 우아한 종료(진행 중 요청 마치기)를 하지 않는다(close가 바로 스레드를 멈춘다)."""
+    왜 직접: waitress는 우아한 종료(진행 중 요청 마치기)를 하지 않는다(close가 바로 스레드를 멈춘다).
+    clock(단조 시계)과 sleep은 주입받는다: 컴포넌트는 시간을 직접 읽거나 기다리지 않는다(ADR 0024)."""
     srv.accepting = False
     dispatcher = srv.task_dispatcher
-    end = time.monotonic() + grace
-    while time.monotonic() < end and (dispatcher.active_count or dispatcher.queue):
-        time.sleep(0.05)
+    end = clock() + grace
+    while clock() < end and (dispatcher.active_count or dispatcher.queue):
+        sleep(0.05)
     left = dispatcher.active_count + len(dispatcher.queue)
-    while time.monotonic() < end and any(getattr(c, "total_outbufs_len", 0) for c in list(srv._map.values())):
-        time.sleep(0.05)
+    while clock() < end and any(getattr(c, "total_outbufs_len", 0) for c in list(srv._map.values())):
+        sleep(0.05)
     return left
 
 

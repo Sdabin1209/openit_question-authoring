@@ -1,5 +1,10 @@
 # 변경 이력
 
+## 미배포 (2026-10-31) U422: 시험에서 실제 시간을 없앤다
+
+- 동작 코드: 컴포넌트가 시간을 직접 읽지 않고 시계를 주입받는다(ADR 0024): 추출기 시간 예산, 개선 신호 읽기 총 마감, 종료 유예(`drain`), 저장소 시각·감시 타이머·/readyz 기다림. 실제 시계는 wiring과 진입점이 넣는다. 와이어 형식·HTTP 응답·잡 출력은 그대로다.
+- 시험: 실제 시간을 기다리거나 재는 시험을 모두 없앴다([tests/TIMING.md](../tests/TIMING.md)). 라이브러리 동작(waitress 시한, PostgreSQL 문장 상한, docker pause, 실제 SIGTERM)을 보던 시험은 지우고 넘긴 값 확인과 즉시 실패하는 가짜로 바꿨다.
+
 ## 미배포 (2026-10-30) U410: 최종 고정(문진 스키마 survey-schema-v3.0.0)
 
 - 핀: 문진 스키마 survey-schema-v3.0.0(`requirements.lock`, `scripts/build_wheels.sh`, 시험의 표본). boundary-contracts v3.1.1, openit-link v0.4.1은 그대로.

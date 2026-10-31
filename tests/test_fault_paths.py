@@ -16,7 +16,7 @@ from boundary_contracts.errors import BoundaryError
 
 from conftest import example_text
 from helpers import publish
-from helpers import stop_http
+from helpers import AUTHOR, HANG_GUARD_SECONDS, stop_http
 from question_authoring.components.link_authoring_server import Api, make_server, MAX_BODY
 from question_authoring.wiring.service import Actor
 
@@ -37,7 +37,7 @@ def api_of(svc, **kw):
     return Api(svc, {"tok-a": Actor("dr-kim", "question-author")}, **kw)
 
 
-def raw(port, data: bytes, *, wait=30.0, close_after_send=False) -> bytes:
+def raw(port, data: bytes, *, wait=HANG_GUARD_SECONDS, close_after_send=False) -> bytes:   # wait: 매달림 감시(소켓 읽기 마감)
     s = socket.create_connection(("127.0.0.1", port), timeout=wait)
     s.sendall(data)
     if close_after_send:
@@ -63,32 +63,28 @@ def post_head(path, n, extra=""):
 MAT = "/v1/materials?question_set_id=qs-main&filename=f.txt"
 
 
-# ---- E2 F2/F3: 멈춘 업로드 ----
-def test_stalled_upload_is_cut_and_nothing_is_saved(svc):
-    with serving(api_of(svc), request_timeout=1) as port:
-        out = raw(port, post_head(MAT, 5000) + b"x" * 10, wait=60)    # 본문이 모자란 채 멈춘다
-    # 서버 무응답 상한(1초)이 지나 서버가 먼저 끊었다 = 클라이언트의 읽기 상한(60초)에 걸리지 않았다. 걸린 시간 자체는 단언하지 않는다
-    assert b"<TIMEOUT>" not in out, out[:80]
-    assert svc.list_drafts() == []                                     # 반쯤 온 자료는 처리하지 않는다
+# ---- E2 F2/F3, F1/F8: 멈춘 업로드·연결 끊김 ----
+# waitress가 멈춘 업로드를 N초에 끊는가, 본문이 모자란 요청을 앱에 넘기지 않는가는 라이브러리 동작이라 시험하지 않는다(U421 정정).
+# 영역의 몫은 넘긴 값이다: 멈춘 연결을 끊는 시간 = 요청 무응답 상한(tests/test_server_properties.py::test_make_server_passes_the_limits_to_waitress).
+def test_upload_is_atomic_when_extraction_fails(svc):
+    """처리 도중 실패한 업로드는 반쯤 처리된 초안을 남기지 않는다: 읽지 못하면 빈 초안으로 폴백한다(화면 입력으로 이어 가기)."""
+    import types
+    from question_authoring.wiring.service import AuthoringService
 
-
-# ---- E2 F1/F8 + 업로드 도중 연결 끊김 ----
-def test_client_disconnect_mid_upload_saves_nothing(svc):
-    data = example_text()
-    with serving(api_of(svc), request_timeout=2) as port:
-        raw(port, post_head(MAT, len(data)) + data[: len(data) // 2], close_after_send=True)
-        time.sleep(0.5)
-        assert svc.list_drafts() == []
-        # 이어서 온전한 업로드는 정상 처리된다(서버가 막히지 않았다)
-        req = urllib.request.Request(f"http://127.0.0.1:{port}{MAT}", data=data, headers=AUTH, method="POST")
-        assert json.load(urllib.request.urlopen(req, timeout=10))["status"] == "PARSED"
-    assert len(svc.list_drafts()) == 1
+    def boom(inp):
+        raise RuntimeError("추출 중 끊김")
+    failing = types.SimpleNamespace(NAME="boom", VERSION="0", INPUT_SCHEMA="MaterialExtractRequest", OUTPUT_SCHEMA="MaterialExtraction",
+                                    can_handle=lambda filename: True, run=boom, __name__="boom")
+    s2 = AuthoringService(svc.store, extractors=(failing,), require_two_person=False)
+    out = s2.ingest_material(AUTHOR, "qs-main", "f.txt", example_text())
+    assert out["status"] == "FALLBACK"
+    assert len(svc.list_drafts()) == 1 and svc.get_draft(out["draft_id"])["bank"] == {"questions": []}
 
 
 # ---- E2 F6: 깨진 요청 ----
 @pytest.mark.parametrize("cl", ["abc", "-5"])
 def test_bad_content_length_is_400(svc, cl):
-    with serving(api_of(svc), request_timeout=2) as port:
+    with serving(api_of(svc), request_timeout=HANG_GUARD_SECONDS) as port:
         out = raw(port, (f"POST /v1/drafts HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer tok-a\r\nContent-Length: {cl}\r\n\r\n").encode())
     assert out.startswith(b"HTTP/1.0 400") or out.startswith(b"HTTP/1.1 400"), out[:60]
 
@@ -99,7 +95,7 @@ def test_non_json_is_400(svc):
 
 def test_oversize_is_413_before_the_body_is_sent(svc):
     """동작 변경(단위 4a): 본문 상한 초과는 waitress가 헤더 단계에서 413(RFC 9110 15.5.14)으로 거절한다. 이전에는 앱이 400(계약 CONVENTIONS 9절 표)을 냈다. ADR 0016"""
-    with serving(api_of(svc), request_timeout=2) as port:
+    with serving(api_of(svc), request_timeout=HANG_GUARD_SECONDS) as port:
         out = raw(port, post_head(MAT, MAX_BODY + 1))      # 본문은 보내지 않는다
     assert b" 413 " in out.split(b"\r\n")[0], out[:80]
 
@@ -114,7 +110,7 @@ def test_unexpected_error_is_json_503_without_details(svc, monkeypatch):
     assert st == 503 and body["code"] == "UNAVAILABLE" and "SECRET-internal-detail" not in json.dumps(body)
     with serving(api) as port:
         try:
-            urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{port}/v1/drafts", headers=AUTH), timeout=5)
+            urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{port}/v1/drafts", headers=AUTH), timeout=HANG_GUARD_SECONDS)   # 매달림 감시
         except urllib.error.HTTPError as e:
             assert e.code == 503 and json.load(e)["code"] == "UNAVAILABLE"
 
@@ -178,20 +174,16 @@ def test_resend_same_ok_different_conflict(svc, store):
 # ---- D5: 개선 신호(I7) 읽기 ----
 @contextlib.contextmanager
 def i7_stub(mode: str):
+    """ops-feedback 대역. 모든 모드가 즉시 답한다(시간에 기대지 않는다)."""
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a): pass
         def do_GET(self):
-            if mode == "slow":
-                time.sleep(30)          # 호출 상한(1초)이 끊어야 하는 응답. 상한이 없으면 30초를 기다린다
             if mode == "5xx":
                 self.send_response(500); self.send_header("Content-Length", "0"); self.end_headers(); return
             if mode == "garbage":
                 d = b"<html>not json"
             elif mode == "shape":
                 d = json.dumps({"items": "not-a-list"}).encode()
-            elif mode == "pages":                               # 끝없이 이어지는 느린 목록
-                time.sleep(0.4)
-                d = json.dumps({"items": [], "next_cursor": "more"}).encode()
             else:
                 d = b"{}"
             self.send_response(200); self.send_header("Content-Type", "application/json")
@@ -209,30 +201,67 @@ def i7_stub(mode: str):
 @pytest.mark.parametrize("mode", ["5xx", "garbage", "shape"])
 def test_d5_upstream_5xx_and_broken_response_are_503_not_success(svc, mode):
     with i7_stub(mode) as url:
-        api = api_of(svc, signals=HttpFailureStore(url, "t", timeout=2))
+        api = api_of(svc, signals=HttpFailureStore(url, "t", timeout=HANG_GUARD_SECONDS))    # timeout: 매달림 감시(이 시험의 주제가 아니다)
         st, body = api.handle("GET", "/v1/signals", AUTH, b"")
     assert st == 503 and body["code"] == "UNAVAILABLE" and body["retryable"] is True
     assert api.handle("GET", "/v1/drafts", AUTH, b"")[0] == 200       # 저작은 영향 없다
 
 
-def test_d5_slow_upstream_is_bounded_by_call_timeout(svc):
-    with i7_stub("slow") as url:
-        api = api_of(svc, signals=HttpFailureStore(url, "t", timeout=1))
-        t = time.monotonic()
-        st, body = api.handle("GET", "/v1/signals", AUTH, b"")
-        took = time.monotonic() - t
-    # 호출 상한(1초)이 끊었다 = 상류의 30초를 기다리지 않았다. 15초는 부하 여유이고 의미(30초를 기다리지 않음)를 지킨다
-    assert st == 503 and took < 15, took
+class _FailingSource:
+    """즉시 UNAVAILABLE(시간 초과 포함)을 던지는 I7 대역. 실제 소켓·시계를 쓰지 않는다."""
+    def __init__(self, exc):
+        self.exc = exc
+
+    def list_cases(self, **k):
+        raise self.exc
+
+    def get_trace(self, ref):
+        raise self.exc
 
 
-def test_d5_total_deadline_bounds_many_slow_pages(svc):
-    with i7_stub("pages") as url:
-        api = api_of(svc, signals=HttpFailureStore(url, "t", timeout=2), signals_deadline=1.0)
-        t = time.monotonic()
-        st, body = api.handle("GET", "/v1/signals?max_cases=20000", AUTH, b"")
-        took = time.monotonic() - t
-    # 총 마감(1초)이 끝없는 쪽(0.4초씩 20000쪽 = 2시간 이상)을 끊었다. 30초는 부하 여유이고 의미를 지킨다
-    assert st == 503 and took < 30, took
+def test_d5_upstream_timeout_is_503_retryable_and_authoring_is_unaffected(svc):
+    """호출 시간 초과는 라이브러리(urllib)가 낸다. 우리 몫은 그것이 UNAVAILABLE(재시도 가능)로 나가고 저작 경로가 영향받지 않는 것이다(U421 정정)."""
+    api = api_of(svc, signals=_FailingSource(BoundaryError("UNAVAILABLE", "읽기 시간 초과")))
+    st, body = api.handle("GET", "/v1/signals", AUTH, b"")
+    assert st == 503 and body["code"] == "UNAVAILABLE" and body["retryable"] is True
+    assert api.handle("GET", "/v1/drafts", AUTH, b"")[0] == 200
+
+
+def test_d5_total_deadline_stops_endless_pages_with_an_injected_clock(svc):
+    """총 마감(signals_deadline)은 우리 코드(link_failures_read)의 판단이다. 서비스에 시험이 쥔 시계(쪽 하나를 읽을 때마다 0.4 흐른다)를 주입해
+    끝없이 이어지는 목록이 마감에서 UNAVAILABLE로 끊기는지 본다. 실제 시간은 흐르지 않고 재지 않는다."""
+    from question_authoring.wiring.service import AuthoringService
+    now = [0.0]
+
+    class Pages:
+        reads = 0
+
+        def list_cases(self, **k):
+            Pages.reads += 1
+            now[0] += 0.4                                            # 쪽 하나를 읽는 데 0.4초가 걸렸다고 친다
+            return [], "more"                                        # 끝없이 다음 쪽이 있다
+
+        def get_trace(self, ref):
+            raise AssertionError("사례가 없으니 trace를 읽지 않는다")
+    timed = AuthoringService(svc.store, require_two_person=False, monotonic=lambda: now[0])
+    api = api_of(timed, signals=Pages(), signals_deadline=1.0)
+    st, body = api.handle("GET", "/v1/signals?max_cases=20000", AUTH, b"")
+    assert st == 503 and body["code"] == "UNAVAILABLE"
+    assert Pages.reads == 3                                          # 0.4, 0.8, 1.2: 세 번째 읽은 뒤 마감(1.0)을 넘어 멈췄다
+
+
+def test_d5_deadline_value_reaches_the_reader(svc):
+    """마감 값이 읽기 컴포넌트에 그대로 닿는다(실제 시간을 재지 않고 넘긴 값을 본다)."""
+    seen = {}
+    real = svc.build_signals
+
+    def spy(source, **kw):
+        seen.update(kw)
+        return real(source, **kw)
+    svc.build_signals = spy
+    api = api_of(svc, signals=_FailingSource(BoundaryError("UNAVAILABLE", "x")), signals_deadline=7.5)
+    api.handle("GET", "/v1/signals", AUTH, b"")
+    assert seen["deadline_seconds"] == 7.5
 
 
 def test_d5_trace_upstream_failure_is_not_counted_as_missing_trace(svc):
@@ -251,11 +280,11 @@ def test_d5_trace_upstream_failure_is_not_counted_as_missing_trace(svc):
 
 
 # ---- 큰 자료의 처리 시간: 긴 한 줄이 제곱으로 느려지지 않는다(이메일 패턴이 그랬다) ----
-def test_phi_check_is_linear_on_long_lines_and_still_detects(svc):
-    from question_authoring.wiring.service import AuthoringService
-    t = time.process_time()      # 기계 부하(CPU 경쟁)에 덜 흔들리게 CPU 시간으로 잰다
-    assert phi_warnings(b"x" * (2 * 1024 * 1024)) == []
-    assert time.process_time() - t < 10.0     # 제곱 시간이면 2MiB에서 수 시간이 걸린다(정상은 0.1초대)
+def test_phi_check_finishes_on_long_lines_and_still_detects(svc):
+    """긴 한 줄에서 정규식이 제곱 시간으로 느려지지 않는다(이메일 패턴이 그랬다). 시간을 재지 않고 끝나는지만 본다:
+    제곱이면 2MiB에서 수 시간이라 매달림 감시(HANG_GUARD_SECONDS)에 걸려 실패한다. 정상은 0.1초대."""
+    from helpers import run_bounded
+    assert run_bounded(lambda: phi_warnings(b"x" * (2 * 1024 * 1024))) == []
     assert phi_warnings("문의 kim.doctor+a@hospital.co.kr 입니다".encode()) == ["이메일 형태"]
     assert phi_warnings(b"010-1234-5678") == ["전화번호 형태"]
 

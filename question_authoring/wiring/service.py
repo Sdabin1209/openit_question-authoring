@@ -7,6 +7,10 @@ from __future__ import annotations
 
 import base64
 import copy
+import functools
+import inspect
+import time
+import types
 import tempfile
 import threading
 from pathlib import Path
@@ -38,14 +42,25 @@ def _d(actor: Actor) -> dict:
     return {"id": actor.id, "role": actor.role}
 
 
+def _with_clock(extractor, clock):
+    """추출기 컴포넌트 run(inp, *, clock)에 시계를 묶어 run(inp) 모양으로 만든다. 컴포넌트는 시간을 직접 읽지 않고 여기서 주입받는다(ADR 0024)."""
+    if "clock" not in inspect.signature(extractor.run).parameters:
+        return extractor
+    return types.SimpleNamespace(NAME=extractor.NAME, VERSION=extractor.VERSION, can_handle=extractor.can_handle,
+                                 INPUT_SCHEMA=extractor.INPUT_SCHEMA, OUTPUT_SCHEMA=extractor.OUTPUT_SCHEMA,
+                                 run=functools.partial(extractor.run, clock=clock), __name__=extractor.__name__)
+
+
 class AuthoringService:
     def __init__(self, store, *, extractors: Iterable = DEFAULT_EXTRACTORS,
                  author_roles: Iterable[str] = ("question-author",),
                  require_two_person: bool = True,
                  clock: Callable = now_default,
+                 monotonic: Callable[[], float] = time.monotonic,
                  new_id: Callable[[str], str] = new_id_default):
         self.store = store
-        self.extractors = list(extractors)
+        self._monotonic = monotonic     # 마감 판단용 단조 시계(주입). 시각(clock)과 다르다
+        self.extractors = [_with_clock(e, monotonic) for e in extractors]
         self.author_roles = frozenset(author_roles)
         # D88 U9: 임상 근거 승인은 저자와 다른 주체(검수 역할)만 한다. False는 이전 동작(저자 확인이 곧 승인)이고 /readyz에 경고가 뜬다
         self.require_two_person = bool(require_two_person)
@@ -316,7 +331,7 @@ class AuthoringService:
     def build_signals(self, source, *, question_set_id: Optional[str] = None, review_status: Optional[str] = None,
                       max_cases: int = signals_build.DEFAULT_MAX_CASES, deadline_seconds: Optional[float] = None,
                       confusion_min: int = signals_build.CONFUSION_MIN) -> dict:
-        bundle = schemas.bind(FailureReader(source))({
+        bundle = schemas.bind(FailureReader(source, clock=self._monotonic))({
             "max_cases": max_cases, "review_status": review_status, "question_set_id": question_set_id,
             "deadline_seconds": deadline_seconds})
         return self._signals({"bundle": bundle, "question_set_id": question_set_id, "confusion_min": confusion_min,

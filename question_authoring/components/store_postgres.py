@@ -37,11 +37,6 @@ _INIT_STATEMENT_MS = 30000   # 시작 때 마이그레이션 문장 상한. 다�
 _LOCK_KEY = 0x71A07E5  # 이 서비스의 쓰기 직렬화 키(데이터베이스 안에서만 의미가 있다)
 
 
-def _now_ts() -> str:
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def _dump(o) -> str:
     return json.dumps(o, ensure_ascii=False, sort_keys=True)
 
@@ -57,10 +52,13 @@ class PostgresQuestionStore:
 
     kind = "postgres"
 
-    def __init__(self, url: str, *, read_only: bool = False, schema: Optional[str] = None,
+    def __init__(self, url: str, *, now_ts, timer, wait, read_only: bool = False, schema: Optional[str] = None,
                  connect_timeout: float = DEFAULT_CONNECT_TIMEOUT, statement_timeout: float = DEFAULT_STATEMENT_TIMEOUT,
                  probe_timeout: float = DEFAULT_PROBE_TIMEOUT,
                  large_statement_timeout: float = DEFAULT_LARGE_STATEMENT_TIMEOUT):
+        # 시간은 모두 주입받는다(ADR 0024): now_ts() 저장 시각 문자열, timer(초, 함수) 시간이 지나면 함수를 부르는 타이머(threading.Timer 모양: start/cancel/daemon),
+        # wait(이벤트, 초) 이벤트를 최대 그 초 기다려 켜졌는지 돌려주는 함수. 컴포넌트는 시계·타이머를 직접 쓰지 않는다
+        self._now_ts, self._timer, self._wait = now_ts, timer, wait
         for name, v in (("connect_timeout", connect_timeout), ("statement_timeout", statement_timeout), ("probe_timeout", probe_timeout),
                           ("large_statement_timeout", large_statement_timeout)):
             if not (isinstance(v, (int, float)) and 0 < v <= 600):
@@ -181,7 +179,7 @@ class PostgresQuestionStore:
                     def fire(c=conn):
                         aborted.set()
                         self._abort(c)
-                    timer = threading.Timer((budget or self.statement_timeout) + 1.0, fire)
+                    timer = self._timer((budget or self.statement_timeout) + 1.0, fire)
                     timer.daemon = True
                     timer.start()
                     return op(conn)
@@ -304,7 +302,7 @@ class PostgresQuestionStore:
         self._write(lambda c: c.execute(
             "INSERT INTO blobs(source_hash, filename, data, created_at) VALUES(%s,%s,%s,%s) "
             "ON CONFLICT (source_hash) DO UPDATE SET created_at=EXCLUDED.created_at",      # 다시 올리면 보존 기간이 새로 센다
-            (source_hash, filename, bytes(data), _now_ts())), large=True)
+            (source_hash, filename, bytes(data), self._now_ts())), large=True)
 
     def get_source(self, source_hash):
         r = self._q("SELECT filename, data FROM blobs WHERE source_hash=%s", (source_hash,))
@@ -366,7 +364,7 @@ class PostgresQuestionStore:
                 done.set()
 
         threading.Thread(target=work, daemon=True, name="qa-readyz-probe").start()
-        if not done.wait(self.probe_timeout):
+        if not self._wait(done, self.probe_timeout):
             box["giveup"] = True
             if box.get("conn") is not None:
                 self._abort(box["conn"])      # 얼어 있는 소켓을 닫아 작업 스레드도 끝나게 한다

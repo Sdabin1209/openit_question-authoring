@@ -31,6 +31,7 @@ import os
 import signal
 import sys
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 from boundary_contracts import read_secret
@@ -169,7 +170,7 @@ def main(argv=None) -> int:
     grace = _seconds("QA_SHUTDOWN_GRACE_SECONDS", 8.0)
 
     def finish():
-        left = drain(srv, grace)
+        left = drain(srv, grace, clock=time.monotonic, sleep=time.sleep)
         if left:
             print(f"유예 시간 {grace}초가 지나 처리 중인 요청 {left}개를 두고 종료한다", flush=True)
             os._exit(0)   # 왜: 멈춘 요청 스레드는 못 끊고, waitress의 정상 종료는 스레드를 5초 더 기다린다(유예 8초 + 5초 > docker stop 10초 뒤 SIGKILL)

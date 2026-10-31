@@ -215,12 +215,9 @@ def test_plain_dates_still_not_phone(text):
     assert phi_warnings(text.encode()) == []
 
 
-def test_phi_check_scales_linearly_with_phone_and_date_text():
-    import time
+def test_phi_check_finishes_on_phone_and_date_text():
+    """전화번호·날짜 꼴이 길게 이어져도 정규식이 제곱 시간으로 느려지지 않는다. 시간을 재지 않고 끝나는지만 본다(U421):
+    제곱이면 수십만 자에서 수 시간이라 매달림 감시(HANG_GUARD_SECONDS)에 걸린다. 정상은 수십 ms."""
+    from helpers import run_bounded
     unit = "방문 2012-01-01 010-2012 0101 20120101 02-".encode()
-    def t(n):
-        data = unit * n
-        t0 = time.process_time(); phi_warnings(data); return time.process_time() - t0     # CPU 시간: 부하에 덜 흔들린다
-    t(500)
-    small, big = min(t(2000) for _ in range(3)), min(t(8000) for _ in range(3))
-    assert big < small * 4 * 3 + 0.05, (small, big)
+    assert run_bounded(lambda: phi_warnings(unit * 8000)) is not None

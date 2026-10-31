@@ -7,6 +7,7 @@
  R4 모든 쓰기는 같은 advisory lock으로 직렬화된다. 연결이 여럿(스레드별 store, 별도 프로세스)이어도 같아야 한다.
  R5 오래 방치된 초안을 확인(confirm)하는 중에 purge가 그 초안과 원본을 지우면 버전이 없는 원본을 가리킬 수 있다.
 시험은 고정 sleep을 쓰지 않는다. 시작은 Barrier, 끝은 정해진 반복 횟수(또는 프로세스 종료)로 정한다. 반복 횟수는 QA_RACE_ROUNDS로 늘린다."""
+from helpers import HANG_GUARD_SECONDS
 import os
 import subprocess
 import sys
@@ -48,13 +49,20 @@ class _AgeGate:
             self.finished += 1
             self.cv.notify_all()
 
+    def finish(self, done):
+        """종료를 알린다: age()에서 기다리는 스레드를 깨운다."""
+        with self.cv:
+            done.set()
+            self.cv.notify_all()
+
     def age(self, store, done):
         with self.cv:
             # 업로드가 하나 끝날 때마다 한 번만 나이를 올린다(굶김 방지: 올리기만 반복하면 업로드가 진행하지 못한다)
-            while not (self.active == 0 and self.finished != self.seen):
-                if done.is_set():
-                    return
-                self.cv.wait(0.2)   # 종료 신호를 보려고 주기적으로 깨는 것일 뿐 순서는 조건으로 정한다
+            # 조건(업로드 없음 + 새로 끝난 업로드 있음, 또는 종료)이 참이 될 때까지 기다린다. 깨우는 쪽은 leave()와 finish()다.
+            # 시간 제한(HANG_GUARD_SECONDS)은 매달림 감시일 뿐 판정이 아니다
+            self.cv.wait_for(lambda: (self.active == 0 and self.finished != self.seen) or done.is_set(), HANG_GUARD_SECONDS)
+            if done.is_set() and not (self.active == 0 and self.finished != self.seen):
+                return
             self.seen = self.finished
             self.aging = True
         try:
@@ -93,7 +101,7 @@ def test_pg_concurrent_uploads_and_purge_threads(validators):
         def uploader(idx, st):
             svc = AuthoringService(st, require_two_person=False)
             try:
-                barrier.wait(30)
+                barrier.wait(HANG_GUARD_SECONDS)
                 for k in range(ROUNDS):
                     gate.enter()
                     try:
@@ -110,7 +118,7 @@ def test_pg_concurrent_uploads_and_purge_threads(validators):
 
         def purger(st):
             try:
-                barrier.wait(30)
+                barrier.wait(HANG_GUARD_SECONDS)
                 while not done.is_set():
                     purge_once(st)
             except BaseException as e:   # noqa: BLE001
@@ -118,7 +126,7 @@ def test_pg_concurrent_uploads_and_purge_threads(validators):
 
         def aging():
             try:
-                barrier.wait(30)
+                barrier.wait(HANG_GUARD_SECONDS)
                 while not done.is_set():
                     gate.age(ager, done)
             except BaseException as e:   # noqa: BLE001
@@ -129,10 +137,10 @@ def test_pg_concurrent_uploads_and_purge_threads(validators):
         for t in ths + bg:
             t.start()
         for t in ths:
-            t.join(180)
-        done.set()
+            t.join(HANG_GUARD_SECONDS)
+        gate.finish(done)
         for t in bg:
-            t.join(60)
+            t.join(HANG_GUARD_SECONDS)
         assert not any(t.is_alive() for t in ths + bg), "스레드가 끝나지 않았다(교착 의심)"
         assert not errors, errors
         assert len(made) == n_up * ROUNDS
@@ -155,20 +163,20 @@ def test_pg_purge_vs_edit_of_same_draft_never_loses_the_edit(validators):
 
             def edit():
                 try:
-                    barrier.wait(30)
+                    barrier.wait(HANG_GUARD_SECONDS)
                     svc._touch(dict(d))   # 편집: 같은 draft_id, 새 updated_at(= 서비스의 모든 편집이 하는 저장)
                 except BaseException as e:   # noqa: BLE001
                     errs.append(repr(e)[:300])
 
             def purge():
                 try:
-                    barrier.wait(30)
+                    barrier.wait(HANG_GUARD_SECONDS)
                     purge_once(sp)
                 except BaseException as e:   # noqa: BLE001
                     errs.append(repr(e)[:300])
             ts = [threading.Thread(target=edit), threading.Thread(target=purge)]
             [t.start() for t in ts]
-            [t.join(60) for t in ts]
+            [t.join(HANG_GUARD_SECONDS) for t in ts]
             assert not errs, errs
             got = se.load_draft(d["draft_id"])
             assert got is not None and got["updated_at"] > _old(1), f"라운드 {r}: 편집된 초안이 사라졌거나 옛 값으로 남았다"
@@ -205,7 +213,7 @@ def test_pg_upload_vs_purge_in_separate_processes(validators):
                 k += 1
                 assert k < 5000, "purge 프로세스가 끝나지 않는다"
         finally:
-            results = [(p.wait(120), p.stderr.read().decode(errors="replace")[-300:]) for p in procs]
+            results = [(p.wait(HANG_GUARD_SECONDS), p.stderr.read().decode(errors="replace")[-300:]) for p in procs]
         assert all(rc == 0 for rc, _ in results), results
         _check_drafts_have_sources(ager, made)
         st.close(); ager.close()
@@ -231,20 +239,20 @@ def test_pg_confirm_of_stale_draft_vs_purge_keeps_provenance(validators):
 
             def confirm():
                 try:
-                    barrier.wait(30)
+                    barrier.wait(HANG_GUARD_SECONDS)
                     res["ref"] = svc.confirm(AUTHOR, did, ph)
                 except Exception as e:   # noqa: BLE001 - 지워진 초안이면 NOT_FOUND 등으로 거절되는 것은 허용
                     res["err"] = getattr(e, "code", type(e).__name__)
 
             def purge():
                 try:
-                    barrier.wait(30)
+                    barrier.wait(HANG_GUARD_SECONDS)
                     purge_once(sp)
                 except BaseException as e:   # noqa: BLE001
                     res["perr"] = repr(e)[:300]
             ts = [threading.Thread(target=confirm), threading.Thread(target=purge)]
             [t.start() for t in ts]
-            [t.join(60) for t in ts]
+            [t.join(HANG_GUARD_SECONDS) for t in ts]
             assert "perr" not in res, res
             if "ref" in res:
                 outcomes["confirmed"] += 1

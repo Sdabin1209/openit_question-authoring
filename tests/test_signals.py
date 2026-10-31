@@ -1,4 +1,5 @@
 """개선 신호: 작은 ops-feedback(I7) 서버 대역을 띄워 HttpFailureStore로 읽는다."""
+from helpers import HANG_GUARD_SECONDS
 import json
 import pathlib
 import threading
@@ -138,6 +139,6 @@ def test_i7_failure_maps_to_boundary_error(svc, i7):
     api = Api(svc, {"auth-tok": Actor("dr-kim", "question-author")}, signals=HttpFailureStore(i7, "wrong"))
     st, body = call(api, "/v1/signals")
     assert st == 403 and body["code"] == "PERMISSION_DENIED"
-    dead = Api(svc, {"auth-tok": Actor("dr-kim", "question-author")}, signals=HttpFailureStore("http://127.0.0.1:9", "x", timeout=1))
+    dead = Api(svc, {"auth-tok": Actor("dr-kim", "question-author")}, signals=HttpFailureStore("http://127.0.0.1:9", "x", timeout=HANG_GUARD_SECONDS))
     st, body = call(dead, "/v1/signals")
     assert st == 503 and body["retryable"] is True

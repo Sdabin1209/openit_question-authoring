@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import re
-import time
 from typing import Optional
 
 import base64
@@ -79,12 +78,16 @@ class TextFormExtractor:
     extensions = (".txt", ".md")
     time_budget = TIME_BUDGET_SECONDS
 
+    def __init__(self, clock=None):
+        """clock: 시계 주입(초 단위 단조 시계). 없으면 시간 예산을 적용하지 않는다. 컴포넌트는 시간을 직접 읽지 않는다(ADR 0024)."""
+        self._clock = clock
+
     def can_handle(self, filename: str, data: bytes) -> bool:
         return filename.lower().endswith(self.extensions)
 
     # ---- 진입 ----
     def extract(self, data: bytes, filename: str) -> ExtractionResult:
-        return TextFormExtractor()._run(data)  # 호출마다 새 상태(스레드 안전)
+        return TextFormExtractor(self._clock)._run(data)  # 호출마다 새 상태(스레드 안전)
 
     def _run(self, data: bytes) -> ExtractionResult:
         try:
@@ -100,9 +103,9 @@ class TextFormExtractor:
         self.s: Optional[dict] = None
         self.si = -1
         self.ctx = "top"
-        deadline = time.monotonic() + self.time_budget
+        deadline = None if self._clock is None else self._clock() + self.time_budget
         for n, line in enumerate(text.splitlines()):
-            if n % 256 == 0 and time.monotonic() > deadline:
+            if deadline is not None and n % 256 == 0 and self._clock() > deadline:
                 raise ExtractionFailure("자료가 너무 커서 정해진 시간 안에 읽지 못했다")
             raw = line.strip()
             if not raw or raw.startswith("#"):
@@ -456,10 +459,10 @@ def can_handle(filename: str, data_base64: str = "") -> bool:
     return filename.lower().endswith(EXTENSIONS)
 
 
-def run(inp: dict) -> dict:
+def run(inp: dict, *, clock=None) -> dict:
     """원본 바이트를 QuestionBank 모양의 초안과 플래그로 바꾼다. 읽지 못하면 FAILED와 사유(추정하지 않는다)."""
     try:
-        res = TextFormExtractor().extract(base64.b64decode(inp["data_base64"]), inp["filename"])
+        res = TextFormExtractor(clock).extract(base64.b64decode(inp["data_base64"]), inp["filename"])
     except ExtractionFailure as e:
         return {"status": "FAILED", "reason": str(e), "flags": []}
     return {"status": "PARSED", "bank": res.bank,

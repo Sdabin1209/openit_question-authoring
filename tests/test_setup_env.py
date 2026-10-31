@@ -1,6 +1,7 @@
 """scripts/setup-env.sh의 결과 보고(계약 SetupEnvReport, boundary-contracts 2.6.0, U43): 표준 출력의 마지막 줄이 계약을 통과하고
 environment.test_command가 리포 루트에서 이 영역 시험을 돌린다. 설치(pip)는 가짜 .venv의 python으로 대신해 네트워크 없이 본다.
 진짜 설치까지의 확인은 깨끗한 clone에서 setup-env.sh를 직접 돌려 한다(보고서에 출력)."""
+from helpers import HANG_GUARD_SECONDS
 import json
 import os
 import pathlib
@@ -33,7 +34,7 @@ def repo(tmp_path):
 
 
 def run(repo, **env):
-    return subprocess.run(["bash", str(repo / "scripts" / "setup-env.sh")], cwd="/", capture_output=True, text=True, timeout=60,
+    return subprocess.run(["bash", str(repo / "scripts" / "setup-env.sh")], cwd="/", capture_output=True, text=True, timeout=HANG_GUARD_SECONDS,
                           env=dict(os.environ, **env))
 
 

@@ -5,7 +5,6 @@
 """
 from __future__ import annotations
 
-import time
 from typing import Optional
 
 from boundary_contracts.clients import HttpFailureStore
@@ -16,17 +15,18 @@ OUTPUT_SCHEMA = "FailureBundle"
 
 
 class FailureReader:
-    def __init__(self, source=None, *, url: Optional[str] = None, token: str = "", timeout: float = 5.0):
+    def __init__(self, source=None, *, clock, url: Optional[str] = None, token: str = "", timeout: float = 5.0):
         """source가 있으면(메모리 구현·시험) 그것을 쓰고, 없으면 url의 HttpFailureStore를 만든다."""
+        self._clock = clock       # 시계 주입(초 단위 단조 시계). 마감 판단만 한다. 컴포넌트는 시간을 직접 읽지 않는다(ADR 0024)
         self.source = source if source is not None else HttpFailureStore(url, token, timeout=timeout)
 
     def run(self, inp: dict) -> dict:
         """deadline_seconds: 이 호출 전체의 상한(호출 하나의 timeout은 클라이언트가 가진다). 넘으면 부분 결과를 내지 않고 UNAVAILABLE."""
         dl = inp["deadline_seconds"]
-        t_end = None if dl is None else time.monotonic() + dl
+        t_end = None if dl is None else self._clock() + dl
 
         def check_deadline():
-            if t_end is not None and time.monotonic() > t_end:
+            if t_end is not None and self._clock() > t_end:
                 raise BoundaryError("UNAVAILABLE", "개선 신호 읽기가 마감 시간을 넘었다(ops-feedback이 느리다)")
         mx = inp["max_cases"]
         cases, cur, truncated = [], None, False

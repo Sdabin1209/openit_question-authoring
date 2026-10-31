@@ -3,6 +3,7 @@
 기대값(계약): 토큰이 없거나 틀리면 401 + `WWW-Authenticate: Bearer`, 토큰은 맞지만 권한이 없으면 403,
 사람 행위자 호출은 X-Openit-User가 없으면 401, 본문 code는 어느 쪽이든 PERMISSION_DENIED, retryable=false,
 /healthz /readyz는 인증 없음."""
+from helpers import HANG_GUARD_SECONDS
 import http.client
 import json
 import threading
@@ -28,7 +29,7 @@ def base(svc):
 
 
 def raw(port, method, path, headers=None, body=None):
-    c = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=HANG_GUARD_SECONDS)
     c.request(method, path, body=body, headers=headers or {})
     r = c.getresponse()
     data = r.read()

@@ -40,7 +40,7 @@ def _dist(c: Counter) -> dict:
 
 
 def build_signals(bundle: dict, *, question_set_id: Optional[str] = None, confusion_min: int = CONFUSION_MIN,
-                  now: Optional[datetime] = None) -> dict:
+                  now: datetime) -> dict:
     """bundle: 읽어 온 사례와 trace(link_failures_read의 출력). 이 함수는 읽지 않고 세기만 한다."""
     cases, truncated = bundle["cases"], bundle["truncated"]
     traces = bundle["traces"]
@@ -91,7 +91,7 @@ def build_signals(bundle: dict, *, question_set_id: Optional[str] = None, confus
                          "questions": qlist})
     return {
         "status": "OK",
-        "generated_at": (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "cases_read": len(cases), "truncated": truncated, "confusion_min": confusion_min,
         "question_sets": out_sets, "skipped": dict(sorted(skipped.items())),
         "note": "읽기 전용 신호다. 문항을 고칠지는 저자가 정한다. 발화 문장은 담지 않는다.",

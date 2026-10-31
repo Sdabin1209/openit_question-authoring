@@ -9,13 +9,11 @@ from boundary_contracts.errors import BoundaryError
 from boundary_contracts import canonical
 
 
-def _now_ts() -> str:
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
 
 class MemoryQuestionStore:
-    def __init__(self):
+    def __init__(self, *, now_ts):
+        """now_ts(): 'YYYY-MM-DDTHH:MM:SSZ' 시각 문자열을 돌려주는 시계(주입). 컴포넌트는 시간을 직접 읽지 않는다(ADR 0024)."""
+        self._now_ts = now_ts
         self._lock = threading.RLock()
         self._banks: dict[tuple[str, int], dict] = {}
         self._hashes: dict[tuple[str, int], str] = {}
@@ -110,7 +108,7 @@ class MemoryQuestionStore:
         with self._lock:
             if source_hash not in self._blobs:
                 self._blobs[source_hash] = (filename, bytes(data))
-            self._blob_times[source_hash] = _now_ts()      # 같은 자료를 다시 올리면 보존 기간이 새로 센다
+            self._blob_times[source_hash] = self._now_ts()      # 같은 자료를 다시 올리면 보존 기간이 새로 센다
 
     def get_source(self, source_hash):
         with self._lock:

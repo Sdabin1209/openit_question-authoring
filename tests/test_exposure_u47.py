@@ -1,5 +1,6 @@
 """노출 선언(계약 Exposure, 이미지 라벨 io.openit.exposure, U47): 정본 파일 deploy-exposure.json이 계약을 통과하고, 실제 라우트와 맞고,
 build-image.sh가 그 내용을 라벨로 단다. 실제 docker 빌드는 smoke.sh가 한다(가짜 DOCKER로 라벨 인자만 본다)."""
+from helpers import HANG_GUARD_SECONDS
 import json
 import os
 import pathlib
@@ -110,7 +111,7 @@ def test_build_image_attaches_the_declaration_as_label(tmp_path):
     log = tmp_path / "log.txt"
     from test_build_image import OFFLINE_WHEEL
     p = subprocess.run(["bash", str(ROOT / "scripts" / "build-image.sh"), str(tmp_path / "req.json")], capture_output=True, text=True,
-                       env=dict(os.environ, DOCKER=str(fake), PYTHON=sys.executable, FAKE_LOG=str(log), OPENIT_LINK_SPEC=make_tree(tmp_path / "lk", "openit_link", "0.1.0"), **OFFLINE_WHEEL), timeout=120)
+                       env=dict(os.environ, DOCKER=str(fake), PYTHON=sys.executable, FAKE_LOG=str(log), OPENIT_LINK_SPEC=make_tree(tmp_path / "lk", "openit_link", "0.1.0"), **OFFLINE_WHEEL), timeout=HANG_GUARD_SECONDS)
     assert p.returncode == 0, p.stderr
     m = re.search(r"--label io\.openit\.exposure=(\{.*?\}) --", log.read_text())
     assert m, log.read_text()[:400]
