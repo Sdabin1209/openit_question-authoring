@@ -15,7 +15,7 @@ MAT = "/v1/materials?question_set_id=qs-main&filename=f.txt"
 
 
 def test_default_deadline_is_inside_the_gateway_header_limit():
-    """기본 마감 12초 < gateway 응답 머리글 상한 13초(deploy-exposure.json). 설정 값끼리 비교한다."""
+    """기본 마감 110초(D125) < gateway 응답 머리글 상한 120초(deploy-exposure.json). 설정 값끼리 비교한다."""
     import pathlib
     decl = json.loads((pathlib.Path(__file__).resolve().parent.parent / "deploy-exposure.json").read_text(encoding="utf-8"))
     header_ms = [r["timeouts_ms"]["response_header"] for r in decl["routes"] if r["auth"]["kind"] == "account"]
@@ -24,6 +24,7 @@ def test_default_deadline_is_inside_the_gateway_header_limit():
 
 def test_deadline_scope_remaining_and_cap():
     clock = FakeMonotonic()
+    # 12.0은 기본값이 아니라 이 시험이 정한 값(시계를 흘려 남은 시간을 보는 데 쓴다)
     d = RequestDeadline(clock, 12.0)
     assert d.remaining() is None                       # 요청 범위 밖: 마감 없음
     with d.scope():
@@ -102,7 +103,7 @@ def test_entry_point_passes_the_deadline_setting(monkeypatch, tmp_path):
     monkeypatch.setenv("QA_DB_PATH", str(tmp_path / "q.db"))
     api, store = qa_main.build()
     try:
-        assert api.deadline.seconds == 12.0
+        assert api.deadline.seconds == 110.0
     finally:
         store.close()
     monkeypatch.setenv("QA_REQUEST_DEADLINE_SECONDS", "7.5")

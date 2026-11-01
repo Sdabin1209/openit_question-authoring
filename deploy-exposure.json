@@ -20,7 +20,7 @@
       "user_header": "set",
       "timeouts_ms": {
         "dial": 1000,
-        "response_header": 13000
+        "response_header": 120000
       }
     },
     {
@@ -43,7 +43,7 @@
       "user_header": "set",
       "timeouts_ms": {
         "dial": 1000,
-        "response_header": 13000
+        "response_header": 120000
       }
     },
     {
@@ -64,7 +64,7 @@
       "user_header": "set",
       "timeouts_ms": {
         "dial": 1000,
-        "response_header": 13000
+        "response_header": 120000
       }
     },
     {

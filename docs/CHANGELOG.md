@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 미배포 (2026-11-02) D125: 시간 상한 사슬 개정
+
+- 저자 경로 서버 전체 마감(`QA_REQUEST_DEADLINE_SECONDS`)과 `GET /v1/signals` 총 마감(`QA_SIGNALS_DEADLINE_SECONDS`) 기본값 12.0 -> 110.0초(측정 최악 자료 올리기 62초 위의 여유). `deploy-exposure.json` 저작 경로 response_header 13000 -> 120000(dial 1000). 근거는 ADR 0025 개정. 추출기 예산 6초는 그대로.
+
 ## 미배포 (2026-10-31) U431: 고정 갱신
 
 - boundary-contracts v3.1.1 → v3.1.2(스키마 변경 없음), openit-link v0.4.1 → v0.4.3(v0.4.2는 계약 v3.1.1을 고정해 v3.1.2와 함께 설치되지 않았다)(`requirements.lock`, `scripts/build_wheels.sh`, 시험의 표본). 문진 스키마 survey-schema-v3.0.0은 그대로. 이 영역은 model-runtime을 쓰지 않는다.

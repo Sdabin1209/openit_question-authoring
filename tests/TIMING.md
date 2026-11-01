@@ -34,6 +34,7 @@
 | tests/helpers.py `wait_until` (`time.monotonic`, `time.sleep(0.01)`) | 조건이 참이 될 때까지 기다림. 마감은 HANG_GUARD_SECONDS | 매달림 감시(조건 대기) |
 | tests/helpers.py `stop_http`, `run_bounded` | 스레드·서버 루프 종료 대기 `join(HANG_GUARD_SECONDS)` | 매달림 감시 |
 | tests/test_postgres_purge_race.py `barrier.wait`, `join`, `p.wait`, `cv.wait_for` | 경쟁 시험의 동기화·종료 대기, 모두 HANG_GUARD_SECONDS | 매달림 감시 |
+| tests/test_exposure_timeouts.py, test_request_deadline.py | 시간 사슬(110 < 120 < 130)은 설정 값끼리 비교, 마감은 가짜 시계 | 1·값 비교(실제 시간 안 잼) |
 | tests/test_build_image.py, test_setup_env.py, test_exposure_u47.py, test_auth_401_403.py, test_http_client_conformance.py, test_signals.py, test_fault_paths.py(`raw`, `request_timeout`) | subprocess·소켓·클라이언트의 마감 인자 | 매달림 감시(HANG_GUARD_SECONDS) |
 | tests/test_server_properties.py `request_timeout=7, max_concurrent=3` | 서버에 넘긴 값이 waitress 설정에 그대로 닿는지 보려고 일부러 기본값과 다른 숫자를 넘긴다. 기다리지 않는다 | 2(a) 넘긴 값 확인 |
 | tests/test_postgres_specific.py `connect_timeout=2, statement_timeout=2/3/0.5, probe_timeout=4, large_statement_timeout=5/7` | 위와 같음: DB 접속 인자·트리거 기록으로 넘긴 값을 확인한다. 기다리지 않는다 | 2(a) 넘긴 값 확인 |

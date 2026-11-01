@@ -63,7 +63,7 @@ MAX_BODY = 8 * 1024 * 1024
 class Api:
     def __init__(self, service, tokens: Mapping[str, Actor], *,
                  read_tokens: Optional[Mapping[str, str]] = None, signals=None, ready: Callable[[], bool] = lambda: True,
-                 db_kind: Optional[str] = None, signals_deadline: Optional[float] = 12.0,
+                 db_kind: Optional[str] = None, signals_deadline: Optional[float] = 110.0,
                  gateway_tokens: Optional[Iterable[str]] = None, user_roles: Optional[Mapping[str, str]] = None,
                  warnings: Optional[list] = None, deadline=None):
         self.signals_deadline = signals_deadline
