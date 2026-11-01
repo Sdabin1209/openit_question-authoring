@@ -88,9 +88,11 @@ def test_every_known_service_path_is_declared_exposed_or_denied():
     assert known <= declared, f"선언에 없는 서비스 경로: {sorted(known - declared)}"
 
 
-def test_i1_read_surface_and_signals_are_denied_at_the_gateway():
+def test_i1_read_surface_is_denied_and_signals_is_exposed_read_only():
     d = denied_paths()
-    assert "/v1/question-sets" in d and "/v1/question-sets/*" in d and "/v1/signals" in d
+    assert "/v1/question-sets" in d and "/v1/question-sets/*" in d and "/v1/signals" not in d
+    # 2026-11-01 U68: 저자 경로로 GET만 연다
+    assert [(m, p) for m, p in exposed() if p == "/v1/signals"] == [("GET", "/v1/signals")]
 
 
 def test_build_image_attaches_the_declaration_as_label(tmp_path):

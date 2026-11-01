@@ -40,7 +40,7 @@
 | 저장소(PostgreSQL 연결 끊김/SQLite 파일) 읽기 실패 | I1 호출이 `UNAVAILABLE`(재시도 가능). 게이트 제출·합성 데이터 생성이 지연된다 | `/readyz`가 503 |
 | PostgreSQL이 TCP는 받되 응답이 없거나 느림(FAULT_MATRIX P0-3/E1) | `/readyz`가 `QA_READYZ_DB_TIMEOUT_SECONDS`(기본 2초) 안에 503(`db: postgres`, 접속 정보 없음). `/healthz`는 200. 요청 경로(저작·I1 읽기)는 아래 상한 안에 `UNAVAILABLE`로 끝난다 | DB가 돌아오면 서비스를 다시 띄우지 않아도 다음 `/readyz`가 200이고 다음 호출이 새 연결로 성공 |
 | 저장소 내용 변조 | 해당 버전 읽기가 `INTEGRITY_ERROR`. 다른 버전은 영향 없음 | 백업 복원은 runbook |
-| ops-feedback 중단 | `GET /v1/signals`만 UNAVAILABLE. 나머지 영향 없음 |
+| ops-feedback 중단 | `GET /v1/signals`만 UNAVAILABLE. 나머지 영향 없음. 게이트웨이 저자 경로로 읽기 노출(2026-11-01, U68): GET만, author·clinical-reviewer | 시간: signals 총 마감 기본 20초가 게이트웨이 response_header 13초(deploy ADR 0048)보다 길어 게이트웨이가 먼저 끊을 수 있다. 값은 헤드 결정 대기
 | 이웃 영역(release-gate) 중단 | 영향 없음. 호출하지 않는다 | 이후 구간에서 이 표를 갱신 |
 | 계약 버전 불일치 | 시작하지 않는다(`UNSUPPORTED_VERSION`) | |
 
