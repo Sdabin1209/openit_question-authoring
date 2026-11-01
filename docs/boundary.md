@@ -40,7 +40,7 @@
 | 저장소(PostgreSQL 연결 끊김/SQLite 파일) 읽기 실패 | I1 호출이 `UNAVAILABLE`(재시도 가능). 게이트 제출·합성 데이터 생성이 지연된다 | `/readyz`가 503 |
 | PostgreSQL이 TCP는 받되 응답이 없거나 느림(FAULT_MATRIX P0-3/E1) | `/readyz`가 `QA_READYZ_DB_TIMEOUT_SECONDS`(기본 2초) 안에 503(`db: postgres`, 접속 정보 없음). `/healthz`는 200. 요청 경로(저작·I1 읽기)는 아래 상한 안에 `UNAVAILABLE`로 끝난다 | DB가 돌아오면 서비스를 다시 띄우지 않아도 다음 `/readyz`가 200이고 다음 호출이 새 연결로 성공 |
 | 저장소 내용 변조 | 해당 버전 읽기가 `INTEGRITY_ERROR`. 다른 버전은 영향 없음 | 백업 복원은 runbook |
-| ops-feedback 중단 | `GET /v1/signals`만 UNAVAILABLE. 나머지 영향 없음. 게이트웨이 저자 경로로 읽기 노출(2026-11-01, U68): GET만, author·clinical-reviewer | 시간: signals 총 마감 기본 20초가 게이트웨이 response_header 13초(deploy ADR 0048)보다 길어 게이트웨이가 먼저 끊을 수 있다. 값은 헤드 결정 대기
+| ops-feedback 중단 | `GET /v1/signals`만 UNAVAILABLE. 나머지 영향 없음. 게이트웨이 저자 경로로 읽기 노출(2026-11-01, U68): GET만, author·clinical-reviewer | 시간: signals 총 마감 기본 12.0초는 다른 저자 경로의 요청 마감과 같은 값(헤드 결정 2026-11-01, D120)이며 게이트웨이 response_header 13초(deploy ADR 0048) 안이다
 | 이웃 영역(release-gate) 중단 | 영향 없음. 호출하지 않는다 | 이후 구간에서 이 표를 갱신 |
 | 계약 버전 불일치 | 시작하지 않는다(`UNSUPPORTED_VERSION`) | |
 
@@ -84,7 +84,7 @@
 
 | 상황 | 동작 | 시험 |
 | --- | --- | --- |
-| 상류 느림 | 호출 하나의 읽기 상한 `QA_FAILURES_TIMEOUT_SECONDS`(기본 5초; 이전에는 클라이언트 기본 10초). 목록·trace를 여러 번 부르는 한 번의 `GET /v1/signals`에는 총 마감 `QA_SIGNALS_DEADLINE_SECONDS`(기본 20초)를 걸었다(이전에는 최대 수십 번 × 10초). 넘으면 부분 결과 없이 503 | `test_d5_upstream_timeout_is_503_retryable_and_authoring_is_unaffected`, `test_d5_total_deadline_stops_endless_pages_with_an_injected_clock` |
+| 상류 느림 | 호출 하나의 읽기 상한 `QA_FAILURES_TIMEOUT_SECONDS`(기본 5초; 이전에는 클라이언트 기본 10초). 목록·trace를 여러 번 부르는 한 번의 `GET /v1/signals`에는 총 마감 `QA_SIGNALS_DEADLINE_SECONDS`(기본 12초, D120)를 걸었다(이전에는 최대 수십 번 × 10초). 넘으면 부분 결과 없이 503 | `test_d5_upstream_timeout_is_503_retryable_and_authoring_is_unaffected`, `test_d5_total_deadline_stops_endless_pages_with_an_injected_clock` |
 | 상류 5xx | 503 `UNAVAILABLE`(재시도 가능). 저작·I1 읽기는 영향 없음 | `test_d5_upstream_5xx...` |
 | 깨진 응답(JSON 아님, 형식 틀림) | 성공으로 취급하지 않고 503 `UNAVAILABLE` | 같은 시험 |
 | trace 읽기 실패 | `NOT_FOUND`처럼 그 사례만 못 읽는 경우는 건너뛰고 세지만, 상류 장애(`UNAVAILABLE`)·인증 실패는 이제 건너뛰지 않고 전체를 실패시킨다(이전에는 "trace 없음"으로 조용히 세어 OK 응답이 나갔다) | `test_d5_trace_upstream_failure...` |

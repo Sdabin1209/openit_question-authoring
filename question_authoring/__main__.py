@@ -24,7 +24,7 @@ QA_MAX_CONCURRENT_REQUESTS       동시 처리 요청 상한(기본 32). 넘으�
 QA_DRAFT_RETENTION_DAYS          처리되지 않은(OPEN, DISCARDED) 초안의 보존 일수(기본 30, 양의 정수만). `python -m question_authoring purge`가 쓴다
 QA_SOURCE_RETENTION_DAYS         어떤 버전·초안도 참조하지 않는 원본 자료의 보존 일수(기본 30, 양의 정수만)
 QA_FAILURES_TIMEOUT_SECONDS      I7(ops-feedback) 호출 하나의 읽기 상한(초, 기본 5)
-QA_SIGNALS_DEADLINE_SECONDS      GET /v1/signals 한 번의 총 마감(초, 기본 20)
+QA_SIGNALS_DEADLINE_SECONDS      GET /v1/signals 한 번의 총 마감(초, 기본 12)
 QA_REQUEST_DEADLINE_SECONDS      사람용 요청 하나의 서버 쪽 전체 마감(초, 기본 12.0 = gateway 응답 머리글 상한 13초 - 여유 1초, D120, ADR 0025)
 """
 import json
@@ -139,7 +139,7 @@ def build() -> tuple[Api, AuthoringStore]:
         signals = http_failure_source(env["QA_FAILURES_URL"], read_secret(env.get("QA_FAILURES_TOKEN_ENV", "QA_FAILURES_TOKEN")) or "",
                                       _seconds("QA_FAILURES_TIMEOUT_SECONDS", 5.0))    # 이웃 HTTP 클라이언트는 통신 컴포넌트가 만든다
     return Api(svc, tokens, read_tokens=read_tokens, signals=signals, ready=store.is_ready, db_kind=getattr(store, "kind", None),
-               signals_deadline=_seconds("QA_SIGNALS_DEADLINE_SECONDS", 20.0), gateway_tokens=gateway_tokens,
+               signals_deadline=_seconds("QA_SIGNALS_DEADLINE_SECONDS", 12.0), gateway_tokens=gateway_tokens,  # 왜 12.0초: D120 사람용 요청 전체 마감과 같은 값, 게이트웨이 response_header 13초 안(서버 12 < 게이트웨이 13). 측정한 값이 아니라 시간 사슬에서 나온 값(ADR 0025)
                user_roles=user_roles, warnings=warnings, deadline=deadline), store
 
 

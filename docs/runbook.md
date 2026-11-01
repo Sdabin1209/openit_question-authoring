@@ -48,7 +48,7 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 | QA_DB_LARGE_STATEMENT_TIMEOUT_SECONDS | 큰 자료(원본 자료, 초안, 문항 세트 버전) 쓰기의 문장 상한(초) | 30 |
 | QA_REQUEST_TIMEOUT_SECONDS | HTTP 요청 소켓이 이 시간 멈추면 끊는다(멈춘 업로드) | 30 |
 | QA_FAILURES_TIMEOUT_SECONDS | I7 호출 하나의 읽기 상한(초) | 5 |
-| QA_SIGNALS_DEADLINE_SECONDS | `GET /v1/signals` 한 번의 총 마감(초) | 20 |
+| QA_SIGNALS_DEADLINE_SECONDS | `GET /v1/signals` 한 번의 총 마감(초) | 12 |
 | QA_REQUEST_DEADLINE_SECONDS | 사람용 요청 하나의 서버 쪽 전체 마감(초). 각 DB 문장은 남은 시간을 상한으로 쓰고, 넘기면 저장하지 않고 503(D120, ADR 0025) | 12 |
 | QA_READYZ_DB_TIMEOUT_SECONDS | `/readyz`의 DB 확인 상한(초) | 2 |
 
