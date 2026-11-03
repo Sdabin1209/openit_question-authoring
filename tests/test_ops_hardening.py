@@ -231,10 +231,10 @@ def test_purge_threaded_with_uploads_never_loses_a_referenced_source(validators)
 def test_gateway_email_style_user_ids(validators):
     from question_authoring.components.link_authoring_server import Api
     s = AuthoringService(MemoryQuestionStore(), require_two_person=True)   # 4-eyes 동작 시험: 기본은 false(L13)
-    api = Api(s, {}, gateway_tokens={"gw"}, user_roles={"kim@hosp.kr": "question-author", "park.md@hosp.kr": "clinical-reviewer"})
+    api = Api(s, {}, gateway_tokens={"gw"})
 
     def call(user, method="GET", path="/v1/drafts", body=b""):
-        h = {"Authorization": "Bearer gw", "X-Openit-User": user}
+        h = {"Authorization": "Bearer gw", "X-Openit-User": user, "X-Openit-Roles": "clinical-reviewer" if user.startswith("park") else "author"}
         return api.handle(method, path, h, body)
     assert call("kim@hosp.kr")[0] == 200 and call("park.md@hosp.kr")[0] == 200
     st, out = call("kim@hosp.kr", "POST", "/v1/materials?question_set_id=qs-e&filename=f.txt", example_text("qs-e"))
@@ -248,8 +248,6 @@ def test_gateway_email_style_user_ids(validators):
         {"question_set": ref, "decision": "APPROVED", "clinical_basis_approved": True}).encode())
     assert st == 200 and s.store.reader().latest("qs-e", reviewed_only=True) == ref
     # 안전하지 않은 형식은 모두 거부
-    api.user_roles.update({"a b@x": "question-author", "a@b@c": "question-author", "x:y": "question-author",
-                           "<s>@x": "question-author", "a%40b": "question-author", ("a" * 70 + "@x"): "question-author"})
     for bad in ("a b@x", "a@b@c", "x:y", "<s>@x", "a%40b", "a" * 70 + "@x", "@x", "kim@"):
         assert call(bad)[0] == 403, bad
 

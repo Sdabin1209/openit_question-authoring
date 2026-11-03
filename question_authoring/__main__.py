@@ -19,7 +19,6 @@ QA_DEV_MODE                      1이면 개발·시험 구성을 허용한다(S
                                  QA_DATABASE_URL(_FILE)과 토큰(QA_AUTHOR_TOKENS 또는 QA_GATEWAY_TOKENS)이 없으면 시작을 거부한다
 QA_REQUIRE_TWO_PERSON            기본 false(L13, ADR 0026). true면 저자 != 검수자(4-eyes, D92)이고 임상 승인은 검수 역할이 한다. false면 /readyz에 경고(two_person_disabled)
 QA_GATEWAY_TOKENS                비밀. gateway가 쓰는 서비스 토큰 쉼표 목록. 이 토큰의 요청은 X-Openit-User 헤더의 사용자를 쓴다
-QA_USER_ROLES                    '사용자ID=역할' 쉼표 목록(역할: question-author, clinical-reviewer). gateway 경유 사용자의 역할표
 QA_MAX_CONCURRENT_REQUESTS       동시 처리 요청 상한(기본 32). 넘는 요청은 줄 서서 기다린다(waitress 스레드 수, ADR 0016)
 QA_DRAFT_RETENTION_DAYS          처리되지 않은(OPEN, DISCARDED) 초안의 보존 일수(기본 30, 양의 정수만). `python -m question_authoring purge`가 쓴다
 QA_SOURCE_RETENTION_DAYS         어떤 버전·초안도 참조하지 않는 원본 자료의 보존 일수(기본 30, 양의 정수만)
@@ -118,13 +117,6 @@ def build() -> tuple[Api, AuthoringStore]:
             raise SystemExit(f"QA_AUTHOR_TOKENS의 역할은 {', '.join(ROLES)} 중 하나여야 한다")
         tokens[tok] = Actor(aid, role)
     gateway_tokens = {t for t in (read_secret("QA_GATEWAY_TOKENS") or "").split(",") if t}
-    user_roles = {}
-    for item in filter(None, (env.get("QA_USER_ROLES") or "").split(",")):
-        uid, _, role = item.partition("=")   # 역할 열거는 check_environment(QA_USER_ROLES 패턴)가 보증했다
-        user_roles[uid.strip()] = role
-    if not dev:
-        if gateway_tokens and not user_roles:
-            raise SystemExit("QA_GATEWAY_TOKENS가 있는데 QA_USER_ROLES가 비어 있다")
     deadline = RequestDeadline(time.monotonic, _seconds("QA_REQUEST_DEADLINE_SECONDS", DEFAULT_REQUEST_DEADLINE_SECONDS))   # 사람용 요청 전체 마감(D120)
     store = open_store(deadline.remaining)
     read_tokens = {}
@@ -140,7 +132,7 @@ def build() -> tuple[Api, AuthoringStore]:
                                       _seconds("QA_FAILURES_TIMEOUT_SECONDS", 5.0))    # 이웃 HTTP 클라이언트는 통신 컴포넌트가 만든다
     return Api(svc, tokens, read_tokens=read_tokens, signals=signals, ready=store.is_ready, db_kind=getattr(store, "kind", None),
                signals_deadline=_seconds("QA_SIGNALS_DEADLINE_SECONDS", 110.0), gateway_tokens=gateway_tokens,  # 왜 110.0초: D125 저자 경로 서버 마감과 같은 값, 게이트웨이 response_header 120초 안(서버 110 < 게이트웨이 120 < 화면 130). 측정한 값이 아니라 측정 최악 62초 위의 여유(ADR 0025)
-               user_roles=user_roles, warnings=warnings, deadline=deadline), store
+               warnings=warnings, deadline=deadline), store
 
 
 def purge_once(store: AuthoringStore, now: datetime | None = None) -> dict:

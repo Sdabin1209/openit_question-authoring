@@ -6,8 +6,7 @@ from question_authoring.wiring.service import Actor
 
 
 def api_of(svc):
-    return Api(svc, {"tok-a": Actor("dr-kim", "question-author")}, read_tokens={"rd": "synthetic-data"}, gateway_tokens={"g1"},
-               user_roles={"u1": "question-author"})
+    return Api(svc, {"tok-a": Actor("dr-kim", "question-author")}, read_tokens={"rd": "synthetic-data"}, gateway_tokens={"g1"})
 
 
 def status(api, headers, path="/v1/drafts"):
@@ -21,7 +20,7 @@ def test_static_token_ignores_user_header(svc):
 
 def test_gateway_requires_known_user(svc):
     a = api_of(svc)
-    assert status(a, {"Authorization": "Bearer g1", "X-Openit-User": "u1"}) == 200
+    assert status(a, {"Authorization": "Bearer g1", "X-Openit-User": "u1", "X-Openit-Roles": "author"}) == 200
     assert status(a, {"Authorization": "Bearer g1"}) == 401
     assert status(a, {"Authorization": "Bearer g1", "X-Openit-User": "stranger"}) == 403
 

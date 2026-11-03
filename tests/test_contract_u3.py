@@ -159,7 +159,7 @@ def test_readyz_body_is_checked(svc):
     assert bad.handle("GET", "/readyz", {})[0] == 503
 
 
-@pytest.mark.parametrize("name", ["QA_DRAFT_RETENTION_DAYS", "QA_USER_ROLES"])
+@pytest.mark.parametrize("name", ["QA_DRAFT_RETENTION_DAYS"])
 def test_environment_invalid_example_refuses_to_build(monkeypatch, name):
     env = ex("invalid", "QuestionAuthoringDeployInterface.Environment")  # 계약 3.2.0에도 무효 예시는 이 이름 하나뿐(독립 스키마용 이름의 무효 예시는 없다)
     monkeypatch.setenv("QA_DB_PATH", ":memory:")

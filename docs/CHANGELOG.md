@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 미배포 (2026-11-03) 사람 역할은 X-Openit-Roles (계약 v3.4.0, ADR 0028)
+
+- 사람 요청(게이트웨이 토큰)의 역할을 `X-Openit-Roles`에서 읽는다. `author` -> 저자, `clinical-reviewer` -> 검수. 없으면 403. `QA_USER_ROLES`와 `Api(user_roles=)` 삭제(계약 QuestionAuthoringEnv에서도 삭제됨). 잠금: 계약 v3.4.0, openit-link v0.4.6, survey-schema-v4.1.0.
+
 ## 미배포 (2026-11-03) 문진표 ID·제목, 선행 조건 6연산자 (계약 v3.3.0, 문진 스키마 4.0.0)
 
 - boundary-contracts v3.2.0 -> v3.3.0, openit-survey-schema 3.0.0 -> 4.0.0. `requirements.lock`, `scripts/build_wheels.sh`.

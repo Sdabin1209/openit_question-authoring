@@ -20,8 +20,7 @@ READ, AUTH, REVIEWER, GW = "read-tok", "auth-tok", "rev-tok", "gw-tok"
 @pytest.fixture
 def base(svc):
     api = Api(svc, {AUTH: Actor("dr-kim", "question-author"), REVIEWER: Actor("dr-lee", "clinical-reviewer")},
-              read_tokens={READ: "synthetic-data"}, gateway_tokens={GW},
-              user_roles={"u-kim": "question-author", "u-rev": "clinical-reviewer"})
+              read_tokens={READ: "synthetic-data"}, gateway_tokens={GW})
     srv = make_server(api, "127.0.0.1", 0)
     threading.Thread(target=srv.run, daemon=True).start()
     yield srv.effective_port
@@ -87,9 +86,9 @@ def test_gateway_token_without_user_header_is_401(base):
 
 
 def test_gateway_unknown_or_unpermitted_user_is_403(base):
-    st, www, body = raw(base, "GET", "/v1/drafts", {"Authorization": f"Bearer {GW}", "X-Openit-User": "stranger"})
+    st, www, body = raw(base, "GET", "/v1/drafts", {"Authorization": f"Bearer {GW}", "X-Openit-User": "stranger", "X-Openit-Roles": "staff"})
     assert st == 403 and www is None and body["code"] == "PERMISSION_DENIED"
-    st, www, _ = raw(base, "POST", "/v1/drafts", {"Authorization": f"Bearer {GW}", "X-Openit-User": "u-rev"}, b'{"question_set_id":"q"}')
+    st, www, _ = raw(base, "POST", "/v1/drafts", {"Authorization": f"Bearer {GW}", "X-Openit-User": "u-rev", "X-Openit-Roles": "clinical-reviewer"}, b'{"question_set_id":"q"}')
     assert st == 403 and www is None
 
 
@@ -98,4 +97,4 @@ def test_valid_credentials_unchanged_and_health_open(base):
     assert raw(base, "GET", "/readyz")[0] == 200
     assert raw(base, "GET", "/v1/question-sets", {"Authorization": f"Bearer {READ}"})[0] == 200
     assert raw(base, "GET", "/v1/drafts", {"Authorization": f"Bearer {AUTH}"})[0] == 200
-    assert raw(base, "GET", "/v1/drafts", {"Authorization": f"Bearer {GW}", "X-Openit-User": "u-kim"})[0] == 200
+    assert raw(base, "GET", "/v1/drafts", {"Authorization": f"Bearer {GW}", "X-Openit-User": "u-kim", "X-Openit-Roles": "author"})[0] == 200

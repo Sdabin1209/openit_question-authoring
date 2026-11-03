@@ -108,11 +108,14 @@ def test_strict_input_types_over_http(s2):
 
 
 def test_gateway_identity(s2):
-    api = Api(s2, {"static": KIM}, gateway_tokens={"gw-tok"}, user_roles={"u-kim": "question-author", "u-park": "clinical-reviewer"})
+    api = Api(s2, {"static": KIM}, gateway_tokens={"gw-tok"})
+    ROLES = {"u-kim": "author", "u-park": "clinical-reviewer", "stranger": "staff"}
+
     def call(tok, user=None, path="/v1/drafts", method="GET", body=b""):
         h = {"Authorization": f"Bearer {tok}"}
         if user:
             h["X-Openit-User"] = user
+            h["X-Openit-Roles"] = ROLES[user]
         return api.handle(method, path, h, body)[0]
     assert call("gw-tok", "u-kim") == 200
     assert call("gw-tok") == 401                       # 헤더 없음(사람 행위자 신원이 없다)
@@ -225,3 +228,36 @@ def test_phi_check_finishes_on_phone_and_date_text():
     from helpers import run_bounded
     unit = "방문 2012-01-01 010-2012 0101 20120101 02-".encode()
     assert run_bounded(lambda: phi_warnings(unit * 8000)) is not None
+
+
+def test_roles_header_decides_permissions_and_is_trusted_only_from_the_gateway(s2):
+    """ADR 0028: 역할은 X-Openit-Roles에서 읽는다. 저자만->초안 가능·승인 403, 검수->승인 가능, 위조(게이트웨이 토큰 아님)->무시, 역할 없음->403."""
+    api = Api(s2, {"static": KIM}, gateway_tokens={"gw"})
+
+    def call(user, roles, path, method="GET", body=b"", tok="gw"):
+        h = {"Authorization": f"Bearer {tok}", "X-Openit-User": user}
+        if roles is not None:
+            h["X-Openit-Roles"] = roles
+        return api.handle(method, path, h, body)
+
+    mat = "/v1/materials?question_set_id=qs-r&filename=f.txt"
+    assert call("u1", None, "/v1/drafts")[0] == 403                          # 헤더 없음
+    assert call("u1", "staff,admin", "/v1/drafts")[0] == 403                 # 이 서비스의 역할 없음
+    assert call("u1", "", "/v1/drafts")[0] == 403
+    st, out = call("u1", "author", mat, "POST", example_text("qs-r"))
+    assert st == 200                                                         # 저자 역할: 초안 가능
+    did = out["draft_id"]
+    ph = call("u1", "author", f"/v1/drafts/{did}/preview")[1]["preview_hash"]
+    st, ref = call("u1", "author", f"/v1/drafts/{did}/confirm", "POST", json.dumps({"preview_hash": ph}).encode())
+    assert st == 200
+    appr = json.dumps({"question_set": ref, "decision": "APPROVED", "clinical_basis_approved": True}).encode()
+    assert call("u1", "author", "/v1/reviews", "POST", appr)[0] == 403       # 저자만: 승인 불가
+    assert call("u2", "clinical-reviewer", mat, "POST", example_text("qs-r"))[0] == 403   # 검수만: 초안 불가
+    assert call("u2", "clinical-reviewer", "/v1/reviews", "POST", appr)[0] == 200          # 검수: 승인
+    # 둘 다 가진 사용자: 초안 가능, 단 자기가 확정한 버전은 승인하지 못한다(4-eyes 그대로)
+    assert call("u3", "author,clinical-reviewer", mat, "POST", example_text("qs-r"))[0] == 200
+    assert call("u1", "author,clinical-reviewer", "/v1/reviews", "POST", appr)[0] == 403
+    # 위조: 정적 토큰·읽기 아닌 토큰에 붙은 역할 헤더는 무시된다
+    h = {"Authorization": "Bearer static", "X-Openit-User": "u9", "X-Openit-Roles": "clinical-reviewer"}
+    assert api.handle("POST", "/v1/reviews", h, appr)[0] == 403              # 정적 저자 토큰: 헤더로 검수자가 되지 못한다
+    assert call("u9", "author", "/v1/drafts", tok="forged")[0] == 401

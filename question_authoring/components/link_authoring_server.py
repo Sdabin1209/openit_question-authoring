@@ -64,12 +64,11 @@ class Api:
     def __init__(self, service, tokens: Mapping[str, Actor], *,
                  read_tokens: Optional[Mapping[str, str]] = None, signals=None, ready: Callable[[], bool] = lambda: True,
                  db_kind: Optional[str] = None, signals_deadline: Optional[float] = 110.0,
-                 gateway_tokens: Optional[Iterable[str]] = None, user_roles: Optional[Mapping[str, str]] = None,
+                 gateway_tokens: Optional[Iterable[str]] = None,
                  warnings: Optional[list] = None, deadline=None):
         self.signals_deadline = signals_deadline
         # gateway 경유 인증(D88 E2): gateway가 사람 인증을 마치고 서비스 토큰(gateway_tokens)과 X-Openit-User를 붙인다.
-        # 사람의 역할은 이 서비스의 user_roles(사용자 ID -> 역할) 표가 정한다. 헤더를 믿는 것은 gateway 토큰을 가진 호출뿐이다.
-        self.user_roles = dict(user_roles or {})
+        # 사람의 역할은 gateway가 붙인 X-Openit-Roles에서 읽는다(계약 CONVENTIONS 6절, ADR 0028). 이 서비스는 사용자->역할 표를 두지 않는다. 헤더를 믿는 것은 gateway 토큰을 가진 호출뿐이다.
         self.warnings = list(warnings or [])
         self.svc = service
         self.deadline = deadline        # RequestDeadline | None: 사람용 요청 전체 마감(D120, ADR 0025). 요청마다 scope()로 시작한다
@@ -121,9 +120,16 @@ class Api:
             user = req.user
             if not user:       # 사람 행위자 호출에 신원이 없다(계약: X-Openit-User 없으면 401)
                 raise BoundaryError("PERMISSION_DENIED", "인증이 필요하다", {"http_status": 401})
-            r = self.user_roles.get(user)
-            if r is None or not _USER_RE.match(user):
-                raise BoundaryError("PERMISSION_DENIED", "권한이 없다")      # 신원은 왔으나 이 서비스가 아는 사용자가 아니다
+            if not _USER_RE.match(user):
+                raise BoundaryError("PERMISSION_DENIED", "권한이 없다")
+            granted = {r.strip() for r in (req.headers.get("x-openit-roles") or "").split(",")}
+            # 왜 경로로 고르나: Actor는 역할 하나다. 두 역할을 가진 사용자는 검수 경로(/v1/reviews)에서만 검수자, 그 밖에서는 저자로 다룬다
+            if "clinical-reviewer" in granted and ("author" not in granted or req.path == "/v1/reviews"):
+                r = "clinical-reviewer"
+            elif "author" in granted:
+                r = "question-author"
+            else:
+                raise BoundaryError("PERMISSION_DENIED", "권한이 없다")      # 역할 헤더가 없거나 이 서비스의 역할이 없다
             # 계약의 Id(reviewer_id)는 '@'를 허용하지 않는다. 이메일형 ID는 '@'를 ':at:'로 바꿔 기록한다(역변환 가능, 충돌 없음: 입력에 ':'를 허용하지 않는다)
             return Actor(user.replace("@", ":at:"), r)
         return Actor(req.actor, role)
