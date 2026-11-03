@@ -14,7 +14,6 @@ from typing import Callable, Mapping
 from urllib.parse import urlsplit
 
 from boundary_contracts import read_secret
-from boundary_contracts.clients import egress_proxy_from, require_tls_url
 from boundary_contracts.errors import BoundaryError
 
 # 표 이름의 정본은 migrations/postgres 이고 tests/test_backup_flow.py 가 일치를 본다. 스키마 순서(FK 없음)대로.
@@ -49,14 +48,13 @@ def dump(url: str, out) -> int:
     return n
 
 
-def run(env: Mapping[str, str], *, restic: str = "restic", runner: Callable = subprocess.run) -> dict:
+def run(env: Mapping[str, str], *, proxy: str | None = None, restic: str = "restic", runner: Callable = subprocess.run) -> dict:
     """영역의 PostgreSQL 을 백업한다. 설정이 없으면 시작하지 않는다. 실패는 BoundaryError 이고 메시지에 비밀·접속 문자열이 없다."""
     url = env.get("OPENIT_BACKUP_URL")
     cred = read_secret("OPENIT_BACKUP_CREDENTIALS", environ=env)
     pw_file = env.get("OPENIT_BACKUP_REPO_PASSWORD_FILE")
     if not url or not cred or not pw_file:
         raise BoundaryError("INVALID_RECORD", "OPENIT_BACKUP_URL, OPENIT_BACKUP_CREDENTIALS_FILE, OPENIT_BACKUP_REPO_PASSWORD_FILE 가 필요하다")
-    require_tls_url(url)
     if urlsplit(url).scheme != "https":
         raise BoundaryError("INVALID_RECORD", "OPENIT_BACKUP_URL 은 https 여야 한다")
     user, sep, secret = cred.strip().partition(":")
@@ -69,8 +67,7 @@ def run(env: Mapping[str, str], *, restic: str = "restic", runner: Callable = su
     child = {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"), "HOME": "/tmp", "RESTIC_CACHE_DIR": "/tmp/restic-cache",
              "RESTIC_REPOSITORY": "rest:" + url, "RESTIC_PASSWORD_FILE": pw_file,
              "RESTIC_REST_USERNAME": user, "RESTIC_REST_PASSWORD": secret}
-    proxy = egress_proxy_from(env)
-    if proxy:
+    if proxy:     # 자기 영역 게이트웨이 출구(진입점이 egress_proxy_from 으로 꺼내 넘긴다: HTTP 클라이언트 모듈은 link_* 와 진입점만 쓴다, 구조 시험 3)
         child["HTTPS_PROXY"] = proxy
     if env.get("SSL_CERT_FILE"):
         child["SSL_CERT_FILE"] = env["SSL_CERT_FILE"]

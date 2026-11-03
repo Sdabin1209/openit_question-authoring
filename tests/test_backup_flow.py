@@ -53,7 +53,7 @@ def fake_dump(monkeypatch):
 
 def test_backup_goes_out_through_the_own_gateway_with_secrets_only_in_the_child_env(tmp_path, fake_dump):
     r = Runner()
-    out = backup_flow.run(env_of(tmp_path), runner=r)
+    out = backup_flow.run(env_of(tmp_path), proxy="http://127.0.0.1:3128", runner=r)
     assert out == {"snapshot_id": "abc123def", "bytes": 31}
     argv, child, stdin = r.calls[-1]
     assert argv[:2] == ["restic", "backup"] and stdin == b"COPY versions FROM STDIN;\nrow\n\\.\n"
@@ -70,7 +70,7 @@ def run_main(tmp_path, monkeypatch, capsys, run):
     for k, v in env_of(tmp_path).items():
         monkeypatch.setenv(k, v)
     monkeypatch.setenv("QA_DB_PATH", ":memory:")
-    monkeypatch.setattr(backup_flow, "run", run)
+    monkeypatch.setattr(backup_flow, "run", lambda env, proxy=None: run(env))
     rc = qa_main.main(["backup"])
     cap = capsys.readouterr()
     return rc, cap.out, cap.err
@@ -146,3 +146,14 @@ def test_dump_copies_every_table_from_a_real_postgres_in_one_readonly_transactio
             assert n == len(buf.getvalue()) and all(f"COPY {t} FROM STDIN;" in text for t in backup_flow.TABLES)
         finally:
             s.close()
+
+
+def test_bad_egress_proxy_refuses_to_start(tmp_path, monkeypatch):
+    """R1.8·CommonEnv: OPENIT_EGRESS_PROXY 가 loopback http 가 아니면 기동 때 거부한다(잡도 같다). 값은 메시지에 쓰지 않는다."""
+    for k, v in env_of(tmp_path, OPENIT_EGRESS_PROXY="http://gateway.example:3128").items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setenv("QA_DB_PATH", ":memory:")
+    monkeypatch.setenv("QA_DEV_MODE", "1")
+    with pytest.raises(SystemExit) as e:
+        qa_main.main(["backup"])
+    assert "CommonEnv" in str(e.value) and "gateway.example" not in str(e.value)

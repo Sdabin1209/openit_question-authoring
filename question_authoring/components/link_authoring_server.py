@@ -209,11 +209,11 @@ class Api:
         def ui(name):
             data = (_UI_DIR / name).read_bytes()
             return lambda r: Response(200, data, headers=_UI_HEADERS, content_type=_UI_FILES[name])
-        statics = [Route("GET", "/ui/", ui("index.html"), roles=frozenset())] + \
-                  [Route("GET", "/ui/" + n, ui(n), roles=frozenset()) for n in _UI_FILES]
+        statics = [Route("GET", "/ui/", ui("index.html"), roles=frozenset(), max_body=MAX_BODY)] + \
+                  [Route("GET", "/ui/" + n, ui(n), roles=frozenset(), max_body=MAX_BODY) for n in _UI_FILES]
         return statics + [
             # /metrics: 인증 없음(roles 비움, 토큰이 있어도 무시). 접근 통제는 망이다(RUNTIME R10.11, R6.2)
-            Route("GET", "/metrics", lambda r: Response(200, self.metrics_text(), content_type="text/plain; version=0.0.4; charset=utf-8"), roles=frozenset()),
+            Route("GET", "/metrics", lambda r: Response(200, self.metrics_text(), content_type="text/plain; version=0.0.4; charset=utf-8"), roles=frozenset(), max_body=MAX_BODY),
             R("GET", sc, lambda r, a: self._read(r), read),
             R("GET", sc + "/{qsid}/latest", lambda r, a: self._read(r), read),
             R("GET", sc + "/{qsid}/versions", lambda r, a: self._read(r), read),

@@ -184,9 +184,9 @@ def main(argv=None) -> int:
         ts = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")   # noqa: E731
         started, result, err = ts(), None, None
         try:
-            result = backup_flow.run(os.environ)
-        except BoundaryError as e:              # 실패도 마지막 줄 JSON 과 0 이 아닌 종료 코드(R9.2, BackupJobResult). 서비스 출력은 바뀌지 않는다. 메시지에는 비밀이 없다
-            err = e
+            result = backup_flow.run(os.environ, proxy=egress_proxy_from(os.environ))
+        except (BoundaryError, ValueError) as e:              # 실패도 마지막 줄 JSON 과 0 이 아닌 종료 코드(R9.2, BackupJobResult). 서비스 출력은 바뀌지 않는다. 메시지에는 비밀이 없다
+            err = e if isinstance(e, BoundaryError) else BoundaryError("INVALID_RECORD", "OPENIT_EGRESS_PROXY 가 계약(R1.8)을 어긴다")
         line = backup_flow.result_line(started, ts(), ok=result, error=err)
         errs = contract.problems("BackupJobResult", None, line)
         if errs:
