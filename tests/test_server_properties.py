@@ -151,3 +151,34 @@ def test_start_server_helper_serves_one_round_trip(svc):
         assert urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=HANG_GUARD_SECONDS).status == 200   # 매달림 감시
     finally:
         stop()
+
+
+def test_qa_host_binds_only_that_address():
+    """QA_HOST=127.0.0.1이면 서버는 그 주소에만 붙는다(0.0.0.0 전체가 아니다). 실제 소켓으로 본다."""
+    import socket
+    import threading
+    from helpers import stop_http
+    from question_authoring.components.link_authoring_server import Api, make_server
+    from question_authoring.wiring.service import AuthoringService
+    from question_authoring.wiring.stores import MemoryQuestionStore
+    srv = make_server(Api(AuthoringService(MemoryQuestionStore()), {}), "127.0.0.1", 0)
+    th = threading.Thread(target=srv.run, daemon=True)
+    th.start()
+    try:
+        port = srv.effective_port
+        with socket.create_connection(("127.0.0.1", port), timeout=5):
+            pass
+        # 이 기계의 loopback 아닌 주소(있으면)로는 닿지 않아야 한다. 외부 접속 없이 주소만 알아내는 UDP connect를 쓴다
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("192.0.2.1", 9))     # TEST-NET-1: 패킷을 보내지 않고 나가는 인터페이스 주소만 정한다
+            other = s.getsockname()[0]
+        except OSError:
+            other = None
+        finally:
+            s.close()
+        if other and not other.startswith("127."):
+            with pytest.raises(OSError):
+                socket.create_connection((other, port), timeout=5).close()
+    finally:
+        stop_http(srv, th)

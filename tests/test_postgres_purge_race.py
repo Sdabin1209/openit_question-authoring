@@ -73,9 +73,9 @@ class _AgeGate:
                 self.cv.notify_all()
 
 
-def _material(k: int) -> bytes:
+def _material(k: int, qsid: str = "qs-main") -> bytes:
     # 짝수: 모든 스레드가 같은 자료(같은 해시를 동시에 다시 올림), 홀수: 매번 다른 자료(읽지 못해 FALLBACK 초안)
-    return example_text() if k % 2 == 0 else b"unreadable-material-%d-" % k + os.urandom(8).hex().encode()
+    return example_text(qsid) if k % 2 == 0 else b"unreadable-material-%d-" % k + os.urandom(8).hex().encode()
 
 
 def _check_drafts_have_sources(store, drafts):
@@ -105,7 +105,7 @@ def test_pg_concurrent_uploads_and_purge_threads(validators):
                 for k in range(ROUNDS):
                     gate.enter()
                     try:
-                        out = svc.ingest_material(AUTHOR, f"qs-up{idx}", "form.txt", _material(k), accept_phi_warning=True)
+                        out = svc.ingest_material(AUTHOR, f"qs-up{idx}", "form.txt", _material(k, f"qs-up{idx}"), accept_phi_warning=True)
                     finally:
                         gate.leave()
                     d = st.load_draft(out["draft_id"])
@@ -208,7 +208,7 @@ def test_pg_upload_vs_purge_in_separate_processes(validators):
             while any(p.poll() is None for p in procs) or k < 5:
                 # 나이 올리기는 업로드 사이에만 한다: 이 스레드 하나가 번갈아 하므로 업로드 틈과 겹치지 않는다. purge는 별도 프로세스라 자유롭게 겹친다
                 ager._write(lambda c: c.execute("UPDATE blobs SET created_at=%s", (_old(),)))
-                out = svc.ingest_material(AUTHOR, "qs-proc", "form.txt", _material(k), accept_phi_warning=True)
+                out = svc.ingest_material(AUTHOR, "qs-proc", "form.txt", _material(k, "qs-proc"), accept_phi_warning=True)
                 made.append((out["draft_id"], st.load_draft(out["draft_id"])["source"]["source_hash"]))
                 k += 1
                 assert k < 5000, "purge 프로세스가 끝나지 않는다"
