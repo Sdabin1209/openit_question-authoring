@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import json
 import re
 from typing import Callable, Iterable, Mapping, Optional
+from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from boundary_contracts.errors import BoundaryError
@@ -60,6 +61,22 @@ _USER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,59}(?:@[A-Za-z0-9][A-Za-z0-
 MAX_BODY = 8 * 1024 * 1024
 
 
+def _log(line: str) -> None:
+    """R10.5: 로그는 표준 출력이다. 쓰기가 실패해도(닫힌 파이프, 가득 찬 디스크) 요청을 실패시키지 않는다."""
+    try:
+        print(line, flush=True)
+    except Exception:  # noqa: BLE001  로그 실패는 삼킨다(요청의 성패와 무관)
+        pass
+
+
+def _where(e: BaseException) -> str:
+    """R8.1: 예외가 난 위치(가장 안쪽 프레임의 파일:줄:함수). 메시지는 쓰지 않는다."""
+    tb = e.__traceback__
+    while tb is not None and tb.tb_next is not None:
+        tb = tb.tb_next
+    return "?" if tb is None else f"{Path(tb.tb_frame.f_code.co_filename).name}:{tb.tb_lineno}:{tb.tb_frame.f_code.co_name}"
+
+
 class Api:
     def __init__(self, service, tokens: Mapping[str, Actor], *,
                  read_tokens: Optional[Mapping[str, str]] = None, signals=None, ready: Callable[[], bool] = lambda: True,
@@ -108,7 +125,7 @@ class Api:
         try:
             _check_response("QuestionAuthoringDeployInterface", "ReadyzResponse", body)
         except ResponseContractError as e:   # 서버 결함: 계약을 어긴 본문은 내보내지 않는다
-            print(f"응답 계약 위반: {e}", flush=True)
+            _log(f"응답 계약 위반: {e}")
             return False, {"status": "not-ready"}
         return ok, body
 
@@ -142,10 +159,10 @@ class Api:
             except BoundaryError:
                 raise
             except ResponseContractError as e:   # 서버 결함: 계약을 어긴 응답은 내보내지 않는다. 메시지는 위치와 규칙 이름뿐이다
-                print(f"응답 계약 위반: {e}", flush=True)
+                _log(f"응답 계약 위반: {e}")
                 raise BoundaryError("UNAVAILABLE", "내부 오류") from None
             except Exception as e:  # 예상 밖의 오류. 연결을 끊지 않고 JSON 503(UNAVAILABLE)으로 답한다. 원문 메시지는 쓰지 않는다(접속 정보·자료가 섞일 수 있다)
-                print(f"내부 오류: {type(e).__name__}", flush=True)
+                _log(f"내부 오류: {type(e).__name__} at {_where(e)}")
                 raise BoundaryError("UNAVAILABLE", "내부 오류") from None
         return handler
 

@@ -308,3 +308,27 @@ def test_error_status_codes_match_contract_table(svc, monkeypatch):
     monkeypatch.setattr(svc, "list_drafts", boom)
     st, body = api_of(svc).handle("GET", "/v1/drafts", AUTH, b"")
     assert st == table[body["code"]]
+
+
+def test_r8_1_unavailable_logs_type_and_location_without_message(svc, monkeypatch, capsys):
+    """RUNTIME R8.1: 503 UNAVAILABLE(내부 오류)의 로그에 예외 종류와 위치가 있고 메시지는 없다."""
+    def boom(*a, **k):
+        raise RuntimeError("SECRET-internal-detail")
+    monkeypatch.setattr(svc, "list_drafts", boom)
+    st, body = api_of(svc).handle("GET", "/v1/drafts", AUTH, b"")
+    out = capsys.readouterr().out
+    assert st == 503 and body["code"] == "UNAVAILABLE"
+    assert "RuntimeError" in out and "boom" in out and "test_fault_paths.py" in out and "SECRET-internal-detail" not in out
+
+
+def test_r10_5_log_write_failure_does_not_fail_the_request(svc, monkeypatch):
+    """RUNTIME R10.5: 표준 출력 쓰기가 실패해도 요청의 응답은 그대로다(여기서는 503 내부 오류 경로의 로그가 실패해도 계약 503)."""
+    import builtins
+    def boom(*a, **k):
+        raise RuntimeError("x")
+    monkeypatch.setattr(svc, "list_drafts", boom)
+    def bad_print(*a, **k):
+        raise OSError("disk full")
+    monkeypatch.setattr(builtins, "print", bad_print)
+    st, body = api_of(svc).handle("GET", "/v1/drafts", AUTH, b"")
+    assert st == 503 and body["code"] == "UNAVAILABLE"
