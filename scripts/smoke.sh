@@ -46,7 +46,7 @@ else
   EXTRA=(-e QA_DEV_MODE=1)   # SQLite는 개발·시험 구성이다. 운영 구성(PostgreSQL URL과 토큰)이 아니면 서비스가 시작을 거부한다
 fi
 chmod 755 "$SECDIR"; chmod 644 "$SECDIR"/*
-"$DOCKER" run -d --name "$NAME" "${EXTRA[@]}" -p 127.0.0.1::8080 -v "$SECDIR:/run/secrets:ro" -e QA_AUTHOR_TOKENS_FILE=/run/secrets/author_tokens -e QA_READ_TOKENS_FILE=/run/secrets/read_tokens "$IMG" >/dev/null
+"$DOCKER" run -d --name "$NAME" "${EXTRA[@]}" -p 127.0.0.1::8080 -v "$SECDIR:/run/secrets:ro" -e QA_REQUIRE_TWO_PERSON=true -e QA_AUTHOR_TOKENS_FILE=/run/secrets/author_tokens -e QA_READ_TOKENS_FILE=/run/secrets/read_tokens "$IMG" >/dev/null
 PORT=$("$DOCKER" port "$NAME" 8080/tcp | head -1 | sed 's/.*://')
 echo "호스트 포트(Docker 배정): $PORT"
 for i in $(seq 1 30); do
