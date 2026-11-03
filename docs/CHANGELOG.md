@@ -1,5 +1,12 @@
 # 변경 이력
 
+## 미배포 (2026-11-03) 계약 v3.2.0, U81 구조 잠금
+
+- boundary-contracts v3.1.2 -> v3.2.0(`requirements.lock`, `scripts/build_wheels.sh`). 환경 변수 검사는 독립 스키마 `QuestionAuthoringEnv`로 한다(`DeployInterface.Environment`는 이를 `$ref`). 운영 구성 위반 때 오류 메시지에 빠진 변수 이름이 들어간다(값은 쓰지 않는다).
+- **동작 변경(U81)**: 문항 세트의 둘째 버전부터 문항 ID와 칸 ID 구조(`question_id`, `slot_id` 집합)는 기반 버전과 같아야 한다. 편집, 자료 등록, 확정이 모두 `FAILED_PRECONDITION`으로 거절하고 사유에 바뀐 ID를 적는다. 문장·수치 변경과 첫 버전은 그대로다. 구조 변경은 모델 재학습이 필요해 이번에는 지원하지 않는다(헤드 결정, 사용자 결정 "학습한 문항만 지원" 2026-11-03). 이를 위해 `DraftEditInput`, `DraftIngestInput`, `ConfirmFinalizeInput`에 `base_bank`(와 확정은 `bank`)가 생겼다. 구조가 다른 자료 등록은 방금 만든 초안을 버린 뒤 거절한다. 시험 `tests/test_structure_lock.py`.
+- Dockerfile HEALTHCHECK가 `QA_PORT`를 따른다(이전에는 8080 고정).
+- 문서: `design.md`의 없는 클래스·파일 이름 정정, README·`boundary.md`의 변경 요청 범위 정정.
+
 ## 미배포 (2026-11-02) D125: 시간 상한 사슬 개정
 
 - 저자 경로 서버 전체 마감(`QA_REQUEST_DEADLINE_SECONDS`)과 `GET /v1/signals` 총 마감(`QA_SIGNALS_DEADLINE_SECONDS`) 기본값 12.0 -> 110.0초(측정 최악 자료 올리기 62초 위의 여유). `deploy-exposure.json` 저작 경로 response_header 13000 -> 120000(dial 1000). 근거는 ADR 0025 개정. 추출기 예산 6초는 그대로.

@@ -68,7 +68,7 @@ scripts/smoke.sh
 
 ## 현재 상태
 
-**시험 상태(정본, 개수는 여기 한 곳)**: 2026-10-30, 구조 개편(U400) 커밋, 개발 venv(requirements.lock 그대로)에서 PostgreSQL 포함 전체 `python -m pytest -q -rsf`: 717 통과, 0 건너뜀, 0 실패(약 164초). 이미지: `scripts/build-image.sh` 1회 통과, `scripts/smoke.sh` SMOKE OK (sqlite). 깨끗한 두 번째 환경에서의 재현은 하지 않았다.
+**시험 상태**: 시험 개수는 문서에 적지 않고 실행해서 센다. PostgreSQL 포함 전체: `TEST_DATABASE_URL="$(bash ../deploy/scripts/dev-postgres.sh up qa)" python -m pytest -q -rsf`(끝나면 `... down qa`). 마지막 줄의 `N passed`가 개수이고 `skipped`가 0이어야 PostgreSQL 시험까지 돈 것이다(`TEST_DATABASE_URL`이 없으면 PostgreSQL 시험 162건 안팎이 건너뜀으로 센다). 이미지: `scripts/smoke.sh`가 `SMOKE OK`를 내면 통과. 깨끗한 두 번째 환경에서의 재현은 하지 않았다.
 
 2026-10-28 묶음(옛 표기 0.7.0, 패키지 버전은 pyproject의 0.1.0; 시험 개수는 위 "시험 상태" 문단, SQLite·PostgreSQL 스모크 SMOKE OK): 전수 점검 반영(추출기 선형화, 4-eyes 기본, 엄격 입력, 환자 정보 탐지 확대, 운영 구성 거부, 동시 요청 상한, SIGTERM, 보존 `purge`, v2 Trace 문항 ID). 상세와 한계는 docs/CHANGELOG.md, docs/boundary.md.
 
@@ -98,5 +98,5 @@ PostgreSQL 대기 상한(옛 표기 0.6.2, 2026-10-28, FAULT_MATRIX P0-3/E1): �
 | `docs/runbook.md` | 개발 환경, 스모크, 비밀 파일(D84), 환경 변수, 흔한 상황 |
 | `docs/STATUS.md` | 한 일, 남은 일, 막힌 것 |
 | `docs/CHANGELOG.md` | 버전별 변경 이력 |
-| `docs/change-requests/` | 헤드에게 낸 변경 요청 CR-0001~0005(모두 승인) |
+| `docs/change-requests/` | 헤드에게 낸 변경 요청 CR-0001~0008(상태는 각 파일 상단) |
 | `CLAUDE.md` | 이 영역 에이전트용 지침 |

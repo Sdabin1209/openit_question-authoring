@@ -106,4 +106,4 @@
 
 ## 변경 요청
 
-`docs/change-requests/` 참고: CR-0001 출처 위치, CR-0002 QuestionBank.version 의미, CR-0003 SlotRef 문자열, CR-0004 의미 해석(reviewed_only, 후속 작업 매핑), CR-0005 계약 패키지 배포(스키마 포함, 태그). 헤드가 모두 승인했다(CR 파일 상단 참고).
+`docs/change-requests/` 참고: CR-0001 출처 위치, CR-0002 QuestionBank.version 의미, CR-0003 SlotRef 문자열, CR-0004 의미 해석(reviewed_only, 후속 작업 매핑), CR-0005 계약 패키지 배포(스키마 포함, 태그), CR-0006 임상 근거 승인은 저자와 다른 검수자, CR-0007 영역 경계 스키마 초안(처리됨), CR-0008 link 라이브러리 부족한 점. 각 상태는 파일 상단이 정본이고 여기에 복사하지 않는다.

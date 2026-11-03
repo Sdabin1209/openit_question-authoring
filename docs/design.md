@@ -31,8 +31,8 @@
 - `content_hash = boundary_contracts.canonical.sha256_hash(QuestionBank JSON)`. `QuestionBank.version`(정수)은 버전 번호 n과 같게 한다(제안, CR-0002). 그래서 같은 내용이어도 버전이 다르면 해시가 다르다.
 - 읽을 때마다 저장된 내용의 해시를 다시 계산해 기록과 다르거나 ref의 해시와 다르면 `INTEGRITY_ERROR`.
 - 쓰기(`commit_version`)는 한 트랜잭션으로 버전 + 첫 ReviewRecord + (둘째 버전부터) ChangeClassification을 쓴다. 번호가 마지막+1이 아니면 `CONFLICT`. 같은 `(id, version)`에 같은 해시는 성공(멱등), 다른 해시는 `CONFLICT`. 모든 레코드는 쓰기 전에 스키마로 검증한다.
-- 저장 구현은 인터페이스(`AuthoringStore`) 뒤에 있다. 기본은 SQLite 단일 파일(WAL). `versions`, `reviews`, `changes` 테이블은 UPDATE/DELETE를 트리거가 막는다. 초안(`drafts`)과 원본 자료(`blobs`, 해시로 중복 제거)는 가변 작업 영역이며 버전이 아니다. 메모리 구현은 같은 규칙을 따른다.
-- 한 서버, 한 프로세스, 관리자만 쓰는 사용자라는 전제로 SQLite의 단일 쓰기로 충분하다고 판단했다(제안). 쓰기 경합이 문제가 되면 `AuthoringStore`를 다른 DB로 바꾼다.
+- 저장 구현은 저장소 컴포넌트 `components/question_store.py`(읽기 논리, `QuestionStore`)에 주입하는 백엔드 세 가지 뒤에 있다(ADR 0023). 개발 기본은 SQLite 단일 파일(WAL), 운영은 PostgreSQL. `versions`, `reviews`, `changes` 테이블은 UPDATE/DELETE를 트리거가 막는다. 초안(`drafts`)과 원본 자료(`blobs`, 해시로 중복 제거)는 가변 작업 영역이며 버전이 아니다. 메모리 구현은 같은 규칙을 따른다.
+- 한 서버, 한 프로세스, 관리자만 쓰는 사용자라는 전제로 SQLite의 단일 쓰기로 충분하다고 판단했다(제안). 쓰기 경합이 문제가 되면 백엔드를 다른 DB로 바꾼다(운영은 이미 PostgreSQL, ADR 0001).
 - 다음 번호가 필요한 동시 확인은 `BEGIN IMMEDIATE`로 직렬화되고, 늦은 쪽은 `CONFLICT`가 아니라 서비스 단계에서 "초안을 만든 뒤 새 버전이 생겼다"(`FAILED_PRECONDITION`)로 알린다.
 
 ### 3.1 검수와 `reviewed_only`
@@ -66,7 +66,7 @@ confirmed: {ref, preview_hash, review_id}
 1. 초안 만들기: `create_draft`(기본은 최신 버전에서 복사, 새 문항 세트면 빈 초안) 또는 `ingest_material`.
 2. 편집: `apply_edits`는 JSON 포인터 기반 `set/append/remove`다. 이것이 화면 입력(템플릿 양식)의 저장 형태이며, 콘솔이 필드 입력창을 이 호출로 옮긴다. 편집한 경로(와 그 아래)의 플래그는 "저자가 직접 정함"(EDITED)으로 닫힌다. 추출된 값이 맞으면 `acknowledge_flags`로 닫는다(ACKNOWLEDGED). 둘 다 기록에 남는다.
 3. 미리보기(`get_preview`): 사람이 읽는 한국어 글(`text`), 열린 플래그, 스키마·참조 검증 오류, 기반 버전과의 변경 요약, `preview_hash`, `ready_to_confirm`. 수치(정책 한도, 단위·범위·환산, 위험 기준, 세션 한도)는 "수치" 줄로 항상 따로 보인다. 비어 있는 값은 "(비어 있음)"으로 보이고 채우지 않는다.
-4. 확인(`confirm`): 저자 권한 확인 -> 미리보기 해시가 현재 초안과 같은지 -> 열린 플래그 0 -> 기반이 아직 최신인지 -> `version` 부여 후 QuestionBank 스키마와 참조 검증 -> 이전 버전과 내용이 같지 않은지 -> ChangeClassification 생성 -> ReviewRecord(`reviewer_role`=확인한 사람의 역할, `reviewer_id`, APPROVED, `clinical_basis_approved`=4-eyes면 false 아니면 true) 생성 -> 한 트랜잭션으로 저장. 어느 단계든 실패하면 아무것도 저장되지 않는다. 같은 `preview_hash`로 다시 부르면 같은 ref(멱등), 다른 해시면 `CONFLICT`. 저장 직후 초안 갱신에 실패해도 예약된 번호와 시각으로 재시도하면 같은 버전을 돌려준다(시험함).
+4. 확인(`confirm`): 저자 권한 확인 -> 미리보기 해시가 현재 초안과 같은지 -> 열린 플래그 0 -> 기반이 아직 최신인지 -> 구조 잠금(둘째 버전부터 문항·칸 ID 구조가 기반과 같은지, U81) -> `version` 부여 후 QuestionBank 스키마와 참조 검증 -> 이전 버전과 내용이 같지 않은지 -> ChangeClassification 생성 -> ReviewRecord(`reviewer_role`=확인한 사람의 역할, `reviewer_id`, APPROVED, `clinical_basis_approved`=4-eyes면 false 아니면 true) 생성 -> 한 트랜잭션으로 저장. 어느 단계든 실패하면 아무것도 저장되지 않는다. 같은 `preview_hash`로 다시 부르면 같은 ref(멱등), 다른 해시면 `CONFLICT`. 저장 직후 초안 갱신에 실패해도 예약된 번호와 시각으로 재시도하면 같은 버전을 돌려준다(시험함).
 5. ReviewRecord의 `ext.question-authoring`: `kind`, `draft_id`, `preview_hash`, `source`(자료 해시 포함), 직접 고친 플래그와 확인한 플래그의 ID.
 6. 역할: 서비스는 허용 역할 집합(`author_roles`)을 받는다. 어떤 역할 이름을 쓸지는 운영이 정한다(기본값 `question-author`는 제안). 임상 승인을 하는 저자와 콘솔 사용자의 구분은 미구현이며 인증은 11절.
 
@@ -147,7 +147,7 @@ bytes + filename
 
 ## 8. 저작 API (핵심 로직 구현, HTTP 얇게 구현)
 
-요청은 계약 `AuthoringRequests`(모르는 키 거부), 응답은 `AuthoringResponses`·`SignalsResponse`로 검사한다(`question_authoring/contract.py`). 왜: 오타 난 필드가 조용히 무시되어 저자의 입력이 저장되지 않는 일을 막고, 서버가 키를 늘리면 시험이 먼저 깨지게 한다(계약 스키마 설명, D107).
+요청은 계약 `AuthoringRequests`(모르는 키 거부), 응답은 `AuthoringResponses`·`SignalsResponse`로 검사한다(`question_authoring/wiring/contract.py`, 서버 면은 `components/link_authoring_server.py`). 왜: 오타 난 필드가 조용히 무시되어 저자의 입력이 저장되지 않는 일을 막고, 서버가 키를 늘리면 시험이 먼저 깨지게 한다(계약 스키마 설명, D107).
 
 | 메서드 | 경로 | 서비스 호출 |
 | --- | --- | --- |
@@ -162,7 +162,7 @@ bytes + filename
 
 ## 9. I1 구현과 적합성 (구현)
 
-- `AuthoringStore` 기반 클래스가 `QuestionReader` 다섯 메서드를 구현하고(읽기 논리 한 곳), `MemoryQuestionStore`와 `SqliteQuestionStore`가 원시 연산만 구현한다. `store.reader()`는 읽기만 있는 뷰다. `isinstance(x, QuestionReader)`를 통과한다(`runtime_checkable`).
+- `question_store.QuestionStore`(wiring/stores.py가 백엔드를 주입)가 `QuestionReader` 메서드를 구현하고(읽기 논리 한 곳), 백엔드 `MemoryQuestionStore`(store_memory.py), `SqliteQuestionStore`(store_sqlite.py), `PostgresQuestionStore`(store_postgres.py)가 원시 연산만 구현한다. `store.reader()`는 읽기만 있는 뷰다. `isinstance(x, QuestionReader)`를 통과한다(`runtime_checkable`).
 - 적합성 시험(`tests/test_reader_conformance.py`)은 메모리, SQLite 메모리 DB, SQLite 파일 세 구현에 같은 시험을 돌린다: 해시 검증, NOT_FOUND/INTEGRITY_ERROR/INVALID_RECORD, 페이지 순서와 커서, `reviewed_only` 의미, 복사본 반환, 변조 감지, 멱등과 CONFLICT.
 - 페이지: `list_versions`의 `cursor`는 마지막 버전 번호, `list_ids`의 `cursor`는 마지막 문항 세트 ID(ID 오름차순), `limit` 상한 1000.
 
@@ -179,7 +179,7 @@ bytes + filename
 ## 11-1. 개선 신호 수신함 (구현, 읽기 전용)
 
 - 입력: ops-feedback의 I7(`HttpFailureStore`). `list_cases(latest_only=True)`로 실패 사례를 쪽별로 읽고(상한 `max_cases`, 기본 2000, 넘으면 `truncated`) `get_trace`로 비식별 trace를 읽는다. I7 클라이언트는 서비스 진입점이 `QA_FAILURES_URL`과 `QA_FAILURES_TOKEN_ENV`(토큰이 든 환경 변수의 이름)로 만든다. 미설정이면 `GET /v1/signals`는 `{"status": "DISABLED", "reason": ...}`를 낸다.
-- 출력(`signals.py`, `GET /v1/signals?question_set_id=&review_status=&max_cases=`, 저자 인증): 문항 세트별 (a) 사례 수, 유형 분포, 버전별 수, (c) CONFIRMED 수. 문항별로 같은 수와 분포, (b) 혼동(같은 문항에서 같은 유형이 `confusion_min`=2회 이상). 문항 세트는 `FailureCase.question_set.id`, 문항은 비식별 TurnTrace의 `extract_input.question_id`에서 읽는다(TurnTrace.json의 필수 필드).
+- 출력(`components/signals_build.py`, `GET /v1/signals?question_set_id=&review_status=&max_cases=`, 저자 인증): 문항 세트별 (a) 사례 수, 유형 분포, 버전별 수, (c) CONFIRMED 수. 문항별로 같은 수와 분포, (b) 혼동(같은 문항에서 같은 유형이 `confusion_min`=2회 이상). 문항 세트는 `FailureCase.question_set.id`, 문항은 비식별 TurnTrace의 `extract_input.question_id`에서 읽는다(TurnTrace.json의 필수 필드).
 - 건너뛰기: 사례에 `question_set`이 없으면 `NO_QUESTION_SET`, trace를 읽지 못하면 `TRACE_UNREADABLE`, trace에 문항 ID가 없으면 `NO_QUESTION_ID`(문항 세트 수준에는 계속 센다). 추정하지 않고 건수를 `skipped`에 낸다.
 - 하지 않는 것: 자동 수정, 발화·trace 본문 저장이나 반환(O19 미정). 건수와 ID만 낸다. 신호는 읽을 때마다 계산하며 저장하지 않는다. I7 실패는 `BoundaryError`(PERMISSION_DENIED, UNAVAILABLE 등)로 그대로 전해진다.
 
