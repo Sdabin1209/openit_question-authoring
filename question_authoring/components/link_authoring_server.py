@@ -88,7 +88,7 @@ def _where(e: BaseException) -> str:
 class Api:
     def __init__(self, service, tokens: Mapping[str, Actor], *,
                  read_tokens: Optional[Mapping[str, str]] = None, signals=None, ready: Callable[[], bool] = lambda: True,
-                 db_kind: Optional[str] = None, signals_deadline: Optional[float] = 110.0,
+                 db_kind: Optional[str] = None, gate=None, signals_deadline: Optional[float] = 110.0,
                  gateway_tokens: Optional[Iterable[str]] = None,
                  warnings: Optional[list] = None, deadline=None):
         self.signals_deadline = signals_deadline
@@ -97,6 +97,7 @@ class Api:
         self.warnings = list(warnings or [])
         self.svc = service
         self.deadline = deadline        # RequestDeadline | None: 사람용 요청 전체 마감(D120, ADR 0025). 요청마다 scope()로 시작한다
+        self.gate = gate                               # ReleaseReader | None (QA_GATE_URL 미설정이면 None)
         self.signals = signals                         # FailureSource | None (I7 미설정이면 None)
         self.ready = ready
         self.db_kind = db_kind                         # 'sqlite' | 'postgres' (종류만. 접속 정보는 절대 쓰지 않는다)
@@ -123,7 +124,11 @@ class Api:
         for k, v in headers.items():
             env["HTTP_" + k.upper().replace("-", "_")] = v
         status, hdrs, data = self.app.handle(env)
-        return status, (json.loads(data) if data else {})
+        if not data:
+            return status, {}
+        if hdrs.get("Content-Type", "").startswith("application/json"):
+            return status, json.loads(data)
+        return status, {"raw": bytes(data).decode("utf-8", "replace")}      # 화면 정적 파일·/metrics 같은 JSON 이 아닌 본문
 
     def _count(self, ctx: dict) -> None:
         with self._counts_lock:
@@ -216,6 +221,8 @@ class Api:
             R("GET", sc + "/{qsid}/versions/{ver}/reviews", lambda r, a: self._read(r), read),
             R("GET", sc + "/{qsid}/versions/{ver}/change", lambda r, a: self._read(r), read),
             R("GET", "/v1/signals", self._signals, query=RQ("SignalsQuery"), response="SignalsResponse"),
+            R("GET", "/v1/set-versions", self._set_versions, query=RQ("QuestionSetVersionsQuery"), response=D("QuestionSetVersions")),
+            R("GET", "/v1/set-decisions", self._set_decisions, query=RQ("DecisionsQuery"), response=D("Decisions")),
             R("POST", "/v1/drafts", self._create, request=RQ("CreateDraftRequest"), response=D("Draft")),
             R("GET", "/v1/drafts", self._list, response=D("DraftList")),
             # raw_body: 환자 정보 점검·해시·추출·보관이 모두 전체 바이트를 쓰고 상한이 8MiB라 stream_body(수 GiB용)를 쓰지 않는다(ADR 0023)
@@ -269,6 +276,17 @@ class Api:
             if e.code in ("INTEGRITY_ERROR", "INVALID_RECORD", "UNSUPPORTED_VERSION"):   # 상류의 깨진 응답은 성공으로 취급하지 않는다(FAULT_POLICY 10)
                 raise BoundaryError("UNAVAILABLE", "ops-feedback의 응답이 올바르지 않다") from None
             raise
+
+    def _set_versions(self, req, actor):
+        self.svc.require_reader(actor)
+        q = req.query
+        return self.svc.set_versions(q.get("question_set_id"), q.get("cursor"), int(q.get("limit", "50")))
+
+    def _set_decisions(self, req, actor):
+        self.svc.require_reader(actor)
+        if self.gate is None:       # 설정 안 함(QA_GATE_URL 없음): 지어낸 빈 목록이 아니라 정직한 거절. 화면은 "판정 조회가 꺼져 있다"를 보인다
+            raise BoundaryError("FAILED_PRECONDITION", "판정 조회가 설정되지 않았다(QA_GATE_URL)")
+        return self.svc.decisions(self.gate, req.query)
 
     def _page(self, q) -> tuple[Optional[str], int]:
         try:

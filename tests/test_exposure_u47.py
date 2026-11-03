@@ -42,7 +42,7 @@ def api(svc):
 # Caddy의 '/*'는 뒤의 모든 경로를 뜻한다. 코드가 서비스하는 구체 경로로 펼쳐 본다
 GLOBS = {"/v1/drafts/*": ["/v1/drafts/dr-x", "/v1/drafts/dr-x/preview", "/v1/drafts/dr-x/edits", "/v1/drafts/dr-x/acknowledge",
                           "/v1/drafts/dr-x/confirm", "/v1/drafts/dr-x/discard"],
-         "/v1/question-sets/*": ["/v1/question-sets/qs-main/latest"]}
+         "/v1/question-sets/*": ["/v1/question-sets/qs-main/latest"], "/ui/*": ["/ui/app.js", "/ui/app.css"]}
 
 
 def concrete(path):
@@ -83,7 +83,7 @@ def test_every_known_service_path_is_declared_exposed_or_denied():
     """코드가 서비스하는 경로 묶음이 선언에 빠지지 않는다(새 경로를 만들면 이 시험이 깨져 선언을 고치게 한다)."""
     src = (ROOT / "question_authoring" / "components" / "link_authoring_server.py").read_text(encoding="utf-8")
     known = set(re.findall(r'R\("[A-Z]+", "(/v1/[a-z-]+)', src)) | set(re.findall(r'sc = "(/v1/[a-z-]+)"', src))
-    assert {"/v1/drafts", "/v1/materials", "/v1/reviews", "/v1/signals", "/v1/question-sets"} <= known, known
+    assert {"/v1/drafts", "/v1/materials", "/v1/reviews", "/v1/signals", "/v1/question-sets", "/v1/set-versions", "/v1/set-decisions"} <= known, known
     declared = {p.rstrip("/*").rstrip("/") or p for r in DECL["routes"] for p in r["paths"]}
     assert known <= declared, f"선언에 없는 서비스 경로: {sorted(known - declared)}"
 
@@ -120,3 +120,15 @@ def test_build_image_attaches_the_declaration_as_label(tmp_path):
     assert m, log.read_text()[:400]
     label = json.loads(m.group(1))
     assert label == DECL and not list(bc.validator("Exposure").iter_errors(label))
+
+
+def test_body_limit_declaration_matches_the_server_limit():
+    """Exposure.routes[].max_body_bytes(3.4.7): 자료 올리기의 본문 상한은 서버의 MAX_BODY(8MiB, ADR 0023)와 같다. 공개 입구가 먼저 413 을 내도 같은 결과다(R3.5)."""
+    from question_authoring.components.link_authoring_server import MAX_BODY
+    mat = next(r for r in DECL["routes"] if "/v1/materials" in r["paths"])
+    assert mat["max_body_bytes"] == MAX_BODY == 8 * 1024 * 1024
+
+
+def test_egress_lists_exactly_the_neighbours_this_area_calls():
+    """CONVENTIONS 13절·RUNTIME R1.8: I7(ops-feedback)·I4 판정 조회(release-gate)·백업 저장소. 제출 권한이 없어 I5 는 없다."""
+    assert set(DECL["egress"]) == {"ops-feedback", "release-gate", "external:backup"}

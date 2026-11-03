@@ -22,6 +22,7 @@ QA_GATEWAY_TOKENS                비밀. gateway가 쓰는 서비스 토큰 쉼�
 QA_MAX_CONCURRENT_REQUESTS       동시 처리 요청 상한(기본 32). 넘는 요청은 줄 서서 기다린다(waitress 스레드 수, ADR 0016)
 QA_DRAFT_RETENTION_DAYS          처리되지 않은(OPEN, DISCARDED) 초안의 보존 일수(기본 30, 양의 정수만). `python -m question_authoring purge`가 쓴다
 QA_SOURCE_RETENTION_DAYS         어떤 버전·초안도 참조하지 않는 원본 자료의 보존 일수(기본 30, 양의 정수만)
+QA_GATE_URL, QA_GATE_TOKEN(_ENV·_FILE), QA_GATE_TIMEOUT_SECONDS  release-gate(I4) 판정 조회(저작 화면). URL 을 비우면 판정 조회는 꺼진다(412). 시간 기본 10초(R10.3)
 QA_FAILURES_TIMEOUT_SECONDS      I7(ops-feedback) 호출 하나의 읽기 상한(초, 기본 10, RUNTIME R10.3: 사슬 표에 없는 서비스 사이 호출의 시작값, 측정 안 함)
 QA_SIGNALS_DEADLINE_SECONDS      GET /v1/signals 한 번의 총 마감(초, 기본 110)
 QA_REQUEST_DEADLINE_SECONDS      사람용 요청 하나의 서버 쪽 전체 마감(초, 기본 110.0 = 측정 최악 62초 위의 여유, gateway 응답 머리글 120초 안, D125, ADR 0025)
@@ -40,6 +41,7 @@ from boundary_contracts.errors import BoundaryError
 
 from .components.link_authoring_server import Api, Actor, close_all, drain, make_server
 from .components.link_failures_read import http_failure_source
+from .components.link_gate_read import http_gate_source
 from .components.question_store import QuestionStore as AuthoringStore
 from .wiring import contract
 from .wiring.deadline import DEFAULT_REQUEST_DEADLINE_SECONDS, RequestDeadline
@@ -141,7 +143,14 @@ def build() -> tuple[Api, AuthoringStore]:
                                           egress_proxy=egress_proxy_from(env))   # 이웃 HTTP 클라이언트는 통신 컴포넌트가 만든다. 영역 밖 호출은 자기 영역 게이트웨이 출구로만(R1.8)
         except ValueError as e:     # R1.1: loopback 밖 평문 주소, R1.8: 출구 형식 위반은 기동 때 거부한다(값은 쓰지 않는다)
             raise SystemExit(f"QA_FAILURES_URL 또는 OPENIT_EGRESS_PROXY 가 계약(R1.1·R1.8)을 어긴다: {type(e).__name__}")
-    return Api(svc, tokens, read_tokens=read_tokens, signals=signals, ready=store.is_ready, db_kind=getattr(store, "kind", None),
+    gate = None
+    if env.get("QA_GATE_URL"):
+        try:
+            gate = http_gate_source(env["QA_GATE_URL"], read_secret(env.get("QA_GATE_TOKEN_ENV", "QA_GATE_TOKEN")) or "",
+                                    _seconds("QA_GATE_TIMEOUT_SECONDS", 10.0), egress_proxy=egress_proxy_from(env))   # R10.3 기본 10초, 출구는 자기 영역 게이트웨이(R1.8)
+        except ValueError:
+            raise SystemExit("QA_GATE_URL 또는 OPENIT_EGRESS_PROXY 가 계약(R1.1·R1.8)을 어긴다")
+    return Api(svc, tokens, read_tokens=read_tokens, signals=signals, gate=gate, ready=store.is_ready, db_kind=getattr(store, "kind", None),
                signals_deadline=_seconds("QA_SIGNALS_DEADLINE_SECONDS", 110.0), gateway_tokens=gateway_tokens,  # 왜 110.0초: D125 저자 경로 서버 마감과 같은 값, 게이트웨이 response_header 120초 안(서버 110 < 게이트웨이 120 < 화면 130). 측정한 값이 아니라 측정 최악 62초 위의 여유(ADR 0025)
                warnings=warnings, deadline=deadline), store
 
@@ -172,13 +181,18 @@ def main(argv=None) -> int:
         check_environment()
         _require_production_config(need_tokens=False)
         from .wiring import backup_flow
+        ts = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")   # noqa: E731
+        started, result, err = ts(), None, None
         try:
             result = backup_flow.run(os.environ)
-        except BoundaryError as e:              # 종료 코드 비0(R9.2, R10.1): 서비스 출력은 바뀌지 않는다. 메시지에는 비밀이 없다
-            print(f"백업 실패: {e.code}: {e.message}", file=sys.stderr, flush=True)
-            return 1
-        print(json.dumps(result), flush=True)    # 마지막 줄 JSON(R9.2)
-        return 0
+        except BoundaryError as e:              # 실패도 마지막 줄 JSON 과 0 이 아닌 종료 코드(R9.2, BackupJobResult). 서비스 출력은 바뀌지 않는다. 메시지에는 비밀이 없다
+            err = e
+        line = backup_flow.result_line(started, ts(), ok=result, error=err)
+        errs = contract.problems("BackupJobResult", None, line)
+        if errs:
+            raise SystemExit("백업 출력이 계약 BackupJobResult를 어긴다: " + "; ".join(errs[:3]))      # 생산자 출력 검증(CONVENTIONS 3절)
+        print(json.dumps(line), flush=True)
+        return backup_flow.exit_code(err)
     api, _ = build()
     srv = make_server(api, os.environ.get("QA_HOST", "0.0.0.0"), int(os.environ.get("QA_PORT") or 8080),
                       request_timeout=_seconds("QA_REQUEST_TIMEOUT_SECONDS", 30.0),

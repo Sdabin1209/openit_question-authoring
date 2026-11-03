@@ -21,7 +21,8 @@
       "timeouts_ms": {
         "dial": 1000,
         "response_header": 120000
-      }
+      },
+      "max_body_bytes": 8388608
     },
     {
       "paths": [
@@ -48,7 +49,9 @@
     },
     {
       "paths": [
-        "/v1/signals"
+        "/v1/signals",
+        "/v1/set-versions",
+        "/v1/set-decisions"
       ],
       "methods": [
         "GET"
@@ -69,12 +72,39 @@
     },
     {
       "paths": [
+        "/ui/",
+        "/ui/*"
+      ],
+      "methods": [
+        "GET"
+      ],
+      "auth": {
+        "kind": "authenticated"
+      },
+      "upstream_token": "qa-gateway-token",
+      "user_header": "strip"
+    },
+    {
+      "paths": [
         "/v1/question-sets",
         "/v1/question-sets/*"
       ],
       "auth": {
         "kind": "denied"
       }
+    },
+    {
+      "paths": [
+        "/metrics"
+      ],
+      "auth": {
+        "kind": "denied"
+      }
     }
+  ],
+  "egress": [
+    "ops-feedback",
+    "release-gate",
+    "external:backup"
   ]
 }

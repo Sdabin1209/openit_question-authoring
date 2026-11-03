@@ -39,8 +39,8 @@ def test_only_listed_files_exist(api, path):
 
 def test_every_api_path_the_screen_calls_is_a_route_of_the_contract():
     js = (UI / "app.js").read_text(encoding="utf-8")
-    called = set(re.findall(r'"(/v1/[a-z/]+)', js)) | set(re.findall(r"`(/v1/[a-z/${}.()\w]+)", js))
-    known = {"/v1/drafts", "/v1/materials", "/v1/reviews", "/v1/signals"}
+    called = set(re.findall(r'"(/v1/[a-z/-]+)', js)) | set(re.findall(r"`(/v1/[a-z/${}.()\w]+)", js))
+    known = {"/v1/drafts", "/v1/materials", "/v1/reviews", "/v1/signals", "/v1/set-versions", "/v1/set-decisions"}
     bases = {re.sub(r"/\$\{.*", "", c).rstrip("/") for c in called}
     assert bases <= known | {"/v1/drafts"}, bases
 
@@ -71,3 +71,9 @@ def test_screen_script_is_valid_javascript():
         pytest.skip("node 없음")
     r = subprocess.run([node, "--check", str(UI / "app.js")], capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
+
+
+def test_screen_shows_decision_status_per_version_and_never_submits():
+    js = (UI / "app.js").read_text(encoding="utf-8")
+    assert "/v1/set-versions" in js and "/v1/set-decisions" in js
+    assert not re.search(r'"POST",\s*"/v1/(submissions|activate|rollback|approvals)', js)       # 후보 제출·활성화·승인은 이 영역의 권한이 아니다

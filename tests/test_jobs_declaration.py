@@ -21,7 +21,7 @@ def test_declaration_passes_the_contract():
 
 
 def test_declared_purge_job_is_the_real_command_and_idempotent():
-    (job,) = DECL["jobs"]
+    job = next(j for j in DECL["jobs"] if j["name"] == "purge")
     assert job["name"] == "purge" and job["argv"] == ["python", "-m", "question_authoring", "purge"] and job["idempotent"] is True
     import inspect
     from question_authoring import __main__ as qa_main
@@ -31,10 +31,22 @@ def test_declared_purge_job_is_the_real_command_and_idempotent():
 def test_declared_env_names_are_read_by_the_job():
     """선언한 환경 변수(비밀 제외)와 비밀 파일 이름이 진입점 소스에 실제로 있다."""
     src = (ROOT / "question_authoring" / "__main__.py").read_text(encoding="utf-8")
-    (job,) = DECL["jobs"]
+    job = next(j for j in DECL["jobs"] if j["name"] == "purge")
     for name in job["env"]:
         assert name in src, name
     assert "QA_DATABASE_URL" in src and job["secret_files"] == ["QA_DATABASE_URL_FILE"]
+
+
+def test_every_job_declares_a_time_limit_and_backup_is_the_real_command():
+    """RUNTIME R9.2·R9.3: 잡마다 timeout_seconds 를 선언한다. 백업 잡은 실제 서브커맨드이고 비밀은 *_FILE 로만 받는다(R6.3)."""
+    import inspect
+    from question_authoring import __main__ as qa_main
+    assert all(isinstance(j.get("timeout_seconds"), int) and j["timeout_seconds"] >= 1 for j in DECL["jobs"])
+    b = next(j for j in DECL["jobs"] if j["name"] == "backup")
+    assert b["argv"] == ["python", "-m", "question_authoring", "backup"] and 'argv[:1] == ["backup"]' in inspect.getsource(qa_main.main)
+    assert set(b["secret_files"]) == {"QA_DATABASE_URL_FILE", "OPENIT_BACKUP_CREDENTIALS_FILE", "OPENIT_BACKUP_REPO_PASSWORD_FILE"}
+    from question_authoring.wiring import backup_flow
+
 
 
 def _build(tmp_path, jobs_text):

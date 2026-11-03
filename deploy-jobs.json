@@ -2,17 +2,51 @@
   "jobs": [
     {
       "name": "purge",
-      "argv": ["python", "-m", "question_authoring", "purge"],
+      "argv": [
+        "python",
+        "-m",
+        "question_authoring",
+        "purge"
+      ],
       "idempotent": true,
-      "secret_files": ["QA_DATABASE_URL_FILE"],
-      "needs": ["postgres"],
+      "secret_files": [
+        "QA_DATABASE_URL_FILE"
+      ],
+      "needs": [
+        "postgres"
+      ],
       "env": [
         "QA_DRAFT_RETENTION_DAYS",
         "QA_SOURCE_RETENTION_DAYS",
         "QA_DB_CONNECT_TIMEOUT_SECONDS",
         "QA_DB_STATEMENT_TIMEOUT_SECONDS",
         "QA_DB_LARGE_STATEMENT_TIMEOUT_SECONDS"
-      ]
+      ],
+      "timeout_seconds": 600
+    },
+    {
+      "name": "backup",
+      "argv": [
+        "python",
+        "-m",
+        "question_authoring",
+        "backup"
+      ],
+      "idempotent": true,
+      "secret_files": [
+        "QA_DATABASE_URL_FILE",
+        "OPENIT_BACKUP_CREDENTIALS_FILE",
+        "OPENIT_BACKUP_REPO_PASSWORD_FILE"
+      ],
+      "needs": [
+        "postgres"
+      ],
+      "env": [
+        "OPENIT_BACKUP_URL",
+        "OPENIT_EGRESS_PROXY",
+        "QA_DB_CONNECT_TIMEOUT_SECONDS"
+      ],
+      "timeout_seconds": 1800
     }
   ]
 }

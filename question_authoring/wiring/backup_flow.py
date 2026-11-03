@@ -75,12 +75,13 @@ def run(env: Mapping[str, str], *, restic: str = "restic", runner: Callable = su
     if env.get("SSL_CERT_FILE"):
         child["SSL_CERT_FILE"] = env["SSL_CERT_FILE"]
 
-    def call(*argv, stdin=None) -> int:
+    def call(*argv, stdin=None, capture=False):
         try:
-            r = runner([restic, *argv], stdin=stdin, env=child, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=DUMP_STATEMENT_SECONDS)
+            r = runner([restic, *argv], stdin=stdin, env=child, stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=DUMP_STATEMENT_SECONDS)
         except (OSError, subprocess.TimeoutExpired) as e:       # restic 이 없거나 시간 초과: 종류만 낸다
             raise BoundaryError("UNAVAILABLE", f"restic 실행 실패({type(e).__name__})") from None
-        return r.returncode
+        return (r.returncode, r.stdout or b"") if capture else r.returncode
 
     if call("cat", "config") != 0 and call("init") != 0:
         raise BoundaryError("UNAVAILABLE", "백업 저장소를 열거나 만들지 못했다")
@@ -90,6 +91,37 @@ def run(env: Mapping[str, str], *, restic: str = "restic", runner: Callable = su
         except Exception as e:                                   # noqa: BLE001  접속 문자열이 섞일 수 있어 종류만 낸다
             raise BoundaryError("UNAVAILABLE", f"데이터베이스를 덤프하지 못했다({type(e).__name__})") from None
         f.seek(0)
-        if call("backup", "--stdin", "--stdin-filename", "question-authoring.copy", "--tag", "question-authoring", "--host", "question-authoring", stdin=f) != 0:
+        rc, out = call("backup", "--json", "--stdin", "--stdin-filename", "question-authoring.copy", "--tag", "question-authoring",
+                       "--host", "question-authoring", stdin=f, capture=True)
+        if rc != 0:
             raise BoundaryError("UNAVAILABLE", "백업 저장소로 보내지 못했다")
-    return {"backed_up": ["question-authoring"], "bytes": total}
+    return {"snapshot_id": _snapshot_id(out), "bytes": total}
+
+
+def _snapshot_id(out: bytes):
+    """restic backup --json 의 마지막 summary 줄에서 스냅숏 ID. 없으면 null(백업은 성공했으나 ID 를 읽지 못함)."""
+    import json
+    sid = None
+    for line in out.decode("utf-8", "replace").splitlines():
+        try:
+            m = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(m, dict) and m.get("message_type") == "summary" and isinstance(m.get("snapshot_id"), str):
+            sid = m["snapshot_id"][:128]
+    return sid
+
+
+def result_line(started: str, finished: str, *, ok: dict | None = None, error: BoundaryError | None = None) -> dict:
+    """계약 BackupJobResult(3.4.7). 실패에도 마지막 줄 JSON 을 낸다(R9.2). 비밀·주소·데이터는 넣지 않는다."""
+    if error is None:
+        return {"status": "ok", "snapshot_id": ok["snapshot_id"], "bytes": ok["bytes"], "started_at": started, "finished_at": finished, "error": None}
+    return {"status": "failed", "snapshot_id": None, "bytes": 0, "started_at": started, "finished_at": finished,
+            "error": {"code": error.code, "message": error.message, "retryable": bool(error.retryable)}}
+
+
+def exit_code(error: BoundaryError | None) -> int:
+    """0 = ok, 75 = 재시도 가능(저장소에 닿지 못함, EX_TEMPFAIL), 1 = 그 밖의 실패(BackupJobResult)."""
+    if error is None:
+        return 0
+    return 75 if error.code == "UNAVAILABLE" else 1

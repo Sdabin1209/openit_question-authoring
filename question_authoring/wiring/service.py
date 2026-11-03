@@ -25,6 +25,7 @@ from ..components import (access_policy, bank_validate, change_diff, change_reco
                           phi_screen, preview_build, preview_hash, review_followup, signals_build)
 from ..components.link_authoring_server import Actor
 from ..components.link_failures_read import FailureReader
+from ..components.link_gate_read import GateReader
 from ..components.review_followup import REVIEWER_ROLE
 from . import schemas
 from .ids import new_id_default, now_default, ts
@@ -347,6 +348,51 @@ class AuthoringService:
             self._check_deadline("검수 저장")
             self.store.add_review(res["review"])
         return res["review"]
+
+    # ---------- 저작 화면의 읽기 ----------
+    def set_versions(self, question_set_id: Optional[str], cursor: Optional[str], limit: int) -> dict:
+        """AuthoringResponses.QuestionSetVersions: 문진표 버전 목록(오래된 것부터). 제목은 문항 세트의 title, reviewed 는 I1 의 reviewed_only 와 같은 뜻.
+        cursor 는 마지막으로 낸 '<문진표 ID>@<버전>' 이다(정렬: 문진표 ID, 버전 번호)."""
+        r = self.store.reader()
+        ids = [question_set_id] if question_set_id else self._all_ids(r)
+        rows = []
+        for qsid in ids:
+            cur = None
+            while True:
+                refs, cur = r.list_versions(qsid, cursor=cur, limit=500)
+                rows += [(qsid, int(x["version"]), x) for x in refs]
+                if cur is None:
+                    break
+        rows.sort(key=lambda t: (t[0], t[1]))
+        if cursor:
+            q, _, v = cursor.rpartition("@")
+            rows = [t for t in rows if (t[0], t[1]) > (q, int(v) if v.isdigit() else 0)]
+        page, more = rows[:limit], len(rows) > limit
+        items = []
+        for qsid, n, ref in page:
+            bank = r.get_question_bank(ref)
+            items.append({"question_set_id": qsid, "version": str(n), "title": bank.get("title") or qsid, "reviewed": self._is_reviewed(r, ref)})
+        out = {"items": items, "next_cursor": (f"{page[-1][0]}@{page[-1][1]}" if more else None)}
+        schemas.check("AuthoringResponses#QuestionSetVersions", out)      # 내보내기 전 생산자 검증(CONVENTIONS 3절)
+        return out
+
+    @staticmethod
+    def _all_ids(r) -> list:
+        out, cur = [], None
+        while True:
+            page, cur = r.list_ids(cursor=cur, limit=500)
+            out += page
+            if cur is None:
+                return out
+
+    @staticmethod
+    def _is_reviewed(r, ref) -> bool:
+        revs = sorted(enumerate(r.get_reviews(ref)), key=lambda t: (t[1]["reviewed_at"], t[0]))
+        return bool(revs) and revs[-1][1]["decision"] == "APPROVED" and revs[-1][1]["clinical_basis_approved"] is True
+
+    def decisions(self, source, query: dict) -> dict:
+        """release-gate 의 판정(I4 find_decisions). 읽기만 한다."""
+        return schemas.bind(GateReader(source))(query)
 
     # ---------- 개선 신호(읽기 전용) ----------
     def build_signals(self, source, *, question_set_id: Optional[str] = None, review_status: Optional[str] = None,

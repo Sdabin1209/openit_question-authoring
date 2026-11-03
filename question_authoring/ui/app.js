@@ -47,8 +47,9 @@ async function whoami() {
 
 function tab(name) {
   document.querySelectorAll("#tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
-  ["drafts", "upload", "review", "signals"].forEach(t => { $("#tab-" + t).hidden = t !== name; });
+  ["drafts", "upload", "versions", "review", "signals"].forEach(t => { $("#tab-" + t).hidden = t !== name; });
   if (name === "review") loadReviewChoices();
+  if (name === "versions") act(() => loadVersions(true));
 }
 
 async function loadDrafts() {
@@ -85,6 +86,31 @@ async function openDraft(id) {
   $("#edit-form").hidden = !open; $("#discard").disabled = !open;
 }
 async function act(fn) { try { await fn(); } catch (e) { fail(e); } }
+
+let versionsNext = null, versionsSet = "";
+function decisionText(items) {
+  if (!items.length) return "판정 없음";
+  const d = items[0];   // 최신부터
+  const codes = (d.reject_codes || []).join(", ");
+  return `${d.result === "PASS" ? "통과" : "반려"} (${d.decided_at})${codes ? " " + codes : ""}${d.release_id ? " 릴리스 " + d.release_id : ""}`;
+}
+async function loadVersions(reset) {
+  const tb = $("#versions-table tbody");
+  if (reset) { tb.replaceChildren(); versionsNext = null; }
+  const q = new URLSearchParams({limit: "50"});
+  if (versionsSet) q.set("question_set_id", versionsSet);
+  if (versionsNext) q.set("cursor", versionsNext);
+  const out = await api("GET", "/v1/set-versions?" + q);
+  versionsNext = out.next_cursor; $("#versions-more").hidden = !versionsNext;
+  for (const v of out.items) {
+    const tr = document.createElement("tr");
+    [v.question_set_id, v.version, v.title, v.reviewed ? "승인됨" : "아직"].forEach(x => tr.appendChild(el("td", x)));
+    const cell = el("td", "확인 중..."); tr.appendChild(cell); tb.appendChild(tr);
+    api("GET", "/v1/set-decisions?" + new URLSearchParams({question_set_id: v.question_set_id, version: v.version, limit: "1"}))
+      .then(d => { cell.textContent = decisionText(d.items); })
+      .catch(e => { cell.textContent = e.code === "FAILED_PRECONDITION" ? "판정 조회가 꺼져 있다" : `조회하지 못했다(${e.code})`; });
+  }
+}
 
 async function loadReviewChoices() {
   const sel = $("#review-form [name=ref]"); sel.replaceChildren();
@@ -141,6 +167,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const f = new FormData(ev.target); const body = {question_set: JSON.parse(f.get("ref")), decision: f.get("decision"), clinical_basis_approved: !!f.get("clinical_basis_approved")};
     if (f.get("reason")) body.reason = f.get("reason");
     await api("POST", "/v1/reviews", body); say("검수 결정을 남겼다.", "ok"); }); });
+  $("#versions-form").addEventListener("submit", ev => { ev.preventDefault(); versionsSet = new FormData(ev.target).get("question_set_id") || ""; act(() => loadVersions(true)); });
+  $("#versions-more").addEventListener("click", () => act(() => loadVersions(false)));
   $("#signals-form").addEventListener("submit", ev => { ev.preventDefault(); act(async () => {
     const f = new FormData(ev.target); const q = new URLSearchParams();
     if (f.get("question_set_id")) q.set("question_set_id", f.get("question_set_id"));

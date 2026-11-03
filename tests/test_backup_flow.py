@@ -40,7 +40,7 @@ class Runner:
         rc = 1 if (self.fail_on and self.fail_on in argv) else 0
         if argv[1:2] == ["cat"]:
             rc = 0
-        return subprocess.CompletedProcess(argv, rc)
+        return subprocess.CompletedProcess(argv, rc, stdout=b'{"message_type":"status"}\n{"message_type":"summary","snapshot_id":"abc123def"}\n')
 
 
 @pytest.fixture
@@ -54,7 +54,7 @@ def fake_dump(monkeypatch):
 def test_backup_goes_out_through_the_own_gateway_with_secrets_only_in_the_child_env(tmp_path, fake_dump):
     r = Runner()
     out = backup_flow.run(env_of(tmp_path), runner=r)
-    assert out == {"backed_up": ["question-authoring"], "bytes": 31}
+    assert out == {"snapshot_id": "abc123def", "bytes": 31}
     argv, child, stdin = r.calls[-1]
     assert argv[:2] == ["restic", "backup"] and stdin == b"COPY versions FROM STDIN;\nrow\n\\.\n"
     assert child["HTTPS_PROXY"] == "http://127.0.0.1:3128"                         # R1.8: 자기 영역 게이트웨이 출구
@@ -66,16 +66,33 @@ def test_backup_goes_out_through_the_own_gateway_with_secrets_only_in_the_child_
     assert "S3CRET" not in joined and "DBSECRET" not in joined and "repo-pass" not in joined      # R6.3: argv 에 비밀 없음
 
 
-def test_store_unreachable_is_nonzero_exit_without_secrets(tmp_path, capsys, monkeypatch):
+def run_main(tmp_path, monkeypatch, capsys, run):
     for k, v in env_of(tmp_path).items():
         monkeypatch.setenv(k, v)
     monkeypatch.setenv("QA_DB_PATH", ":memory:")
-    def refuse(env):
-        raise BoundaryError("UNAVAILABLE", "백업 저장소로 보내지 못했다")
-    monkeypatch.setattr(backup_flow, "run", refuse)
+    monkeypatch.setattr(backup_flow, "run", run)
     rc = qa_main.main(["backup"])
-    err = capsys.readouterr().err
-    assert rc == 1 and "UNAVAILABLE" in err and "S3CRET" not in err and "DBSECRET" not in err
+    cap = capsys.readouterr()
+    return rc, cap.out, cap.err
+
+
+def test_success_prints_a_backup_job_result_last_line_and_exits_0(tmp_path, monkeypatch, capsys):
+    from question_authoring.wiring import contract
+    rc, out, err = run_main(tmp_path, monkeypatch, capsys, lambda env: {"snapshot_id": "abc", "bytes": 5})
+    line = json.loads(out.strip().splitlines()[-1])
+    assert rc == 0 and line["status"] == "ok" and line["snapshot_id"] == "abc" and line["error"] is None
+    assert contract.problems("BackupJobResult", None, line) == []
+
+
+@pytest.mark.parametrize("code,rc_want", [("UNAVAILABLE", 75), ("INVALID_RECORD", 1)])
+def test_failure_prints_failed_result_and_exit_code_75_or_1(tmp_path, monkeypatch, capsys, code, rc_want):
+    from question_authoring.wiring import contract
+    def refuse(env):
+        raise BoundaryError(code, "백업 저장소로 보내지 못했다")
+    rc, out, err = run_main(tmp_path, monkeypatch, capsys, refuse)
+    line = json.loads(out.strip().splitlines()[-1])
+    assert rc == rc_want and line["status"] == "failed" and line["snapshot_id"] is None and line["error"]["code"] == code
+    assert contract.problems("BackupJobResult", None, line) == [] and "S3CRET" not in out + err and "DBSECRET" not in out + err
 
 
 @pytest.mark.parametrize("fail", ["init", "backup"])
