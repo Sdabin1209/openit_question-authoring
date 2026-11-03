@@ -148,7 +148,7 @@ def test_confirming_reservation_is_released_on_conflict(s2):
     assert code(s2.confirm, KIM, d_a, ph_a) == "UNAVAILABLE"
     assert s2.get_draft(d_a)["confirming"]["version"] == 1
     s2.confirm(LEE, d_b, ph_b)                                    # 다른 초안이 1번을 가져갔다
-    assert code(s2.confirm, KIM, d_a, ph_a) == "FAILED_PRECONDITION"
+    assert code(s2.confirm, KIM, d_a, ph_a) == "CONFLICT"                # R10.8: 같은 ID·버전에 다른 내용은 409
     assert "confirming" not in s2.get_draft(d_a)                  # 예약이 풀렸다(이전에는 영영 CONFLICT)
 
 

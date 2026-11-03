@@ -325,7 +325,7 @@ class AuthoringService:
                 # 다른 초안이 같은 번호를 먼저 썼다. 예약을 풀어야 이 초안이 영영 막히지 않는다(전수 점검 A7)
                 d.pop("confirming", None)
                 self.store.save_draft(d)
-                raise BoundaryError("FAILED_PRECONDITION", "다른 초안이 먼저 확정되어 번호 예약을 풀었다. 최신 버전에서 다시 시작해야 한다") from None
+                raise BoundaryError("CONFLICT", "다른 초안이 같은 문진표 ID·버전을 먼저 확정했다(내용이 다르다). 예약을 풀었으니 최신 버전에서 다시 시작해야 한다") from None   # RUNTIME R10.8·CONVENTIONS 4절: 같은 ID·버전에 다른 내용은 409
             raise
         d["status"], d["confirmed"] = "CONFIRMED", {"ref": ref, "preview_hash": preview_hash, "review_id": review["review_id"]}
         d["updated_at"] = self.now()

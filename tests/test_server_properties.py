@@ -184,14 +184,14 @@ def test_qa_host_binds_only_that_address():
         stop_http(srv, th)
 
 
-def test_r10_3_default_i7_client_timeout_is_30_seconds(monkeypatch, tmp_path):
-    """RUNTIME R10.3: 시간 한도가 사슬 표에 없는 호출(I7)의 기본 timeout은 30초."""
+def test_r10_3_default_i7_client_timeout_is_10_seconds(monkeypatch, tmp_path):
+    """RUNTIME R10.3: 시간 한도가 사슬 표에 없는 호출(I7)의 기본 timeout은 10초."""
     monkeypatch.setenv("QA_DB_PATH", str(tmp_path / "q.db"))
     monkeypatch.setenv("QA_FAILURES_URL", "http://127.0.0.1:9")
     monkeypatch.setenv("QA_FAILURES_TOKEN", "x")
     monkeypatch.delenv("QA_FAILURES_TIMEOUT_SECONDS", raising=False)
     api, store = qa_main.build()
     try:
-        assert api.signals._timeout == 30.0
+        assert api.signals._timeout == 10.0
     finally:
         store.close()

@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+from typing import Optional
+
 from boundary_contracts.clients import HttpFailureStore
 from boundary_contracts.errors import BoundaryError
 
@@ -12,9 +14,10 @@ INPUT_SCHEMA = "FailureReadRequest"
 OUTPUT_SCHEMA = "FailureBundle"
 
 
-def http_failure_source(url: str, token: str, timeout: float) -> HttpFailureStore:
-    """ops-feedback(I7)의 실패 사례 읽기 클라이언트. 호출 하나의 읽기 상한이 timeout이다. 진입점이 만들어 서비스에 넘긴다."""
-    return HttpFailureStore(url, token, timeout=timeout)
+def http_failure_source(url: str, token: str, timeout: float, egress_proxy: Optional[str] = None) -> HttpFailureStore:
+    """ops-feedback(I7)의 실패 사례 읽기 클라이언트. 호출 하나의 읽기 상한이 timeout이다. 진입점이 만들어 서비스에 넘긴다.
+    egress_proxy: 자기 영역 게이트웨이의 출구(RUNTIME R1.8, CONVENTIONS 13절). 영역 밖 호출은 이 CONNECT 터널로만 나간다."""
+    return HttpFailureStore(url, token, timeout=timeout, egress_proxy=egress_proxy)
 
 
 class FailureReader:

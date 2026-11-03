@@ -46,7 +46,7 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 환경 변수의 형식(숫자, 열거)은 시작 때 계약 `QuestionAuthoringDeployInterface.Environment`로 검사하고, 어기면 변수 이름과 규칙만 말하고(값은 말하지 않는다) 시작을 거부한다. 빈 문자열은 설정 안 함으로 본다. 불리언은 `1/0/true/false` 소문자만 받는다(이전에는 `TRUE`도 받았다).
 | QA_DB_LARGE_STATEMENT_TIMEOUT_SECONDS | 큰 자료(원본 자료, 초안, 문항 세트 버전) 쓰기의 문장 상한(초) | 30 |
 | QA_REQUEST_TIMEOUT_SECONDS | HTTP 요청 소켓이 이 시간 멈추면 끊는다(멈춘 업로드) | 30 |
-| QA_FAILURES_TIMEOUT_SECONDS | I7 호출 하나의 읽기 상한(초) | 30 (RUNTIME R10.3: 사슬 표에 없는 호출의 시작값, 측정 안 함) |
+| QA_FAILURES_TIMEOUT_SECONDS | I7 호출 하나의 읽기 상한(초) | 10 (RUNTIME R10.3: 사슬 표에 없는 서비스 사이 호출의 시작값, 측정 안 함) |
 | QA_SIGNALS_DEADLINE_SECONDS | `GET /v1/signals` 한 번의 총 마감(초) | 110 |
 | QA_REQUEST_DEADLINE_SECONDS | 사람용 요청 하나의 서버 쪽 전체 마감(초). 각 DB 문장은 남은 시간을 상한으로 쓰고, 넘기면 저장하지 않고 503(D120, D125, ADR 0025) | 110 |
 | QA_READYZ_DB_TIMEOUT_SECONDS | `/readyz`의 DB 확인 상한(초) | 2 |
