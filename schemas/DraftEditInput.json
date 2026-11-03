@@ -7,7 +7,8 @@
   "draft",
   "edits",
   "actor_id",
-  "now"
+  "now",
+  "base_bank"
  ],
  "additionalProperties": false,
  "properties": {
@@ -22,6 +23,17 @@
   },
   "now": {
    "$ref": "_common.schema.json#/$defs/Timestamp"
+  },
+  "base_bank": {
+   "description": "기반 버전의 문항 세트(QuestionBank 모양). 첫 버전(기반 없음)이면 null. 구조 잠금(U81)의 비교 기준이며 wiring이 저장소에서 읽어 넘긴다",
+   "oneOf": [
+    {
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ]
   }
  },
  "title": "DraftEditInput"

@@ -9,7 +9,8 @@
   "now",
   "source",
   "extractor",
-  "extraction"
+  "extraction",
+  "base_bank"
  ],
  "additionalProperties": false,
  "properties": {
@@ -81,6 +82,17 @@
    "oneOf": [
     {
      "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "base_bank": {
+   "description": "기반 버전의 문항 세트(QuestionBank 모양). 첫 버전(기반 없음)이면 null. 구조 잠금(U81)의 비교 기준이며 wiring이 저장소에서 읽어 넘긴다",
+   "oneOf": [
+    {
+     "type": "object"
     },
     {
      "type": "null"

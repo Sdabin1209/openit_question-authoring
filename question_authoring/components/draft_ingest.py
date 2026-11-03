@@ -4,10 +4,39 @@ from __future__ import annotations
 import copy
 
 from boundary_contracts import canonical
+from boundary_contracts.errors import BoundaryError
 
 INPUT_SCHEMA = "DraftIngestInput"
 OUTPUT_SCHEMA = "DraftIngestResult"
 FALLBACK_GUIDANCE = "자료를 읽지 못했다. 화면 입력으로 이어서 작성할 수 있다. 원본 해시는 출처로 남는다."
+
+# 구조 잠금(U81): 둘째 버전부터 문항 ID와 칸 ID 구조는 기반 버전과 같아야 한다(문장·수치는 바꿀 수 있다). 모델이 이 구조로 학습되어 구조가 바뀌면 재학습이 필요하다.
+# 왜 컴포넌트마다 같은 함수가 있나: 컴포넌트는 서로를 import하지 못한다(구조 규칙 3). 세 곳의 판정이 같은지는 tests/test_structure_lock.py가 본다.
+def _structure(bank) -> set:
+    out = set()
+    for q in (bank or {}).get("questions", []) if isinstance(bank, dict) else []:
+        if isinstance(q, dict):
+            qid = q.get("question_id")
+            out.add((qid, None))
+            out.update((qid, s.get("slot_id")) for s in q.get("slots", []) or [] if isinstance(s, dict))
+    return out
+
+
+def structure_lock_problem(base_bank, bank):
+    """기반이 없으면(첫 버전) None. 구조가 다르면 바뀐 ID 목록이 든 사유 문장."""
+    if base_bank is None:
+        return None
+    old, new = _structure(base_bank), _structure(bank)
+    if old == new:
+        return None
+    fmt = lambda xs: ", ".join(q if s is None else f"{q}.{s}" for q, s in sorted(xs, key=lambda t: (str(t[0]), str(t[1]))))[:600]
+    parts = []
+    if new - old:
+        parts.append("추가 " + fmt(new - old))
+    if old - new:
+        parts.append("삭제 " + fmt(old - new))
+    return "문항·칸 ID 구조는 기반 버전과 같아야 한다(" + "; ".join(parts) + "). 구조 변경은 모델 재학습이 필요해 지원하지 않는다"
+
 
 
 def run(inp: dict) -> dict:
@@ -22,6 +51,9 @@ def run(inp: dict) -> dict:
         # 왜 extractor를 넣지 않나: 추출기를 고르기 전에 실패하면 이름이 없다. 계약 Source.extractor는 문자열이라 None을 쓰면 ReviewExt 검사가 거부한다
         d["fallback"] = {"reason": ex["reason"], "guidance": inp.get("guidance") or FALLBACK_GUIDANCE}
         return {"draft": d, "status": "FALLBACK", "reason": ex["reason"], "open_flags": 0}
+    why = structure_lock_problem(inp["base_bank"], ex["bank"])
+    if why:
+        raise BoundaryError("FAILED_PRECONDITION", why)
     d["bank"] = ex["bank"]
     flags, seen = [], {}
     for f in ex["flags"]:

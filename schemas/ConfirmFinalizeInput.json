@@ -12,7 +12,9 @@
   "diff",
   "at",
   "require_two_person",
-  "pipeline_schema_version"
+  "pipeline_schema_version",
+  "bank",
+  "base_bank"
  ],
  "additionalProperties": false,
  "properties": {
@@ -52,6 +54,21 @@
   },
   "pipeline_schema_version": {
    "$ref": "_common.schema.json#/$defs/PipelineSchemaVersion"
+  },
+  "base_bank": {
+   "description": "기반 버전의 문항 세트(QuestionBank 모양). 첫 버전(기반 없음)이면 null. 구조 잠금(U81)의 비교 기준이며 wiring이 저장소에서 읽어 넘긴다",
+   "oneOf": [
+    {
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "bank": {
+   "description": "확정 후보 문항 세트(version 포함). 구조 잠금이 base_bank와 비교한다",
+   "type": "object"
   }
  },
  "title": "ConfirmFinalizeInput"

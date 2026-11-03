@@ -17,3 +17,4 @@ class DraftEditInput(TypedDict):
     edits: EditList
     actor_id: str
     now: str
+    base_bank: dict[str, Any] | None

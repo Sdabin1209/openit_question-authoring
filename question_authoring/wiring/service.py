@@ -127,6 +127,10 @@ class AuthoringService:
         d["updated_at"] = self.now()
         self.store.save_draft(d)
 
+    def _base_bank_of(self, d: dict) -> Optional[dict]:
+        """구조 잠금(U81)의 비교 기준: 초안의 기반 버전 문항 세트. 기반이 없으면(첫 버전) None. 컴포넌트는 저장소를 모르므로 여기서 읽어 입력으로 넘긴다."""
+        return self.store.get_question_bank(d["base"]) if d["base"] else None
+
     def _latest_ref(self, qsid: str) -> Optional[dict]:
         try:
             return self.store.latest(qsid)
@@ -173,7 +177,7 @@ class AuthoringService:
         with self._dlock(draft_id):
             d = self._draft(draft_id)
             self._authorize(actor, owner=d["created_by"])
-            d = self._edit({"draft": d, "edits": edits, "actor_id": actor.id, "now": self.now()})
+            d = self._edit({"draft": d, "edits": edits, "actor_id": actor.id, "now": self.now(), "base_bank": self._base_bank_of(d)})
             self._save(d)
             return d
 
@@ -235,12 +239,18 @@ class AuthoringService:
                 extraction = schemas.bind(ex)({"filename": filename, "data_base64": base64.b64encode(bytes(data)).decode("ascii")})
             except Exception as e:  # 추출기 버그도 등록을 막지 않는다
                 extraction = {"status": "FAILED", "reason": f"추출기 오류: {type(e).__name__}", "flags": []}
-        res = self._ingest({
-            "draft": d, "warnings": warnings, "now": self.now(),
-            "source": {"source_hash": source_hash, "filename": filename, "size": len(data)},
-            "extractor": ({"name": ex.NAME, "version": ex.VERSION} if ex is not None else None),
-            "extraction": extraction,
-            "guidance": ("화면 입력으로 이어서 작성할 수 있다." if extraction.get("reason", "").startswith("추출기 오류") else None)})
+        try:
+            res = self._ingest({
+                "draft": d, "warnings": warnings, "now": self.now(), "base_bank": self._base_bank_of(d),
+                "source": {"source_hash": source_hash, "filename": filename, "size": len(data)},
+                "extractor": ({"name": ex.NAME, "version": ex.VERSION} if ex is not None else None),
+                "extraction": extraction,
+                "guidance": ("화면 입력으로 이어서 작성할 수 있다." if extraction.get("reason", "").startswith("추출기 오류") else None)})
+        except BoundaryError as e:
+            if e.code == "FAILED_PRECONDITION":
+                # 구조 잠금(U81)이 거절했다: 방금 만든 빈 초안이 목록에 남지 않게 버린다(원본 자료는 정리 기간 뒤 purge가 지운다)
+                self._save(self._discard({"draft": d, "reason": "구조 잠금으로 자료 등록 거절", "actor_id": actor.id, "now": self.now()}))
+            raise
         self._save(res["draft"])
         out = {"draft_id": d["draft_id"], "status": res["status"], "warnings": warnings}
         if res["status"] == "PARSED":
@@ -299,7 +309,7 @@ class AuthoringService:
                                    "pipeline_schema_version": PIPELINE_SCHEMA_VERSION})
         try:
             fin = self._finalize({"draft": d, "actor": _d(actor), "preview_hash": preview_hash, "validation_errors": errs,
-                                  "ref": ref, "diff": diff, "at": at, "require_two_person": self.require_two_person,
+                                  "bank": bank, "base_bank": base_bank, "ref": ref, "diff": diff, "at": at, "require_two_person": self.require_two_person,
                                   "pipeline_schema_version": PIPELINE_SCHEMA_VERSION})
         except BoundaryError as e:
             if e.code == "FAILED_PRECONDITION":     # 내용이 같다: 예약을 풀어 이 초안이 영영 막히지 않게 한다

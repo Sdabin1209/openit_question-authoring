@@ -27,5 +27,6 @@
   "status": "PARSED",
   "bank": {},
   "flags": []
- }
+ },
+ "base_bank": null
 }

@@ -22,3 +22,5 @@ class ConfirmFinalizeInput(TypedDict):
     at: str
     require_two_person: bool
     pipeline_schema_version: str
+    base_bank: dict[str, Any] | None
+    bank: dict[str, Any]

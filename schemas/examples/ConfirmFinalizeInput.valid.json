@@ -29,5 +29,9 @@
  "diff": null,
  "at": "2026-10-30T10:00:00Z",
  "require_two_person": true,
- "pipeline_schema_version": "3.1"
+ "pipeline_schema_version": "3.1",
+ "base_bank": null,
+ "bank": {
+  "questions": []
+ }
 }

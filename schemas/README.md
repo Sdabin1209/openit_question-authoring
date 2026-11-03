@@ -24,8 +24,9 @@
 | 14 | question_store | 요청한 버전이 있다, 저장된 내용의 해시가 기록·ref와 같다 | 저장된 상태 의존 |
 | 15 | store_memory, store_sqlite, store_postgres | 버전 번호는 마지막 + 1, 같은 `review_id` 충돌, 원본이 정리됐으면 확정 거부, 읽기 전용 연결에는 쓰기 금지 | 저장된 상태 의존 |
 | 16 | link_authoring_server | `max_cases` 1~20000, `limit` 1~500, `reviewed_only` true/false, gateway 사용자가 역할표에 있다 | 계약에 쿼리 범위 스키마가 없다(`SignalsQuery`는 숫자 형식만), 라이브러리가 쿼리 검증을 아직 지원하지 않는다(CR-0008) |
+| 17 | draft_edit, draft_ingest, confirm_finalize | 둘째 버전부터 `(question_id, slot_id)` 구조가 `base_bank`와 같다(첫 버전, 즉 `base_bank`가 null이면 면제) | 판정: 두 문서의 비교. 한 입력 안의 두 값(`base_bank`, 편집·추출·후보 bank)의 집합 비교라 JSON Schema로 쓰지 못한다. 위반은 FAILED_PRECONDITION과 바뀐 ID 목록(U81) |
 
-16행 모두 입력 모양이 아니라 상태·시간·문서 내용·필드 간 비교에 대한 판정이거나 스키마로 표현할 수 없는 조건이라 스키마로 옮길 수 있는 행은 없다. 입력 모양 조건은 모두 스키마에 있다.
+17행 모두 입력 모양이 아니라 상태·시간·문서 내용·필드 간 비교에 대한 판정이거나 스키마로 표현할 수 없는 조건이라 스키마로 옮길 수 있는 행은 없다. 입력 모양 조건은 모두 스키마에 있다.
 
 ## 입력 순서의 변화
 `Actor.id` 형식이 입력 스키마로 옮겨져, 역할도 틀리고 ID도 틀린 호출은 이전에 PERMISSION_DENIED였고 지금은 INVALID_RECORD다(둘 다 틀린 경우만).

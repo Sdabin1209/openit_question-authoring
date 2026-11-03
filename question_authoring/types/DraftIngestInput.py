@@ -41,3 +41,4 @@ class DraftIngestInput(TypedDict):
     extractor: Extractor | None
     extraction: MaterialExtraction
     guidance: NotRequired[str | None]
+    base_bank: dict[str, Any] | None
