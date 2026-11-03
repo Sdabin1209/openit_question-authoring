@@ -5,6 +5,7 @@ handle()은 소켓 없이 시험할 수 있는 입구이고, app이 WSGI 앱, ma
 from __future__ import annotations
 
 import contextlib
+import threading
 from dataclasses import dataclass
 import json
 import re
@@ -101,7 +102,9 @@ class Api:
             actor_roles.add(a.role)
         write = frozenset(actor_roles | ({"gateway"} if gateway_tokens else set()))
         read = frozenset(write | {"reader"})
-        self.app = App(self._routes(read, write), tm, ready=self._readyz)
+        self._counts: dict = {}              # (패턴, 상태) -> 건수. 프로세스 안의 값뿐이다(저장소를 부르지 않는다, R10.11)
+        self._counts_lock = threading.Lock()
+        self.app = App(self._routes(read, write), tm, ready=self._readyz, on_result=self._count)
 
     # ---- 입구 ----
     def handle(self, method: str, url: str, headers: Mapping[str, str], body: bytes = b"") -> tuple[int, dict]:
@@ -115,9 +118,25 @@ class Api:
         status, hdrs, data = self.app.handle(env)
         return status, (json.loads(data) if data else {})
 
+    def _count(self, ctx: dict) -> None:
+        with self._counts_lock:
+            k = (ctx.get("pattern") or "unmatched", int(ctx.get("status", 0)))
+            self._counts[k] = self._counts.get(k, 0) + 1
+
+    def metrics_text(self) -> str:
+        """RUNTIME R10.11: Prometheus 텍스트 형식(exposition format 0.0.4). 프로세스 안의 값만 낸다: 저장소가 멈춰도 200 이다."""
+        with self._counts_lock:
+            items = sorted(self._counts.items())
+        out = ["# HELP qa_up 프로세스가 요청을 받고 있다(1).", "# TYPE qa_up gauge", "qa_up 1",
+               "# HELP qa_http_requests_total 경로 패턴과 상태 코드별 요청 수.", "# TYPE qa_http_requests_total counter"]
+        for (pat, st), n in items:
+            pat = pat.replace("\\", "\\\\").replace('"', '\\"')
+            out.append(f'qa_http_requests_total{{pattern="{pat}",status="{st}"}} {n}')
+        return "\n".join(out) + "\n"
+
     def _readyz(self):
         ok = bool(self.ready())
-        body = {"status": "ready" if ok else "not-ready"}
+        body = {"status": "ready" if ok else "not_ready"}   # 3.4.4 HealthStatus: 정본 표기 not_ready(옛 not-ready 는 읽는 쪽이 받아 준다)
         if self.db_kind:
             body["db"] = self.db_kind
         if self.warnings:
@@ -126,7 +145,7 @@ class Api:
             _check_response("QuestionAuthoringDeployInterface", "ReadyzResponse", body)
         except ResponseContractError as e:   # 서버 결함: 계약을 어긴 본문은 내보내지 않는다
             _log(f"응답 계약 위반: {e}")
-            return False, {"status": "not-ready"}
+            return False, {"status": "not_ready"}
         return ok, body
 
     def _actor(self, req) -> Optional[Actor]:
@@ -176,6 +195,8 @@ class Api:
                          query_schema=query, raw_body=raw, max_body=MAX_BODY)
         d = lambda r: r.params["did"]    # noqa: E731
         return [
+            # /metrics: 인증 없음(roles 비움, 토큰이 있어도 무시). 접근 통제는 망이다(RUNTIME R10.11, R6.2)
+            Route("GET", "/metrics", lambda r: Response(200, self.metrics_text(), content_type="text/plain; version=0.0.4; charset=utf-8"), roles=frozenset()),
             R("GET", sc, lambda r, a: self._read(r), read),
             R("GET", sc + "/{qsid}/latest", lambda r, a: self._read(r), read),
             R("GET", sc + "/{qsid}/versions", lambda r, a: self._read(r), read),

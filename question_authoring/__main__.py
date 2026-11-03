@@ -138,7 +138,7 @@ def build() -> tuple[Api, AuthoringStore]:
             signals = http_failure_source(env["QA_FAILURES_URL"], read_secret(env.get("QA_FAILURES_TOKEN_ENV", "QA_FAILURES_TOKEN")) or "",
                                           _seconds("QA_FAILURES_TIMEOUT_SECONDS", 10.0),
                                           egress_proxy=egress_proxy_from(env))   # 이웃 HTTP 클라이언트는 통신 컴포넌트가 만든다. 영역 밖 호출은 자기 영역 게이트웨이 출구로만(R1.8)
-        except ValueError as e:     # R1.1: loopback 밖 http:// 주소, R1.8: 출구 형식 위반은 기동 때 거부한다(값은 쓰지 않는다)
+        except ValueError as e:     # R1.1: loopback 밖 평문 주소, R1.8: 출구 형식 위반은 기동 때 거부한다(값은 쓰지 않는다)
             raise SystemExit(f"QA_FAILURES_URL 또는 OPENIT_EGRESS_PROXY 가 계약(R1.1·R1.8)을 어긴다: {type(e).__name__}")
     return Api(svc, tokens, read_tokens=read_tokens, signals=signals, ready=store.is_ready, db_kind=getattr(store, "kind", None),
                signals_deadline=_seconds("QA_SIGNALS_DEADLINE_SECONDS", 110.0), gateway_tokens=gateway_tokens,  # 왜 110.0초: D125 저자 경로 서버 마감과 같은 값, 게이트웨이 response_header 120초 안(서버 110 < 게이트웨이 120 < 화면 130). 측정한 값이 아니라 측정 최악 62초 위의 여유(ADR 0025)
