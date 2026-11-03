@@ -30,6 +30,11 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 | QA_DATABASE_URL(`_FILE` 권장) | PostgreSQL 접속 문자열(`postgresql://계정:암호@호스트:5432/데이터베이스`). 있으면 PostgreSQL을 쓴다. 암호가 들어 있으므로 비밀 값이다 | 없음 |
 | QA_DB_PATH | QA_DATABASE_URL이 없을 때만 쓰는 SQLite 파일(개발·시험) | /data/questions.sqlite3 |
 | QA_READ_TOKENS(`_FILE` 가능) | `역할=토큰` 쉼표 목록. I1 읽기 전용 토큰(저작 경로는 403, 토큰이 틀리면 401). 비밀 값 | 없음(읽기 면 토큰 없음·틀림은 401) |
+| QA_GATE_URL | release-gate(I4) 주소. 저작 화면의 판정 조회(읽기). 비우면 판정 조회는 412 | 없음 |
+| QA_GATE_TOKEN_ENV | I4 읽기 토큰의 비밀 이름. 이 이름의 `_FILE`(또는 개발용 환경 변수)을 읽는다 | QA_GATE_TOKEN |
+| QA_GATE_TIMEOUT_SECONDS | I4 호출 하나의 읽기 상한(초, RUNTIME R10.3) | 10 |
+| OPENIT_EGRESS_PROXY | 자기 영역 게이트웨이의 CONNECT 출구 `http://<loopback>:<포트>`(CommonEnv). 영역 밖 호출(I7·I4·백업)은 이 출구로만 나간다(R1.8) | 없음 |
+| OPENIT_BACKUP_URL·OPENIT_BACKUP_CREDENTIALS_FILE·OPENIT_BACKUP_REPO_PASSWORD_FILE | 백업 잡(ADR 0030)의 저장소 주소(https)·자격 파일·저장소 암호 파일(CommonEnv) | 없음 |
 | QA_FAILURES_URL | ops-feedback(I7) URL. 비우면 `/v1/signals`는 DISABLED | 없음 |
 | QA_FAILURES_TOKEN_ENV | I7 토큰의 비밀 이름. 이 이름의 `_FILE`(또는 개발용 환경 변수)을 읽는다 | QA_FAILURES_TOKEN |
 | QA_AUTHOR_TOKENS(`_FILE` 가능) | `토큰:actor-id:역할` 쉼표 목록. 비밀 값 | 없음(모든 요청 401) |
@@ -52,6 +57,14 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 | QA_READYZ_DB_TIMEOUT_SECONDS | `/readyz`의 DB 확인 상한(초) | 2 |
 
 로그는 표준 출력. 운영 데이터는 PostgreSQL 서버에 있다(서비스별 데이터베이스·계정, 이 서비스 계정에는 이 데이터베이스만 준다). SQLite 경로를 쓸 때만 `/data` 볼륨이 필요하다. `/readyz`는 DB 종류(`"db": "sqlite"|"postgres"`)만 보여주고 접속 정보는 절대 쓰지 않는다. 시작 시 스키마를 멱등하게 만든다(`CREATE TABLE IF NOT EXISTS`, advisory lock 아래). 버전·검수·변경 분류는 DB 트리거가 UPDATE/DELETE를 막는다.
+
+## 백업과 복구 (ADR 0030)
+- 백업: `python -m question_authoring backup`(잡 선언 `backup`). 종료 코드 0 성공, 75 저장소에 닿지 못함(다시 시도 가능), 1 그 밖의 실패. 마지막 줄은 계약 BackupJobResult JSON.
+- 복구(수동, 실제 백업 저장소로 시험하지 못했다): 새 PostgreSQL 에 서비스를 한 번 기동해 마이그레이션을 적용 → `restic dump <스냅숏> question-authoring.copy` 의 `COPY <표> FROM STDIN;` 블록을 `psql` 에 넣는다.
+- 로컬 미러로 의존 설치: `GIT_CONFIG_GLOBAL=<워크스페이스>/head/shared/gitconfig-local-mirrors bash scripts/setup-env.sh`(원격 동결 중의 표준 경로, 구조 점검 S14).
+
+## 저작 화면
+`/ui/`(platform 공개 입구가 로그인 뒤 연다). 탭: 초안, 자료 올리기, 버전·판정(release-gate 판정은 읽기만), 검수, 신호. 설계 근거는 ADR 0031.
 
 ## PostgreSQL 시험
 

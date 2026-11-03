@@ -18,7 +18,7 @@ dev = ["pytest", "datamodel-code-generator==0.25.0"]
 include = ["question_authoring*"]
 
 [tool.setuptools.package-data]
-question_authoring = ["migrations/*/*.py", "ui/*"]
+question_authoring = ["migrations/*/*.py", "ui/*.html", "ui/*.js", "ui/*.css"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

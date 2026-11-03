@@ -75,6 +75,9 @@ echo "/healthz 응답까지 약 $((SECONDS - START))초(정수 초)"
 curl -fsS "http://127.0.0.1:$PORT/healthz"; echo
 ready=$(curl -fsS "http://127.0.0.1:$PORT/readyz"); echo "$ready"
 echo "$ready" | grep -q "\"db\": \"$SMOKE_DB\"" || { echo "/readyz의 db 종류가 $SMOKE_DB가 아님"; exit 1; }
+curl -fsS "http://127.0.0.1:$PORT/ui/" | grep -q "문진표 저작" || { echo "저작 화면이 열리지 않음"; exit 1; }
+curl -fsS -H "Authorization: Bearer wrong-token" "http://127.0.0.1:$PORT/metrics" | grep -q "^qa_up 1" || { echo "/metrics 가 인증 없이 200 이 아님(R10.11)"; exit 1; }
+"$DOCKER" exec "$NAME" restic version >/dev/null || { echo "백업 도구(restic)가 이미지에 없음(R10.1)"; exit 1; }
 [ "$("$DOCKER" exec "$NAME" id -u)" != "0" ] || { echo "root로 실행 중"; exit 1; }
 if "$DOCKER" inspect "$NAME" | grep -q -e "$TOKEN" -e read-token || "$DOCKER" exec "$NAME" env | grep -q -e "$TOKEN" -e read-token; then echo "비밀이 env/inspect에 노출됨"; exit 1; fi
 echo "비밀 비노출 확인(inspect, exec env)"

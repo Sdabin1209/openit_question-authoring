@@ -10,6 +10,8 @@
 편집·확인·버리기: `access_policy` -> `draft_edit` | `flag_acknowledge` | `draft_discard` -> (저장)
 이후 검수: `access_policy` -> `review_followup` -> (저장소)
 개선 신호: `link_failures_read` -> `signals_build`
+판정 조회(저작 화면): `link_gate_read`(release-gate I4 find_decisions, 읽기만). 문진표 버전 목록은 서비스(`wiring/service.py::set_versions`)가 저장소 읽기로 만든다
+백업 잡: `wiring/backup_flow.py`(COPY 덤프 → restic, 자기 영역 게이트웨이 출구)
 읽기(I1): `link_authoring_server` -> `question_store`(백엔드 주입)
 
 ## 표
@@ -37,6 +39,7 @@
 | 저장소 백엔드(메모리) | `components/store_memory.py` | 원시 연산(버전·검수·변경·초안·원본) | 같음 | 메모리 구현(가짜). 이웃이 혼자 시험하는 데 쓴다 |
 | 저장소 백엔드(SQLite) | `components/store_sqlite.py` | 같음 | 같음 | 개발·시험용 파일 DB. 버전·검수·변경 표는 삽입만(D25) |
 | 저장소 백엔드(PostgreSQL) | `components/store_postgres.py` | 같음 | 같음 | 운영 DB(ADR 0017) |
+| 통신: 판정 읽기 | `components/link_gate_read.py` | AuthoringRequests#DecisionsQuery | AuthoringResponses#Decisions | release-gate(I4)에서 문진표 버전의 판정(GateDecision)을 읽는다(보내는 쪽, 읽기만) |
 | 통신: 실패 사례 읽기 | `components/link_failures_read.py` | FailureReadRequest | FailureBundle | ops-feedback(I7)에서 사례와 비식별 trace를 읽는다(보내는 쪽) |
 | 통신: 저작 API 서버 | `components/link_authoring_server.py` | 계약 AuthoringRequests | 계약 AuthoringResponses·SignalsResponse | openit_link 위에서 HTTP 경로를 받아 service에 넘긴다(받는 쪽) |
 

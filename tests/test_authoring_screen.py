@@ -60,7 +60,7 @@ def test_login_paths_are_the_contract_values_and_no_host_in_code():
 
 
 def test_screen_files_are_in_the_package_data():
-    assert "ui/*" in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert "ui/*.html" in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert set(_UI_FILES) == {p.name for p in UI.iterdir()}
 
 
@@ -77,3 +77,13 @@ def test_screen_shows_decision_status_per_version_and_never_submits():
     js = (UI / "app.js").read_text(encoding="utf-8")
     assert "/v1/set-versions" in js and "/v1/set-decisions" in js
     assert not re.search(r'"POST",\s*"/v1/(submissions|activate|rollback|approvals)', js)       # 후보 제출·활성화·승인은 이 영역의 권한이 아니다
+
+
+def test_built_wheel_contains_the_screen_files(tmp_path):
+    """이미지는 `pip install .` 로 패키지를 설치한다. 화면 파일이 패키지 데이터에 빠지면 /ui/ 가 이미지에서만 404 가 된다(스모크에서 발견)."""
+    import subprocess, sys, zipfile
+    r = subprocess.run([sys.executable, "-m", "pip", "wheel", "-q", "--no-deps", "--no-build-isolation", "-w", str(tmp_path), str(ROOT)],
+                       capture_output=True, text=True, timeout=300)
+    assert r.returncode == 0, r.stderr[-500:]
+    names = zipfile.ZipFile(next(tmp_path.glob("*.whl"))).namelist()
+    assert {f"question_authoring/ui/{n}" for n in _UI_FILES} <= set(names)

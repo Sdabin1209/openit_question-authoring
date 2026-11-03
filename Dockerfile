@@ -10,6 +10,8 @@ LABEL io.openit.service=question-authoring \
       io.openit.contracts.survey-schema=$SURVEY_SCHEMA_TAG \
       io.openit.model-runtime=n/a
 WORKDIR /app
+# 왜 restic: 백업 잡(RUNTIME R10.1)이 platform 백업 저장소(restic REST)로 보낸다. Debian 패키지(표준 저장소)를 쓰고 설치 뒤 목록을 지운다(ADR 0030)
+RUN apt-get update && apt-get install -y --no-install-recommends restic ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY requirements.lock .
 RUN grep -v -e '^boundary-contracts' -e '^openit-survey-schema' -e '^openit-link' -e '^#' requirements.lock > /tmp/req.txt && pip install --no-cache-dir -r /tmp/req.txt
 COPY build/wheels /tmp/wheels
