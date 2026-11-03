@@ -27,7 +27,23 @@ DOCKER="$DOCKER" PYTHON="$PY" bash "$here/scripts/build-image.sh" "$BUILDTMP/req
 SECDIR="$(mktemp -d)"
 SMOKE_DB="${SMOKE_DB:-sqlite}"
 NET=question-authoring-smoke-net-$$; PGNAME=question-authoring-smoke-pg-$$
-trap '"$DOCKER" rm -fv "$NAME" "$PGNAME" >/dev/null 2>&1 || true; "$DOCKER" network rm "$NET" >/dev/null 2>&1 || true; "$DOCKER" rmi "$IMG" >/dev/null 2>&1 || true; rm -rf "$SECDIR" "$BUILDTMP"' EXIT
+# 왜 정리 전에 출력하나: 병렬 실행 중 한 번 실패했을 때 컨테이너가 이미 지워져 원인을 볼 수 없었다. 어느 단계에서든 실패(종료 코드 0이 아님)하면 컨테이너를 지우기 전에
+# 로그 마지막 100줄과 상태(ExitCode, OOMKilled 등)를 낸다. inspect는 State만 낸다(전체를 내면 환경 변수가 섞인다).
+on_exit() {
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    for c in "$NAME" "$PGNAME"; do
+      if "$DOCKER" inspect "$c" >/dev/null 2>&1; then
+        echo "=== 실패(종료 코드 $rc): 컨테이너 $c 진단 ===" >&2
+        "$DOCKER" inspect -f 'status={{.State.Status}} ExitCode={{.State.ExitCode}} OOMKilled={{.State.OOMKilled}} Error={{.State.Error}} StartedAt={{.State.StartedAt}} FinishedAt={{.State.FinishedAt}}' "$c" >&2 2>&1 || true
+        "$DOCKER" logs --tail 100 "$c" >&2 2>&1 || true
+      fi
+    done
+  fi
+  "$DOCKER" rm -fv "$NAME" "$PGNAME" >/dev/null 2>&1 || true; "$DOCKER" network rm "$NET" >/dev/null 2>&1 || true; "$DOCKER" rmi "$IMG" >/dev/null 2>&1 || true; rm -rf "$SECDIR" "$BUILDTMP"
+  exit "$rc"
+}
+trap on_exit EXIT
 EXTRA=()
 # 비밀은 파일로 주입한다(D84): NAME_FILE. 환경 변수에는 경로만 있다.
 REVTOKEN=smoke-reviewer-token
@@ -49,10 +65,13 @@ chmod 755 "$SECDIR"; chmod 644 "$SECDIR"/*
 "$DOCKER" run -d --name "$NAME" "${EXTRA[@]}" -p 127.0.0.1::8080 -v "$SECDIR:/run/secrets:ro" -e QA_REQUIRE_TWO_PERSON=true -e QA_AUTHOR_TOKENS_FILE=/run/secrets/author_tokens -e QA_READ_TOKENS_FILE=/run/secrets/read_tokens "$IMG" >/dev/null
 PORT=$("$DOCKER" port "$NAME" 8080/tcp | head -1 | sed 's/.*://')
 echo "호스트 포트(Docker 배정): $PORT"
+# 왜 30초: 단독 기동 시간 측정(2026-11-03, 이 PC, 3회): 컨테이너 시작부터 /healthz 응답까지 각 1초(정수 초 측정, 실제 1~2초 미만). 여러 영역 스모크를 한 서버에서 병렬로 돌리면 느려질 수 있어 단독 측정값의 여러 배 여유를 둔다(표준 값이 아니라 측정에서 거꾸로 정한 값).
+START=$SECONDS
 for i in $(seq 1 30); do
   curl -fsS "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1 && break
   sleep 1
 done
+echo "/healthz 응답까지 약 $((SECONDS - START))초(정수 초)"
 curl -fsS "http://127.0.0.1:$PORT/healthz"; echo
 ready=$(curl -fsS "http://127.0.0.1:$PORT/readyz"); echo "$ready"
 echo "$ready" | grep -q "\"db\": \"$SMOKE_DB\"" || { echo "/readyz의 db 종류가 $SMOKE_DB가 아님"; exit 1; }
