@@ -15,8 +15,8 @@ from boundary_contracts.errors import BoundaryError
 
 INPUT_SCHEMA = "BankValidateInput"
 OUTPUT_SCHEMA = "BankValidateResult"
-# 문진 스키마의 정수 CONTRACT_VERSION(런타임 호환 번호). openit-survey-schema 4.0.0 패키지의 CONTRACT_VERSION 파일이 2이다(D14: 정확히 일치해야 한다). 올릴 때는 패키지와 함께 바꾼다
-SUPPORTED_RUNTIME_CONTRACT_VERSION = 2
+# 문진 스키마의 정수 CONTRACT_VERSION(런타임 호환 번호). openit-survey-schema 4.0.0 패키지의 CONTRACT_VERSION 파일이 1이다(정수 버전은 4.0.0에서 올리지 않았다)(D14: 정확히 일치해야 한다). 올릴 때는 패키지와 함께 바꾼다
+SUPPORTED_RUNTIME_CONTRACT_VERSION = 1
 _V = None
 
 

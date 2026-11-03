@@ -89,7 +89,7 @@ def test_classification_record(bank, validators):
 
 def test_tables_cover_schema_fields():
     """QuestionBank 스키마의 필드가 분류 표에 모두 있어야 한다. 새 필드가 생기면 이 시험이 알려 준다."""
-    defs = survey_schema.load_schema("QuestionBank", 2)["$defs"]
+    defs = survey_schema.load_schema("QuestionBank", 1)["$defs"]
     assert set(defs["QuestionDef"]["properties"]) - {"question_id", "slots"} == set(classify.QUESTION_FIELDS)
     assert set(defs["SlotDef"]["properties"]) - {"slot_id"} == set(classify.SLOT_FIELDS)
     assert set(defs["SessionSettings"]["properties"]) == set(classify.SESSION_FIELDS)
