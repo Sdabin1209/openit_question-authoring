@@ -64,7 +64,7 @@ if [ "$SMOKE_DB" = postgres ]; then
   echo "DB 암호 비노출 확인(inspect, env, logs)"
 fi
 AUTH="Authorization: Bearer $TOKEN"
-did=$(curl -fsS -X POST -H "$AUTH" --data-binary @"$here/examples/question_form.txt" \
+did=$(curl -fsS -X POST -H "$AUTH" --data-binary "$(sed s/qs-main/qs-smoke/ "$here/examples/question_form.txt")" \
   "http://127.0.0.1:$PORT/v1/materials?question_set_id=qs-smoke&filename=form.txt" | python3 -c 'import sys,json;print(json.load(sys.stdin)["draft_id"])')
 ph=$(curl -fsS -H "$AUTH" "http://127.0.0.1:$PORT/v1/drafts/$did/preview" | python3 -c 'import sys,json;d=json.load(sys.stdin);assert d["ready_to_confirm"];print(d["preview_hash"])')
 ref=$(curl -fsS -X POST -H "$AUTH" -d "{\"preview_hash\":\"$ph\"}" "http://127.0.0.1:$PORT/v1/drafts/$did/confirm"); echo "$ref"
