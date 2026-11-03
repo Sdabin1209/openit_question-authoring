@@ -70,7 +70,7 @@ scripts/smoke.sh
 
 ## 현재 상태
 
-**시험 상태**(계약 v3.4.7, link v0.4.13 기준): 코드 단계(2026-11-04) 시험은 PostgreSQL 포함 `python -m pytest -q -rsf` 의 마지막 줄과 `scripts/smoke.sh` 의 `SMOKE OK` 가 정본이다. 이 변경에서 더한 시험: `tests/test_runtime_r5_r10.py`(R5.1·R10.11·신원 헤더), `tests/test_r10_8_authoring_writes.py`(R10.8), `tests/test_backup_flow.py`(R10.1), `tests/test_authoring_screen.py`, `tests/test_decisions_and_versions.py`. 시험 개수는 문서에 적지 않고 실행해서 센다. PostgreSQL 포함 전체: `TEST_DATABASE_URL="$(bash ../deploy/scripts/dev-postgres.sh up qa)" python -m pytest -q -rsf`(끝나면 `... down qa`). 마지막 줄의 `N passed`가 개수이고 `skipped`가 0이어야 PostgreSQL 시험까지 돈 것이다(`TEST_DATABASE_URL`이 없으면 PostgreSQL 시험 162건 안팎이 건너뜀으로 센다). 이미지: `scripts/smoke.sh`가 `SMOKE OK`를 내면 통과. 깨끗한 두 번째 환경에서의 재현은 하지 않았다.
+**시험 상태**(계약 v3.4.8, link v0.4.14 기준): 코드 단계(2026-11-04) 시험은 PostgreSQL 포함 `python -m pytest -q -rsf` 의 마지막 줄과 `scripts/smoke.sh` 의 `SMOKE OK` 가 정본이다. 이 변경에서 더한 시험: `tests/test_runtime_r5_r10.py`(R5.1·R10.11·신원 헤더), `tests/test_r10_8_authoring_writes.py`(R10.8), `tests/test_backup_flow.py`(R10.1), `tests/test_authoring_screen.py`, `tests/test_decisions_and_versions.py`. 시험 개수는 문서에 적지 않고 실행해서 센다. PostgreSQL 포함 전체: `TEST_DATABASE_URL="$(bash ../deploy/scripts/dev-postgres.sh up qa)" python -m pytest -q -rsf`(끝나면 `... down qa`). 마지막 줄의 `N passed`가 개수이고 `skipped`가 0이어야 PostgreSQL 시험까지 돈 것이다(`TEST_DATABASE_URL`이 없으면 PostgreSQL 시험 162건 안팎이 건너뜀으로 센다). 이미지: `scripts/smoke.sh`가 `SMOKE OK`를 내면 통과. 깨끗한 두 번째 환경에서의 재현은 하지 않았다.
 
 2026-10-28 묶음(옛 표기 0.7.0, 패키지 버전은 pyproject의 0.1.0; 시험 개수는 위 "시험 상태" 문단, SQLite·PostgreSQL 스모크 SMOKE OK): 전수 점검 반영(추출기 선형화, 4-eyes 기본, 엄격 입력, 환자 정보 탐지 확대, 운영 구성 거부, 동시 요청 상한, SIGTERM, 보존 `purge`, v2 Trace 문항 ID). 상세와 한계는 docs/CHANGELOG.md, docs/boundary.md.
 
