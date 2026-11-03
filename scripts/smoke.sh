@@ -6,7 +6,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 DOCKER="${DOCKER:-docker}"
 "$DOCKER" info >/dev/null 2>&1 || { echo "오류: $DOCKER 데몬에 연결할 수 없다. 데몬이 실행 중이고 이 사용자가 접근할 수 있는지 확인하라." >&2; exit 1; }
-IMG=question-authoring:smoke
+IMG=question-authoring:smoke-$$   # 왜 $$: 스모크가 동시에 돌면 고정 태그를 서로 덮어쓰고 정리가 남의 이미지를 지웠다(병렬 재현). 실행마다 고유 태그, 정리는 자기 태그만
 NAME=question-authoring-smoke-$$
 TOKEN=smoke-token
 # 빌드는 영역 진입점(scripts/build-image.sh, 계약 BuildImageRequest)으로 한다. 요청의 버전은 잠금 파일의 핀이고, 라이브러리 소스 트리는
