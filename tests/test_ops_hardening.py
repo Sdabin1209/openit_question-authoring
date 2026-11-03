@@ -96,9 +96,9 @@ def store2(request):
 def test_retention_purge(store2, validators, monkeypatch):
     s = AuthoringService(store2, require_two_person=False)
     k = AUTHOR
-    confirmed = s.ingest_material(k, "qs-a", "f.txt", example_text())["draft_id"]
+    confirmed = s.ingest_material(k, "qs-a", "f.txt", example_text("qs-a"))["draft_id"]
     s.confirm(k, confirmed, s.get_preview(confirmed)["preview_hash"])           # 버전이 이 원본을 참조한다
-    old_open = s.ingest_material(k, "qs-b", "f.txt", example_text().replace("체온".encode(), "혈압".encode()))["draft_id"]
+    old_open = s.ingest_material(k, "qs-b", "f.txt", example_text("qs-b").replace("체온".encode(), "혈압".encode()))["draft_id"]
     fresh = s.create_draft(k, "qs-c")["draft_id"]
     orphan_hash = "sha256:" + "e" * 64
     store2.put_source(orphan_hash, "orphan.txt", b"x")                            # 어디에도 참조되지 않는 원본
@@ -237,7 +237,7 @@ def test_gateway_email_style_user_ids(validators):
         h = {"Authorization": "Bearer gw", "X-Openit-User": user}
         return api.handle(method, path, h, body)
     assert call("kim@hosp.kr")[0] == 200 and call("park.md@hosp.kr")[0] == 200
-    st, out = call("kim@hosp.kr", "POST", "/v1/materials?question_set_id=qs-e&filename=f.txt", example_text())
+    st, out = call("kim@hosp.kr", "POST", "/v1/materials?question_set_id=qs-e&filename=f.txt", example_text("qs-e"))
     assert st == 200
     did = out["draft_id"]
     ph = call("kim@hosp.kr", "GET", f"/v1/drafts/{did}/preview")[1]["preview_hash"]
@@ -258,7 +258,7 @@ def test_commit_refuses_a_version_whose_source_material_is_gone(store, validator
     """L24: 원본이 정리된 뒤의 확정은 출처 없는 버전을 만들지 않는다. 다시 올리면 확정된다(모든 저장소 구현이 같다)."""
     from boundary_contracts.errors import BoundaryError
     svc = AuthoringService(store, require_two_person=False)
-    out = svc.ingest_material(AUTHOR, "qs-g", "form.txt", example_text())
+    out = svc.ingest_material(AUTHOR, "qs-g", "form.txt", example_text("qs-g"))
     did = out["draft_id"]
     h = store.load_draft(did)["source"]["source_hash"]
     ph = svc.get_preview(did)["preview_hash"]

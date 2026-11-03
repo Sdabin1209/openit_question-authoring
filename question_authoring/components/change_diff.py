@@ -137,7 +137,10 @@ def diff_banks(old: dict, new: dict) -> tuple[set[str], set[str], bool]:
     # 문항 순서·구조 외 최상위 필드(version 제외)
     for f in sorted((set(old) | set(new)) - {"version", "questions", "session_settings"}):
         if old.get(f) != new.get(f):
-            kinds.update([SLOT, BRANCH]); clinical = True
+            if f == "title":
+                kinds.add(TEXT)      # 문진표 제목은 사람이 보는 문구다(survey-schema 4.0.0)
+            else:
+                kinds.update([SLOT, BRANCH]); clinical = True
     return kinds, slots, clinical
 
 

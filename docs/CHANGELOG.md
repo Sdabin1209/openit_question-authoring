@@ -1,5 +1,12 @@
 # 변경 이력
 
+## 미배포 (2026-11-03) 문진표 ID·제목, 선행 조건 6연산자 (계약 v3.3.0, 문진 스키마 4.0.0)
+
+- boundary-contracts v3.2.0 -> v3.3.0, openit-survey-schema 3.0.0 -> 4.0.0(정수 버전 2). `requirements.lock`, `scripts/build_wheels.sh`.
+- 텍스트 양식 머리에 `문진표 ID: `, `문진표 제목: `(필수). 확정 문항 세트(I1 `get_question_bank` 응답)에 `question_set_id`, `title`이 들어간다. ID가 올린 문항 세트 ID와 다르면 자료 등록을 거절(`FAILED_PRECONDITION`), 없거나 비면 미리보기 validation_errors로 확인하지 못한다. `bank_validate` 입력에 선택 `question_set_id`가 생겼다.
+- 선행 조건 `<문항>.<슬롯> <연산자> <값>`(6연산자), 값은 참조 칸 종류에 따라 bool/수/문자열. 옛 `=` 형식은 읽지 않고 UNSURE로 알린다. 미리보기·변경 분류 반영(제목 변경은 TEXT).
+- 운영 문진표 양식 둘 `forms/`(health-screening, health-screening-b). 근거 ADR 0027, 시험 `tests/test_prerequisite.py`.
+
 ## 미배포 (2026-11-03) 계약 v3.2.0, U81 구조 잠금
 
 - boundary-contracts v3.1.2 -> v3.2.0(`requirements.lock`, `scripts/build_wheels.sh`). 환경 변수 검사는 독립 스키마 `QuestionAuthoringEnv`로 한다(`DeployInterface.Environment`는 이를 `$ref`). 운영 구성 위반 때 오류 메시지에 빠진 변수 이름이 들어간다(값은 쓰지 않는다).

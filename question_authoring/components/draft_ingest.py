@@ -51,6 +51,10 @@ def run(inp: dict) -> dict:
         # 왜 extractor를 넣지 않나: 추출기를 고르기 전에 실패하면 이름이 없다. 계약 Source.extractor는 문자열이라 None을 쓰면 ReviewExt 검사가 거부한다
         d["fallback"] = {"reason": ex["reason"], "guidance": inp.get("guidance") or FALLBACK_GUIDANCE}
         return {"draft": d, "status": "FALLBACK", "reason": ex["reason"], "open_flags": 0}
+    bid = ex["bank"].get("question_set_id")
+    if bid is not None and bid != d["question_set_id"]:
+        # 양식의 문진표 ID와 올린 문항 세트 ID(I1의 {id})가 다르면 거절한다: 다른 문진표 자료가 이 세트의 새 버전이 되는 사고를 막는다(ADR 0027)
+        raise BoundaryError("FAILED_PRECONDITION", f"양식의 문진표 ID '{bid}'가 올린 문항 세트 ID '{d['question_set_id']}'와 다르다")
     why = structure_lock_problem(inp["base_bank"], ex["bank"])
     if why:
         raise BoundaryError("FAILED_PRECONDITION", why)

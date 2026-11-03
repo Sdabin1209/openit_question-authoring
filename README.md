@@ -29,6 +29,7 @@
 | `scripts/gen_types.py`, `scripts/smoke.sh`, `scripts/build_wheels.sh` | 타입 생성, 이미지 스모크 시험, 계약 wheel 빌드 |
 | `Dockerfile`, `requirements.lock`, `requirements-gen.lock` | 이미지와 잠긴 의존(계약·통신 라이브러리 태그), 타입 생성기 잠금 |
 | `examples/question_form.txt` | 텍스트 양식 입력 예 |
+| `forms/` | 운영 문진표 양식 둘과 출처·올리는 절차([forms/README.md](forms/README.md)) |
 | `docs/` | 설계·경계·런북 등(아래 "더 자세한 문서") |
 
 타입 생성(datamodel-code-generator 0.25.0, `requirements-gen.lock`에 고정): `python3 -m venv .gen && .gen/bin/pip install -r requirements-gen.lock && .gen/bin/python scripts/gen_types.py --contracts "$(.venv/bin/python -c 'import boundary_contracts;print(boundary_contracts.schema_dir())')"`. `tests/test_structure.py`가 다시 생성한 결과와 `types/`가 같은지 본다.
@@ -64,7 +65,7 @@ scripts/smoke.sh
 
 ## 설계 결정 기록(ADR)
 
-구조 선택의 이유는 [docs/adr/](docs/adr/README.md)에 있다: 저장소(SQLite 개발, PostgreSQL 운영), 불변 버전과 content_hash, 원본 자료 보관, 선형 줄 파서, 환자 정보 정규식 경고, 저자와 다른 검수자(4-eyes), 한도와 timeout 값, 확인 흐름과 예약, 개선 신호, 인증과 gateway, 보존 정리, HTTP 서버. 근거를 찾지 못한 값은 ADR에 '근거 기록 없음'으로 적었다.
+구조 선택의 이유는 [docs/adr/](docs/adr/README.md)에 있다: 저장소(SQLite 개발, PostgreSQL 운영), 불변 버전과 content_hash, 원본 자료 보관, 선형 줄 파서, 환자 정보 정규식 경고, 저자와 다른 검수자(4-eyes), 한도와 timeout 값, 확인 흐름과 예약, 개선 신호, 인증과 gateway, 보존 정리, HTTP 서버. 문진표 ID·제목과 선행 조건 6연산자는 ADR 0027. 근거를 찾지 못한 값은 ADR에 '근거 기록 없음'으로 적었다.
 
 ## 현재 상태
 

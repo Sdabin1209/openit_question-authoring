@@ -25,7 +25,7 @@ def s2(validators):
 
 
 def draft_ready(s, actor=KIM, qsid="qs-main"):
-    did = s.ingest_material(actor, qsid, "f.txt", example_text())["draft_id"]
+    did = s.ingest_material(actor, qsid, "f.txt", example_text(qsid))["draft_id"]
     return did, s.get_preview(did)["preview_hash"]
 
 
@@ -71,7 +71,7 @@ def test_draft_ownership(s2):
 
 def test_reviewer_cannot_author(s2):
     did, ph = draft_ready(s2)
-    assert code(s2.ingest_material, PARK, "qs-x", "f.txt", example_text()) == "PERMISSION_DENIED"
+    assert code(s2.ingest_material, PARK, "qs-x", "f.txt", example_text("qs-x")) == "PERMISSION_DENIED"
     assert code(s2.confirm, PARK, did, ph) == "PERMISSION_DENIED"
     assert code(s2.create_draft, PARK, "qs-x") == "PERMISSION_DENIED"
     s2.require_reader(PARK)
@@ -118,11 +118,11 @@ def test_gateway_identity(s2):
     assert call("gw-tok") == 401                       # 헤더 없음(사람 행위자 신원이 없다)
     assert call("gw-tok", "stranger") == 403           # 모르는 사용자
     assert call("gw-tok", "u-park") == 200             # 검수 역할은 조회 가능
-    assert call("gw-tok", "u-park", "/v1/materials?question_set_id=qs-g&filename=f.txt", "POST", example_text()) == 403
-    assert call("gw-tok", "u-kim", "/v1/materials?question_set_id=qs-g&filename=f.txt", "POST", example_text()) == 200
+    assert call("gw-tok", "u-park", "/v1/materials?question_set_id=qs-g&filename=f.txt", "POST", example_text("qs-g")) == 403
+    assert call("gw-tok", "u-kim", "/v1/materials?question_set_id=qs-g&filename=f.txt", "POST", example_text("qs-g")) == 200
     # 정적 토큰은 헤더를 무시한다(클라이언트가 보낸 X-Openit-User를 믿지 않는다)
     h = {"Authorization": "Bearer static", "X-Openit-User": "u-park"}
-    assert api.handle("POST", "/v1/materials?question_set_id=qs-h&filename=f.txt", h, example_text())[0] == 200
+    assert api.handle("POST", "/v1/materials?question_set_id=qs-h&filename=f.txt", h, example_text("qs-h"))[0] == 200
     assert s2.list_drafts("qs-h")[0]["created_by"] == "dr-kim"
     # 게이트웨이 토큰이 아닌 임의 토큰 + 헤더
     assert call("other", "u-kim") == 401   # gateway 토큰이 아닌 임의 토큰은 인증 실패

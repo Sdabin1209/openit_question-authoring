@@ -10,7 +10,9 @@ from question_authoring.components import change_diff as classify, preview_build
 from question_authoring.components.extract_textform import TextFormExtractor
 
 X = TextFormExtractor()
-HEAD = """세션 설정
+HEAD = """문진표 ID: qs-t
+문진표 제목: 시험
+세션 설정
 위험 문구: 없음
 확인 한도: 3
 인식 실패 연속 한도: 3

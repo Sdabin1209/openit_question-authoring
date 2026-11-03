@@ -10,7 +10,7 @@ def publish(svc, qsid="qs-main", text: bytes = None, edits=None, actor=AUTHOR, r
     """초안을 만들어 미리보기를 보고 확인해 새 버전을 만든다. ref를 돌려준다."""
     from conftest import example_text
     if text is not None or edits is None:
-        out = svc.ingest_material(actor, qsid, "form.txt", text or example_text())
+        out = svc.ingest_material(actor, qsid, "form.txt", text or example_text(qsid))
         did = out["draft_id"]
         assert out["status"] == "PARSED", out
     else:

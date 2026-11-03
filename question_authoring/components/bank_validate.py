@@ -15,8 +15,8 @@ from boundary_contracts.errors import BoundaryError
 
 INPUT_SCHEMA = "BankValidateInput"
 OUTPUT_SCHEMA = "BankValidateResult"
-# 문진 스키마의 정수 CONTRACT_VERSION(런타임 호환 번호). openit-survey-schema 3.0.0 패키지의 CONTRACT_VERSION 파일이 1이다(D14: 정확히 일치해야 한다). 올릴 때는 패키지와 함께 바꾼다
-SUPPORTED_RUNTIME_CONTRACT_VERSION = 1
+# 문진 스키마의 정수 CONTRACT_VERSION(런타임 호환 번호). openit-survey-schema 4.0.0 패키지의 CONTRACT_VERSION 파일이 2이다(D14: 정확히 일치해야 한다). 올릴 때는 패키지와 함께 바꾼다
+SUPPORTED_RUNTIME_CONTRACT_VERSION = 2
 _V = None
 
 
@@ -41,12 +41,29 @@ def run(inp: dict) -> dict:
     bank = copy.deepcopy(inp["bank"])
     if inp["version"] is not None:
         bank["version"] = inp["version"]   # 미리보기는 번호가 정해지기 전이라 0으로 구조만 본다
-    return {"errors": question_bank_errors(bank) + semantic_errors(bank)}
+    return {"errors": question_bank_errors(bank) + semantic_errors(bank, inp.get("question_set_id"))}
 
 
-def semantic_errors(bank: dict) -> list[str]:
-    """스키마가 못 잡는 구조 일관성(참조 무결성). 임상 내용은 검사하지 않는다."""
+def slot_kind(slot: dict) -> str:
+    """칸 종류: 예/아니오 칸 'boolean', 수 칸 'number', 그 밖 'string'. 선행 조건 값의 종류를 정한다(ADR 0027).
+    왜 추출기와 같은 함수가 두 곳에 있나: 컴포넌트끼리 import하지 못한다(구조 규칙 3). 같은 판정인지는 tests/test_prerequisite.py가 본다."""
+    if slot.get("yes_no_map") or slot.get("data_type") == "boolean":
+        return "boolean"
+    if slot.get("data_type") in ("integer", "number") or slot.get("units"):
+        return "number"
+    return "string"
+
+
+def _value_kind(v: Any) -> str:
+    return "boolean" if isinstance(v, bool) else "number" if isinstance(v, (int, float)) else "string"
+
+
+def semantic_errors(bank: dict, question_set_id: Any = None) -> list[str]:
+    """스키마가 못 잡는 구조 일관성(참조 무결성). 임상 내용은 검사하지 않는다.
+    question_set_id: 초안이 속한 문항 세트 ID(I1의 {id}). 주어지면 bank의 문진표 ID가 같아야 한다."""
     errs: list[str] = []
+    if question_set_id is not None and bank.get("question_set_id") is not None and bank["question_set_id"] != question_set_id:
+        errs.append(f"/question_set_id: 문진표 ID '{bank['question_set_id']}'가 문항 세트 ID '{question_set_id}'와 다르다")
     qs = bank.get("questions")
     if not isinstance(qs, list):
         return errs
@@ -56,6 +73,8 @@ def semantic_errors(bank: dict) -> list[str]:
         errs.append(f"문항 ID가 중복된다: {qid}")
     slots = {q.get("question_id"): [s.get("slot_id") for s in q.get("slots", []) if isinstance(s, dict)]
              for q in qs if isinstance(q, dict)}
+    slot_defs = {(q.get("question_id"), s.get("slot_id")): s for q in qs if isinstance(q, dict)
+                 for s in q.get("slots", []) or [] if isinstance(s, dict)}
     for qi, q in enumerate(qs):
         if not isinstance(q, dict):
             continue
@@ -70,6 +89,12 @@ def semantic_errors(bank: dict) -> list[str]:
                 errs.append(f"/questions/{qi}/prerequisite: 없는 문항을 가리킨다: {ps.get('question_id')}")
             elif ps.get("slot_id") not in slots[ps.get("question_id")]:
                 errs.append(f"/questions/{qi}/prerequisite: 없는 슬롯을 가리킨다: {ps.get('question_id')}.{ps.get('slot_id')}")
+            elif "value" in pre and "op" in pre:
+                want, got = slot_kind(slot_defs[(ps["question_id"], ps["slot_id"])]), _value_kind(pre["value"])
+                if want != got:
+                    errs.append(f"/questions/{qi}/prerequisite: 값의 종류({got})가 참조 칸의 종류({want})와 다르다")
+                elif got != "number" and pre["op"] not in ("==", "!="):
+                    errs.append(f"/questions/{qi}/prerequisite: 연산자 {pre['op']}는 수 칸에만 쓸 수 있다")
         for f in q.get("affected_followups", []) or []:
             if f not in slots:
                 errs.append(f"/questions/{qi}/affected_followups: 없는 문항을 가리킨다: {f}")

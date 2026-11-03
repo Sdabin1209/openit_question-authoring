@@ -226,7 +226,7 @@ def test_pg_confirm_of_stale_draft_vs_purge_keeps_provenance(validators):
         svc = AuthoringService(se, require_two_person=False)
         outcomes = {"confirmed": 0, "refused": 0}
         for r in range(ROUNDS * 2):
-            out = svc.ingest_material(AUTHOR, f"qs-c{r}", "form.txt", example_text())
+            out = svc.ingest_material(AUTHOR, f"qs-c{r}", "form.txt", example_text(f"qs-c{r}"))
             did = out["draft_id"]
             d = se.load_draft(did)
             h = d["source"]["source_hash"]
@@ -271,7 +271,7 @@ def test_pg_confirm_interleaved_with_purge_at_the_worst_point(validators):
     with pg_schema() as (url, schema):
         sp, se = PostgresQuestionStore(url, schema=schema), PostgresQuestionStore(url, schema=schema)
         svc = AuthoringService(se, require_two_person=False)
-        out = svc.ingest_material(AUTHOR, "qs-w", "form.txt", example_text())
+        out = svc.ingest_material(AUTHOR, "qs-w", "form.txt", example_text("qs-w"))
         did = out["draft_id"]
         d = se.load_draft(did)
         h = d["source"]["source_hash"]

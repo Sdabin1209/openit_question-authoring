@@ -208,7 +208,7 @@ def test_purge_result_with_removals_passes_contract_purge_result(tmp_path):
     from helpers import Validators
     store = SqliteQuestionStore(tmp_path / "q.sqlite3")
     svc = AuthoringService(store, require_two_person=False)
-    assert svc.ingest_material(AUTHOR, "qs-purge", "f.txt", example_text())["status"] == "PARSED"
+    assert svc.ingest_material(AUTHOR, "qs-purge", "f.txt", example_text("qs-purge"))["status"] == "PARSED"
     res = qa_main.purge_once(store, now=datetime.now(timezone.utc) + timedelta(days=400))
     assert res["drafts_removed"] == 1 and res["sources_removed"] == 1
     assert not list(defv("QuestionAuthoringDeployInterface", "PurgeResult").iter_errors(json.loads(json.dumps(res))))

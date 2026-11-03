@@ -94,10 +94,9 @@ def test_example_form_result_unchanged():
 
 
 _OLD_KV = re.compile(r"^([^:：]+?)\s*[:：]\s*(.*)$")
-_OLD_PRE = re.compile(r"^(\S+?)\.(\S+?)\s*=\s*(\S+)$")
 
 
-def test_kv_and_prerequisite_match_the_old_regexes():
+def test_kv_matches_the_old_regex():
     rnd = random.Random(7)
     alpha = ["a", "b", ":", "：", " ", ".", "=", "가", "1", "\t"]
     for _ in range(4000):
@@ -108,13 +107,6 @@ def test_kv_and_prerequisite_match_the_old_regexes():
             continue
         m = _OLD_KV.match(s)
         assert _kv_split(s) == ((m.group(1).strip(), m.group(2).strip()) if m else (None, None)), repr(s)
-        # 선행 조건: 새 구현은 TextFormExtractor 안에 있으므로 문항 한 줄로 돌려 비교한다
-        old = _OLD_PRE.match(s)
-        out = TextFormExtractor().extract(f"문항 Q1: n\n선행 조건: {s}\n".encode(), "f.txt").bank["questions"][0].get("prerequisite", "UNSET")
-        if old and not any(c in s for c in "\n"):
-            assert out == {"slot": {"question_id": old.group(1), "repeat_key": "", "slot_id": old.group(2)}, "value": old.group(3)}, repr(s)
-        else:
-            assert not isinstance(out, dict) or out == "UNSET" or out is None, repr(s)
 
 
 def test_large_upload_is_extracted_inside_a_worker_thread_not_the_server_loop(svc):

@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from typing import Any, TypedDict
 
+from typing_extensions import NotRequired
+
 
 class BankValidateInput(TypedDict):
     """
@@ -13,3 +15,4 @@ class BankValidateInput(TypedDict):
 
     bank: dict[str, Any]
     version: int | None
+    question_set_id: NotRequired[str | None]

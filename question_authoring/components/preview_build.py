@@ -43,6 +43,8 @@ def _num(x) -> str:
 def _value(v) -> str:
     if v is None:
         return EMPTY
+    if isinstance(v, bool):
+        return "true" if v else "false"
     if isinstance(v, str):
         return f"'{v}'"
     if isinstance(v, dict) and "amount" in v:
@@ -58,6 +60,8 @@ def render_text(draft: dict) -> str:
     L: list[str] = []
     qs = bank.get("questions")
     L.append(f"문항 세트 {draft['question_set_id']} 초안 {draft['draft_id']}")
+    L.append(f"문진표 ID: {bank.get('question_set_id', EMPTY)}{m.at('/question_set_id')}")
+    L.append(f"문진표 제목: {bank.get('title', EMPTY)}{m.at('/title')}")
     if draft.get("base"):
         L.append(f"기반 버전: {draft['base']['version']}")
     else:
@@ -82,8 +86,8 @@ def render_text(draft: dict) -> str:
                 L.append("  선행 조건: 없음(항상 묻는다)" + m.at(qp + "/prerequisite"))
             else:
                 s = pre.get("slot", {})
-                L.append(f"  선행 조건: 문항 {s.get('question_id', EMPTY)}의 슬롯 {s.get('slot_id', EMPTY)}가 "
-                         f"{_value(pre.get('value'))}일 때만 묻는다{m.at(qp + '/prerequisite')}")
+                L.append(f"  선행 조건: 문항 {s.get('question_id', EMPTY)}의 슬롯 {s.get('slot_id', EMPTY)}의 저장 값이 "
+                         f"{pre.get('op', EMPTY)} {_value(pre.get('value'))}이 아니면 묻지 않는다(저장 값이 없으면 묻는다){m.at(qp + '/prerequisite')}")
             L.append(f"  질문 문장: {q.get('question_sentence', EMPTY)}{m.at(qp + '/question_sentence')}")
             L.append(f"  거절 시 설명: {q.get('refusal_explanation', EMPTY)}{m.at(qp + '/refusal_explanation')}")
             for gi, g in enumerate(q.get("guide_sentences", [])):

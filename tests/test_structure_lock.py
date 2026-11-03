@@ -89,7 +89,7 @@ def test_ingest_missing_a_question_is_refused_and_leaves_no_open_draft(svc, stor
 
 def test_ingest_same_structure_passes(svc, store):
     _v1(svc, store)
-    out = svc.ingest_material(AUTHOR, "qs-lock", "same.txt", example_text())
+    out = svc.ingest_material(AUTHOR, "qs-lock", "same.txt", example_text("qs-lock"))
     assert out["status"] == "PARSED"
 
 

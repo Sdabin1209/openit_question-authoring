@@ -22,6 +22,17 @@
      "type": "null"
     }
    ]
+  },
+  "question_set_id": {
+   "oneOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "초안이 속한 문항 세트 ID(I1의 {id}). 주어지면 bank.question_set_id와 같아야 한다"
   }
  },
  "title": "BankValidateInput"

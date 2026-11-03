@@ -78,5 +78,6 @@ def svc(store, validators):
     return AuthoringService(store, clock=Tick(), new_id=lambda p: f"{p}-{next(c):04d}", require_two_person=False)
 
 
-def example_text() -> bytes:
-    return (ROOT / "examples" / "question_form.txt").read_bytes()
+def example_text(qsid: str = "qs-main") -> bytes:
+    """예시 양식. 양식의 문진표 ID는 올리는 문항 세트 ID와 같아야 해서(ADR 0027) 시험이 쓰는 ID로 바꿔 준다."""
+    return (ROOT / "examples" / "question_form.txt").read_bytes().replace(b"qs-main", qsid.encode())

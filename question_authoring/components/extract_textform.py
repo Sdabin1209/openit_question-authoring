@@ -52,6 +52,8 @@ TIME_BUDGET_SECONDS = 6.0      # 추출 전체의 시간 예산(넘으면 Extrac
 
 # 칸 규격 줄(문진 스키마 SlotDef의 선택 속성 5개, survey-schema 1.2.0). '단위:' 줄(UnitDef, 사용자 말의 단위 환산)과 다르다 - 그래서 '값 단위'다. ADR 0018
 _FIELD_KEYS = {"자료형": "data_type", "값 단위": "unit", "최소": "minimum", "최대": "maximum", "초과 최소": "exclusive_minimum"}
+PREREQ_OPS = ("==", "!=", ">=", "<=", ">", "<")   # 문진 스키마 4.0.0 Prerequisite.op 열거(ADR 0027). 두 글자를 먼저 본다
+_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")   # 문진 스키마 QuestionBank.question_set_id 패턴
 DATA_TYPES = ("boolean", "integer", "number", "option")   # 문진 스키마 SlotDef.data_type 열거
 
 
@@ -65,6 +67,15 @@ def _kv_split(raw: str):
 
 def _split(s: str) -> list[str]:
     return [x.strip() for x in re.split(r"[,，]", s) if x.strip()]
+
+
+def slot_kind(slot: dict) -> str:
+    """칸 종류: 예/아니오 칸 'boolean', 수 칸 'number', 그 밖 'string'. 선행 조건 값의 종류를 정한다(ADR 0027)."""
+    if slot.get("yes_no_map") or slot.get("data_type") == "boolean":
+        return "boolean"
+    if slot.get("data_type") in ("integer", "number") or slot.get("units"):
+        return "number"
+    return "string"
 
 
 def _n(s: str):
@@ -119,11 +130,46 @@ class TextFormExtractor:
         self._close_slot()
         self._close_question()
         self._close_session()
+        for key, label in (("question_set_id", "문진표 ID('문진표 ID: <ID>')"), ("title", "문진표 제목('문진표 제목: <제목>')")):
+            if key not in self.bank:
+                self._missing("/" + key, f"{label}가 자료에 없다")
+        self._resolve_prerequisites()
         if self.ss is not None:
             self.bank["session_settings"] = self.ss
         else:
             self._flag("/session_settings", MISSING, "세션 설정 구역이 없다")
         return ExtractionResult(self.bank, self.flags)
+
+    # ---- 선행 조건 값 변환 ----
+    # 왜 읽기가 끝난 뒤인가: 값의 종류는 참조 칸의 종류가 정하는데 그 칸이 아직 안 읽혔을 수 있다. 칸 종류 판정은 bank_validate와 같은 규칙이다
+    # (컴포넌트끼리 import하지 못해 두 곳에 있고, 같은 판정인지는 tests/test_prerequisite.py가 본다).
+    def _resolve_prerequisites(self):
+        slots = {(q["question_id"], s.get("slot_id")): s for q in self.bank["questions"] for s in q["slots"]}
+        for qi, q in enumerate(self.bank["questions"]):
+            pre = q.get("prerequisite")
+            if not pre or "_raw_value" not in pre:
+                continue
+            raw = pre.pop("_raw_value")
+            path = "/questions/%d/prerequisite" % qi
+            ref = slots.get((pre["slot"]["question_id"], pre["slot"]["slot_id"]))
+            if ref is None:
+                pre["value"] = raw     # 없는 칸: 값은 문자열로 두고 bank_validate가 참조 오류로 알린다
+                continue
+            kind = slot_kind(ref)
+            if kind == "boolean":
+                if raw in ("true", "false"):
+                    pre["value"] = raw == "true"
+                else:
+                    self._flag(path, UNSURE, "예/아니오 칸의 값은 true 또는 false여야 한다. 읽지 못했다", raw)
+                    del q["prerequisite"]
+            elif kind == "number":
+                if _num_re.match(raw):
+                    pre["value"] = _n(raw)
+                else:
+                    self._flag(path, UNSURE, "수 칸의 값은 숫자여야 한다. 읽지 못했다", raw)
+                    del q["prerequisite"]
+            else:
+                pre["value"] = raw
 
     # ---- 도우미 ----
     def _missing(self, path, message):
@@ -190,7 +236,26 @@ class TextFormExtractor:
                 self._missing("/session_settings/" + key, f"{label}가 자료에 없다")
 
     # ---- 줄 처리 ----
+    def _header_line(self, raw: str) -> bool:
+        """문항 앞의 머리 항목('문진표 ID: ', '문진표 제목: '). 읽었으면 True."""
+        k, v = _kv_split(raw)
+        if k == "문진표 ID":
+            if _ID_RE.match(v):
+                self.bank["question_set_id"] = v
+            else:
+                self._flag("/question_set_id", UNSURE, "문진표 ID를 영문·숫자로 시작하는 128자 이하(영문 숫자 . _ : -)로 읽지 못했다. 값을 비워 두었다", raw)
+        elif k == "문진표 제목":
+            if v:
+                self.bank["title"] = v
+            else:
+                self._flag("/title", UNSURE, "문진표 제목이 비어 있다", raw)
+        else:
+            return False
+        return True
+
     def _line(self, raw: str):
+        if self.ctx == "top" and self._header_line(raw):
+            return
         if raw == "세션 설정":
             self._close_slot(); self._close_question(); self.q = None
             self.ss = {"fixed_sentences": [], "guide_list": []}
@@ -290,14 +355,13 @@ class TextFormExtractor:
             if v == "없음":
                 q["prerequisite"] = None
             else:
-                d = v.find(".", 1)                         # 정규식 되돌림 없이 나눈다: <문항>.<슬롯> = <값>
-                qid, dot, rest = (v[:d], ".", v[d + 1:]) if d > 0 else (v, "", "")
-                i = rest.find("=", 1)
-                slot, value = (rest[:i].strip(), rest[i + 1:].strip()) if i > 0 else ("", "")
-                if (dot and qid and slot and value and not rest[:1].isspace() and not any(c.isspace() for c in qid + slot + value)):
-                    q["prerequisite"] = {"slot": {"question_id": qid, "repeat_key": "", "slot_id": slot}, "value": value}
+                parts = v.split()                          # '<문항>.<슬롯> <연산자> <값>' 공백으로 나뉜 세 덩어리. 정규식 되돌림 없음
+                d = parts[0].find(".", 1) if len(parts) == 3 else -1
+                if d > 0 and parts[1] in PREREQ_OPS and parts[0][d + 1:]:
+                    q["prerequisite"] = {"slot": {"question_id": parts[0][:d], "repeat_key": "", "slot_id": parts[0][d + 1:]},
+                                         "op": parts[1], "_raw_value": parts[2]}
                 else:
-                    self._flag(self._qp("prerequisite"), UNSURE, "'<문항>.<슬롯> = <값>' 형식으로 읽지 못했다", raw)
+                    self._flag(self._qp("prerequisite"), UNSURE, "'<문항>.<슬롯> <연산자> <값>' 형식으로 읽지 못했다(연산자: == != > >= < <=)", raw)
         elif k == "질문":
             q["question_sentence"] = v
         elif k == "거절 설명":

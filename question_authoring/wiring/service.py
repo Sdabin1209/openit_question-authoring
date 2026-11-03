@@ -261,7 +261,7 @@ class AuthoringService:
 
     # ---------- 미리보기 ----------
     def _validation_errors(self, d: dict, version: Optional[int]) -> list[str]:
-        return self._bank_validate({"bank": d["bank"], "version": version})["errors"]
+        return self._bank_validate({"bank": d["bank"], "version": version, "question_set_id": d["question_set_id"]})["errors"]
 
     def _hash(self, d: dict) -> str:
         return self._phash({"question_set_id": d["question_set_id"], "base": d.get("base"), "bank": d["bank"],
@@ -299,7 +299,7 @@ class AuthoringService:
             self.store.save_draft(d)
         bank = copy.deepcopy(d["bank"])
         bank["version"] = n
-        errs = self._validation_errors({"bank": bank}, None)
+        errs = self._validation_errors({"bank": bank, "question_set_id": qsid}, None)
         ref = {"id": qsid, "version": str(n), "content_hash": canonical.sha256_hash(bank)}
         base_bank = self.store.get_question_bank(d["base"]) if d["base"] else None
         diff = self._diff({"old": base_bank, "new": bank}) if base_bank is not None and not errs else None

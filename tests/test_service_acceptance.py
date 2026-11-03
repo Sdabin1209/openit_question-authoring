@@ -159,7 +159,7 @@ def test_invalid_bank_never_stored(svc, store):
 
 
 def test_semantic_reference_errors(svc):
-    out = svc.ingest_material(AUTHOR, "qs-main", "f.txt", example_text().decode().replace("Q1.body_temp = high", "Q9.x = high").encode())
+    out = svc.ingest_material(AUTHOR, "qs-main", "f.txt", example_text().decode().replace("Q1.body_temp >= 38", "Q9.x == high").encode())
     pv = svc.get_preview(out["draft_id"])
     assert any("없는 문항" in e for e in pv["validation_errors"])
 
@@ -173,7 +173,8 @@ def test_fallback_to_screen_input(svc, store):
     assert not pv["ready_to_confirm"] and pv["fallback"]
     # 화면 입력으로 같은 초안을 채워 같은 절차로 등록
     bank = TextBank()
-    svc.apply_edits(AUTHOR, out["draft_id"], [{"op": "set", "path": "/questions", "value": bank["questions"]},
+    svc.apply_edits(AUTHOR, out["draft_id"], [{"op": "set", "path": "/question_set_id", "value": "qs-main"}, {"op": "set", "path": "/title", "value": "화면 입력 문진표"},
+                                              {"op": "set", "path": "/questions", "value": bank["questions"]},
                                               {"op": "set", "path": "/session_settings", "value": bank["session_settings"]}])
     pv = svc.get_preview(out["draft_id"])
     ref = svc.confirm(AUTHOR, out["draft_id"], pv["preview_hash"])

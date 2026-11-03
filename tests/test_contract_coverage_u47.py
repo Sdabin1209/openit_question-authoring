@@ -69,7 +69,7 @@ def test_every_authoring_response_shape_passes_the_contract(api):
 
 
 def test_acknowledge_response_passes_the_contract(api):
-    text = example_text().decode().replace("범위 34 ~ 42", "범위 34-42").encode()      # 읽지 못한 값 -> UNSURE 플래그
+    text = example_text("qs-ack").decode().replace("범위 34 ~ 42", "범위 34-42").encode()      # 읽지 못한 값 -> UNSURE 플래그
     st, out = call(api, "POST", "/v1/materials?question_set_id=qs-ack&filename=f.txt", text)
     assert st == 200 and out["status"] == "PARSED"
     st, d = call(api, "GET", f"/v1/drafts/{out['draft_id']}")

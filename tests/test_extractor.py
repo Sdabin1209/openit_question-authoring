@@ -18,7 +18,9 @@ def test_example_is_clean_and_valid(validators):
     assert validators.errors("QuestionBank", b) == []
 
 
-BASE = """세션 설정
+BASE = """문진표 ID: qs-t
+문진표 제목: 시험
+세션 설정
 위험 문구: 없음
 확인 한도: 3
 인식 실패 연속 한도: 3
@@ -93,11 +95,11 @@ def test_registry_pluggable(store):
     svc = AuthoringService(store, extractors=(extract_textform, fake), require_two_person=False)
     a = svc.ingest_material(AUTHOR, "qs-x", "a.fake", b"x")
     assert a["status"] == "PARSED" and svc.get_draft(a["draft_id"])["source"]["extractor"] == "fake"
-    b = svc.ingest_material(AUTHOR, "qs-x", "a.txt", example_text())
+    b = svc.ingest_material(AUTHOR, "qs-x", "a.txt", example_text("qs-x"))
     assert svc.get_draft(b["draft_id"])["source"]["extractor"] == "text-form"
     c = svc.ingest_material(AUTHOR, "qs-x", "a.pdf", b"%PDF")
     assert c["status"] == "FALLBACK"
-    d = svc.ingest_material(AUTHOR, "qs-x", "a.txt", example_text(), extractor="nope")
+    d = svc.ingest_material(AUTHOR, "qs-x", "a.txt", example_text("qs-x"), extractor="nope")
     assert d["status"] == "FALLBACK"
 
 
