@@ -25,10 +25,17 @@ def _validator(schema: str, def_name: Optional[str]):
 def problems(schema: str, def_name: Optional[str], value: Any) -> list[str]:
     out = []
     for e in sorted(_validator(schema, def_name).iter_errors(value), key=lambda e: list(map(str, e.absolute_path))):
-        out.append("/" + "/".join(map(str, e.absolute_path)) + f": {e.validator} 규칙 위반")
+        msg = "/" + "/".join(map(str, e.absolute_path)) + f": {e.validator} 규칙 위반"
+        if e.validator in ("anyOf", "oneOf"):
+            # 왜 필요한 이름을 덧붙이나: 루트 anyOf 위반만으로는 어느 변수가 빠졌는지 모른다. 이름만 쓰고 값은 쓰지 않는다
+            need = sorted({n for c in e.context if c.validator == "required" for n in c.validator_value})
+            if need:
+                msg += " (필요: " + " 또는 ".join(need) + ")"
+        out.append(msg)
     return out
 
 
 def environment_problems(env: dict) -> list[str]:
-    """QuestionAuthoringDeployInterface.Environment로 QA_ 환경 변수를 검사한다. 이 서비스와 무관한 변수는 스키마가 무시한다."""
-    return problems("QuestionAuthoringDeployInterface", "Environment", env)
+    """계약 QuestionAuthoringEnv(3.2.0, U73)로 QA_ 환경 변수를 검사한다. QA_ 접두사 이름 중 스키마에 없는 것은 거부되고, 접두사가 다른 변수는 무시된다.
+    왜 독립 스키마: 3.2.0에서 환경 변수 선언이 DeployInterface의 한 정의에서 서비스별 독립 스키마로 옮겨졌다(DeployInterface.Environment는 이를 $ref)."""
+    return problems("QuestionAuthoringEnv", None, env)

@@ -47,14 +47,14 @@ from .wiring.stores import PostgresQuestionStore, SqliteQuestionStore
 
 
 def check_environment(environ=None) -> None:
-    """QA_ 환경 변수를 계약 QuestionAuthoringDeployInterface.Environment로 검사한다(형식: 숫자, 열거, 역할 목록).
+    """QA_ 환경 변수를 계약 QuestionAuthoringEnv(3.2.0)로 검사한다(형식: 숫자, 열거, 역할 목록).
     왜 여기서 한 번: 변수마다 손으로 파싱하면 스키마와 어긋나도 깨지지 않는다(예: 보존 일수 0이 build()에서는 통과). 값은 오류에 쓰지 않는다(비밀이 섞일 수 있다).
     빈 문자열은 "설정 안 함"으로 본다(compose가 비어 있는 변수를 넘기는 경우). 범위(0 < 초 <= 600)는 스키마 설명대로 _seconds가 검사한다."""
     environ = os.environ if environ is None else environ
     env = {k: v for k, v in environ.items() if k.startswith("QA_") and v.strip() != ""}
     errs = contract.environment_problems(env)
     if errs:
-        raise SystemExit("환경 변수가 계약(QuestionAuthoringDeployInterface.Environment)을 어긴다: " + "; ".join(errs[:5]))
+        raise SystemExit("환경 변수가 계약(QuestionAuthoringEnv)을 어긴다: " + "; ".join(errs[:5]))
 
 
 def _seconds(name: str, default: float) -> float:

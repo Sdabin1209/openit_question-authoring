@@ -26,5 +26,5 @@ ENV QA_DB_PATH=/data/questions.sqlite3 \
 EXPOSE 8080
 VOLUME /data
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
-  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2).status==200 else 1)"
+  CMD python -c "import os,urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('QA_PORT','8080')+'/healthz', timeout=2).status==200 else 1)"
 CMD ["python", "-m", "question_authoring"]

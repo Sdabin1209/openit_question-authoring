@@ -34,7 +34,7 @@ def test_production_refuses_to_start_without_db_url_or_tokens(monkeypatch, tmp_p
     monkeypatch.setenv("QA_DATABASE_URL", "postgresql://u:p@127.0.0.1:1/d")     # URL이 있어도 토큰이 없으면 거부(DB 접속 전에 판단)
     with pytest.raises(SystemExit) as e:
         build()
-    assert "토큰" in str(e.value)
+    assert "QA_AUTHOR_TOKENS" in str(e.value)   # 계약 QuestionAuthoringEnv가 요구하는 변수 이름
     assert not (tmp_path / "q.db").exists()                                      # 조용히 SQLite를 만들지 않았다
 
 

@@ -161,7 +161,7 @@ def test_readyz_body_is_checked(svc):
 
 @pytest.mark.parametrize("name", ["QA_DRAFT_RETENTION_DAYS", "QA_USER_ROLES"])
 def test_environment_invalid_example_refuses_to_build(monkeypatch, name):
-    env = ex("invalid", "QuestionAuthoringDeployInterface.Environment")
+    env = ex("invalid", "QuestionAuthoringDeployInterface.Environment")  # 계약 3.2.0에도 무효 예시는 이 이름 하나뿐(독립 스키마용 이름의 무효 예시는 없다)
     monkeypatch.setenv("QA_DB_PATH", ":memory:")
     for k, v in env.items():
         monkeypatch.setenv(k, v)
@@ -181,7 +181,7 @@ def test_environment_each_bad_value_refuses(monkeypatch, k, v):
 
 
 def test_environment_valid_example_builds(monkeypatch, tmp_path):
-    env = {k: v for k, v in ex("valid", "QuestionAuthoringDeployInterface.Environment").items() if not k.endswith("_FILE")}
+    env = {k: v for k, v in ex("valid", "QuestionAuthoringEnv").items() if not k.endswith("_FILE")}
     monkeypatch.setenv("QA_DB_PATH", str(tmp_path / "q.sqlite3"))
     monkeypatch.delenv("QA_FAILURES_URL", raising=False)
     for k, v in env.items():
