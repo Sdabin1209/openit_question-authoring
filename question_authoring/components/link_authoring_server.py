@@ -62,6 +62,13 @@ _USER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,59}(?:@[A-Za-z0-9][A-Za-z0-
 MAX_BODY = 8 * 1024 * 1024
 
 
+_UI_DIR = Path(__file__).resolve().parent.parent / "ui"
+# 저작 화면의 정적 파일(이름 → 종류). 목록 밖 이름은 라우트가 없어 404 다(경로 조작 불가: 파일 이름을 요청에서 읽지 않는다)
+_UI_FILES = {"index.html": "text/html; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "app.css": "text/css; charset=utf-8"}
+# 왜 CSP: 화면은 같은 출처의 파일과 fetch 만 쓴다(OWASP Secure Headers). 앱이 정하면 platform 공개 입구는 덮어쓰지 않는다(RUNTIME R2.1)
+_UI_HEADERS = {"Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'", "Cache-Control": "no-cache"}
+
+
 def _log(line: str) -> None:
     """R10.5: 로그는 표준 출력이다. 쓰기가 실패해도(닫힌 파이프, 가득 찬 디스크) 요청을 실패시키지 않는다."""
     try:
@@ -194,7 +201,12 @@ class Api:
             return Route(method, pattern, self._wrap(fn), roles=roles, request_schema=request, response_schema=response,
                          query_schema=query, raw_body=raw, max_body=MAX_BODY)
         d = lambda r: r.params["did"]    # noqa: E731
-        return [
+        def ui(name):
+            data = (_UI_DIR / name).read_bytes()
+            return lambda r: Response(200, data, headers=_UI_HEADERS, content_type=_UI_FILES[name])
+        statics = [Route("GET", "/ui/", ui("index.html"), roles=frozenset())] + \
+                  [Route("GET", "/ui/" + n, ui(n), roles=frozenset()) for n in _UI_FILES]
+        return statics + [
             # /metrics: 인증 없음(roles 비움, 토큰이 있어도 무시). 접근 통제는 망이다(RUNTIME R10.11, R6.2)
             Route("GET", "/metrics", lambda r: Response(200, self.metrics_text(), content_type="text/plain; version=0.0.4; charset=utf-8"), roles=frozenset()),
             R("GET", sc, lambda r, a: self._read(r), read),

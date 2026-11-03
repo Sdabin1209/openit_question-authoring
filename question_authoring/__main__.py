@@ -36,6 +36,7 @@ from datetime import datetime, timedelta, timezone
 
 from boundary_contracts import read_secret
 from boundary_contracts.clients import egress_proxy_from
+from boundary_contracts.errors import BoundaryError
 
 from .components.link_authoring_server import Api, Actor, close_all, drain, make_server
 from .components.link_failures_read import http_failure_source
@@ -166,6 +167,17 @@ def main(argv=None) -> int:
         if errs:
             raise SystemExit("purge 출력이 계약 PurgeResult를 어긴다: " + "; ".join(errs[:3]))
         print(json.dumps(result), flush=True)   # 왜 JSON: deploy가 한 줄을 읽는다(파이썬 dict 표기는 JSON이 아니다)
+        return 0
+    if argv[:1] == ["backup"]:
+        check_environment()
+        _require_production_config(need_tokens=False)
+        from .wiring import backup_flow
+        try:
+            result = backup_flow.run(os.environ)
+        except BoundaryError as e:              # 종료 코드 비0(R9.2, R10.1): 서비스 출력은 바뀌지 않는다. 메시지에는 비밀이 없다
+            print(f"백업 실패: {e.code}: {e.message}", file=sys.stderr, flush=True)
+            return 1
+        print(json.dumps(result), flush=True)    # 마지막 줄 JSON(R9.2)
         return 0
     api, _ = build()
     srv = make_server(api, os.environ.get("QA_HOST", "0.0.0.0"), int(os.environ.get("QA_PORT") or 8080),
