@@ -38,6 +38,15 @@ def test_production_refuses_to_start_without_db_url_or_tokens(monkeypatch, tmp_p
     assert not (tmp_path / "q.db").exists()                                      # 조용히 SQLite를 만들지 않았다
 
 
+def test_production_environment_with_only_gateway_tokens_passes_the_contract(monkeypatch):
+    """계약 QuestionAuthoringEnv(3.2.0): 운영 구성은 DB URL + (저자 토큰 또는 게이트웨이 토큰) 중 하나면 된다."""
+    from question_authoring.__main__ import check_environment
+    env = {"QA_DATABASE_URL_FILE": "/run/secrets/db", "QA_GATEWAY_TOKENS_FILE": "/run/secrets/gw"}
+    check_environment(env)                                                    # 통과해야 한다(SystemExit 없음)
+    with pytest.raises(SystemExit):
+        check_environment({"QA_DATABASE_URL_FILE": "/run/secrets/db"})        # 토큰이 하나도 없으면 거부
+
+
 def test_dev_mode_allows_sqlite_and_no_tokens(monkeypatch, tmp_path):
     monkeypatch.setenv("QA_DB_PATH", str(tmp_path / "q.db"))
     monkeypatch.delenv("QA_DATABASE_URL", raising=False)

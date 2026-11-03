@@ -20,7 +20,7 @@ QA_DEV_MODE                      1이면 개발·시험 구성을 허용한다(S
 QA_REQUIRE_TWO_PERSON            기본 false(L13, ADR 0026). true면 저자 != 검수자(4-eyes, D92)이고 임상 승인은 검수 역할이 한다. false면 /readyz에 경고(two_person_disabled)
 QA_GATEWAY_TOKENS                비밀. gateway가 쓰는 서비스 토큰 쉼표 목록. 이 토큰의 요청은 X-Openit-User 헤더의 사용자를 쓴다
 QA_USER_ROLES                    '사용자ID=역할' 쉼표 목록(역할: question-author, clinical-reviewer). gateway 경유 사용자의 역할표
-QA_MAX_CONCURRENT_REQUESTS       동시 처리 요청 상한(기본 32). 넘으면 503 + Retry-After
+QA_MAX_CONCURRENT_REQUESTS       동시 처리 요청 상한(기본 32). 넘는 요청은 줄 서서 기다린다(waitress 스레드 수, ADR 0016)
 QA_DRAFT_RETENTION_DAYS          처리되지 않은(OPEN, DISCARDED) 초안의 보존 일수(기본 30, 양의 정수만). `python -m question_authoring purge`가 쓴다
 QA_SOURCE_RETENTION_DAYS         어떤 버전·초안도 참조하지 않는 원본 자료의 보존 일수(기본 30, 양의 정수만)
 QA_FAILURES_TIMEOUT_SECONDS      I7(ops-feedback) 호출 하나의 읽기 상한(초, 기본 5)
