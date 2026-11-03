@@ -17,7 +17,7 @@ QA_SHUTDOWN_GRACE_SECONDS       SIGTERM 뒤 진행 중 요청을 기다리는 �
 QA_REQUEST_TIMEOUT_SECONDS       HTTP 요청 소켓의 무응답 상한(초, 기본 30). 업로드가 이 시간 동안 멈추면 끊는다
 QA_DEV_MODE                      1이면 개발·시험 구성을 허용한다(SQLite, 토큰 없이 기동). 없으면 운영 구성이어야 시작한다:
                                  QA_DATABASE_URL(_FILE)과 토큰(QA_AUTHOR_TOKENS 또는 QA_GATEWAY_TOKENS)이 없으면 시작을 거부한다
-QA_REQUIRE_TWO_PERSON            기본 true. 저자 != 검수자(4-eyes, D88 U9). false로 두면 이전 동작이고 /readyz에 경고가 뜬다
+QA_REQUIRE_TWO_PERSON            기본 false(L13, ADR 0026). true면 저자 != 검수자(4-eyes, D92)이고 임상 승인은 검수 역할이 한다. false면 /readyz에 경고(two_person_disabled)
 QA_GATEWAY_TOKENS                비밀. gateway가 쓰는 서비스 토큰 쉼표 목록. 이 토큰의 요청은 X-Openit-User 헤더의 사용자를 쓴다
 QA_USER_ROLES                    '사용자ID=역할' 쉼표 목록(역할: question-author, clinical-reviewer). gateway 경유 사용자의 역할표
 QA_MAX_CONCURRENT_REQUESTS       동시 처리 요청 상한(기본 32). 넘으면 503 + Retry-After
@@ -131,7 +131,7 @@ def build() -> tuple[Api, AuthoringStore]:
     for item in filter(None, (read_secret("QA_READ_TOKENS") or "").split(",")):
         role, tok = item.split("=", 1)
         read_tokens[tok] = role
-    two = _bool("QA_REQUIRE_TWO_PERSON", True)
+    two = _bool("QA_REQUIRE_TWO_PERSON", False)   # 기본 false(L13, ADR 0026)
     svc = AuthoringService(store, author_roles={"question-author"}, require_two_person=two, deadline=deadline)
     warnings = ([] if two else ["two_person_disabled"])
     signals = None

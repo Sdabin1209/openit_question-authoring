@@ -221,7 +221,7 @@ def test_purge_threaded_with_uploads_never_loses_a_referenced_source(validators)
 
 def test_gateway_email_style_user_ids(validators):
     from question_authoring.components.link_authoring_server import Api
-    s = AuthoringService(MemoryQuestionStore())
+    s = AuthoringService(MemoryQuestionStore(), require_two_person=True)   # 4-eyes 동작 시험: 기본은 false(L13)
     api = Api(s, {}, gateway_tokens={"gw"}, user_roles={"kim@hosp.kr": "question-author", "park.md@hosp.kr": "clinical-reviewer"})
 
     def call(user, method="GET", path="/v1/drafts", body=b""):

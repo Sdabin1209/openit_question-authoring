@@ -20,6 +20,7 @@ SECRETS = (AUTH_SECRET, READ_SECRET, FAIL_SECRET)
 def _files(tmp_path, monkeypatch, author=None, read=None):
     for k in ("QA_AUTHOR_TOKENS", "QA_READ_TOKENS", "QA_FAILURES_TOKEN", "QA_FAILURES_URL"):
         monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("QA_REQUIRE_TWO_PERSON", "true")   # 기본은 false(L13)라 /readyz에 경고가 붙는다. 이 시험은 경고 없는 구성의 본문을 본다
     a = tmp_path / "author"; a.write_text((author or f"{AUTH_SECRET}:dr-kim:question-author") + "\n")
     r = tmp_path / "read"; r.write_text((read or f"synthetic-data={READ_SECRET}") + "\n")
     monkeypatch.setenv("QA_AUTHOR_TOKENS_FILE", str(a))

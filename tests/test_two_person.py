@@ -1,4 +1,4 @@
-"""D88 U9: 저자 != 검수자(4-eyes)가 기본. 초안 소유, 엄격한 입력 형식, gateway 경유 인증, 동시 편집, 번호 예약 풀림, 환자 정보 탐지."""
+"""규칙 D92 (D88 U9, 새 ADR 0026): 저자 != 검수자(4-eyes) 동작. 켜면(QA_REQUIRE_TWO_PERSON=true) 저자 확인은 임상 승인이 아니고 임상 승인은 다른 주체의 검수 역할이 한다. 기본은 false(L13). 초안 소유, 엄격한 입력 형식, gateway 경유 인증, 동시 편집, 번호 예약 풀림, 환자 정보 탐지."""
 from helpers import phi_warnings
 import itertools
 import json
@@ -21,7 +21,7 @@ KIM_AS_REVIEWER = Actor("dr-kim", "clinical-reviewer")      # 같은 주체가 �
 @pytest.fixture
 def s2(validators):
     c = itertools.count(1)
-    return AuthoringService(MemoryQuestionStore(), new_id=lambda p: f"{p}-{next(c):04d}")   # 기본값 = 4-eyes
+    return AuthoringService(MemoryQuestionStore(), new_id=lambda p: f"{p}-{next(c):04d}", require_two_person=True)   # 4-eyes를 명시로 켠다(기본은 false, L13)
 
 
 def draft_ready(s, actor=KIM, qsid="qs-main"):
@@ -35,7 +35,11 @@ def code(fn, *a, **k):
     return e.value.code
 
 
-def test_default_is_two_person_and_author_confirm_is_not_clinical_approval(s2):
+def test_default_is_off_and_author_confirm_is_clinical_approval_then_on_it_is_not():
+    assert AuthoringService(MemoryQuestionStore()).require_two_person is False       # L13: 기본 false
+
+
+def test_two_person_on_author_confirm_is_not_clinical_approval(s2):
     assert s2.require_two_person is True
     did, ph = draft_ready(s2)
     ref = s2.confirm(KIM, did, ph)

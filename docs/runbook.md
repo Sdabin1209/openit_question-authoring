@@ -37,7 +37,7 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 | QA_DB_CONNECT_TIMEOUT_SECONDS | PostgreSQL 접속 상한(초). 근거와 의미는 docs/boundary.md "DB 대기 상한" | 3 |
 | QA_DB_STATEMENT_TIMEOUT_SECONDS | 문장 하나의 상한(초). 호출 하나는 이 값 + 1초 안에 끝난다 | 3 |
 | QA_DEV_MODE | 1이면 개발·시험 구성(SQLite, 토큰 없이)을 허용. **없으면 운영 구성이어야 시작한다**: `QA_DATABASE_URL(_FILE)`과 저자 토큰(`QA_AUTHOR_TOKENS` 또는 `QA_GATEWAY_TOKENS`)이 없으면 시작을 거부 | 없음(운영) |
-| QA_REQUIRE_TWO_PERSON | 저자 != 검수자(4-eyes). false면 이전 동작이고 `/readyz`에 `warnings: ["two_person_disabled"]` | true |
+| QA_REQUIRE_TWO_PERSON | 저자 != 검수자(4-eyes, D92). 기본 false(L13, ADR 0026): 저자 확인이 곧 임상 근거 승인이고 `/readyz`에 `warnings: ["two_person_disabled"]`. true면 임상 승인은 검수 역할이 따로 한다 | false |
 | QA_AUTHOR_TOKENS(`_FILE`) 역할 | `question-author`(자료 등록·편집·확인), `clinical-reviewer`(임상 근거 승인, 조회). 다른 역할은 시작 거부 | |
 | QA_GATEWAY_TOKENS(`_FILE`) | gateway가 쓰는 서비스 토큰 목록. 이 토큰의 요청만 `X-Openit-User`를 신뢰한다 | 없음 |
 | QA_USER_ROLES | `사용자ID=역할` 쉼표 목록(gateway 경유 사용자의 역할표) | 없음 |

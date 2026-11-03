@@ -54,7 +54,7 @@ def _with_clock(extractor, clock):
 class AuthoringService:
     def __init__(self, store, *, extractors: Iterable = DEFAULT_EXTRACTORS,
                  author_roles: Iterable[str] = ("question-author",),
-                 require_two_person: bool = True,
+                 require_two_person: bool = False,
                  clock: Callable = now_default,
                  monotonic: Callable[[], float] = time.monotonic,
                  deadline=None,
