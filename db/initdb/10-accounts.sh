@@ -3,7 +3,7 @@
 # 계정마다 LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION. owner 는 자기 데이터베이스를 소유하고, dml 은 CONNECT·USAGE·SELECT/INSERT/UPDATE/DELETE·시퀀스 USAGE/SELECT 와 기본 권한만 갖는다.
 # 모든 데이터베이스에서 PUBLIC 의 CONNECT 를 회수한다. 암호는 DB_ACCOUNT_SECRETS_DIR/<계정 이름> 파일에서만 읽는다(D84): 값은 어떤 출력에도 쓰지 않는다.
 set -euo pipefail
-DECL="${DB_DECLARATION:-/etc/openit/database.json}"
+DECL=/etc/openit/database.json   # 고정 경로(이미지에 구워진 선언 = 라벨 io.openit.database). 덮어쓰는 환경 변수는 두지 않는다: AreaDatabaseEnv 에 없다
 SECRETS="${DB_ACCOUNT_SECRETS_DIR:-/run/secrets/db}"
 # 연결 상한(역할별): owner 40(서비스 풀과 마이그레이션), dml 8(정리·백업·읽기). max_connections 50 안. 측정하지 않은 시작값(ADR 0029)
 LIMIT_OWNER=40; LIMIT_DML=8

@@ -269,14 +269,14 @@ def test_mutation_server_without_tls_is_unhealthy(stack, db_image):
     assert rc == 1 and "TLS" in err, (rc, err)
 
 
-def test_mutation_missing_declared_account_is_unhealthy(stack):
-    """변이: 선언에 없는 계정을 선언한 것처럼 점검하면(초기화 뒤 선언 파일만 바꾼다) 계정 확인에서 unhealthy 가 된다."""
+def test_mutation_declared_account_that_cannot_login_is_unhealthy(stack):
+    """변이: 선언한 계정의 LOGIN 을 서버 안에서 빼면(실제 상태를 바꾼다. 점검에 덮어쓰는 입력은 없다) 점검이 unhealthy 가 된다."""
     s = stack()
     assert s.wait_ready()
-    bad = dict(TEST_DECL, accounts=[{"name": "ghost", "database": "qa", "privilege": "owner", "url_env": ["QA_DATABASE_URL_FILE"]}])
-    sh(DOCKER, "exec", s.name, "sh", "-c", f"printf '%s' '{json.dumps(bad)}' > /tmp/decl.json")
-    r = sh(DOCKER, "exec", "-e", "DB_DECLARATION=/tmp/decl.json", s.name, "qa-db-healthcheck.sh", check=False)
-    assert r.returncode == 1 and "준비되지" in r.stderr, (r.returncode, r.stderr)
+    assert health_rc(s) == (0, "")
+    sh(DOCKER, "exec", "-u", "postgres", s.name, "psql", "-X", "-c", "ALTER ROLE qa NOLOGIN")
+    rc, err = health_rc(s)
+    assert rc == 1 and "준비되지" in err, (rc, err)
 
 
 def test_without_tls_files_the_container_never_becomes_healthy(stack):
