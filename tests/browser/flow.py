@@ -8,10 +8,34 @@ base = sys.argv[1]
 expect.set_options(timeout=20000)
 
 
+def wait_reachable(url):
+    """이 하네스의 도커 엔진(호스트 포트 전달)은 새로 열린 포트가 컨테이너에서 닿기까지 지연이 있고 부하에서 빈 응답이 난다. 조건(응답이 온다)으로 기다린 뒤 시작한다(제품 동작이 아니라 시험 환경의 준비)."""
+    import time
+    import urllib.error
+    import urllib.request
+    end = time.monotonic() + 60
+    ok = 0
+    while time.monotonic() < end:
+        try:
+            urllib.request.urlopen(url, timeout=5)
+        except urllib.error.HTTPError:
+            ok += 1                       # 응답이 왔다(로그인 전이라 401)
+        except OSError:
+            ok = 0
+        else:
+            ok += 1
+        if ok >= 5:                       # 연속 다섯 번 응답: 간헐적 빈 응답 구간을 지난다
+            return
+        time.sleep(0.2)
+    raise RuntimeError("대역에 닿지 못한다")
+
+
 def step(name):
     print("STEP", name, flush=True)
 
 
+trace = []
+wait_reachable(base + "/oauth2/userinfo")
 with sync_playwright() as p:
     b = p.chromium.launch()
     try:
@@ -20,6 +44,9 @@ with sync_playwright() as p:
         page = kim.new_page()
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
+        page.on("requestfailed", lambda r: trace.append(f"REQFAIL {r.url} {r.failure}"))        # 실패 때 원인을 보이려는 기록(단언에는 쓰지 않는다)
+        page.on("request", lambda r: trace.append(f"REQ {r.url}"))
+        page.on("console", lambda m: trace.append(f"CONSOLE {m.type} {m.text[:120]}"))
         page.goto(base + "/ui/")
         step("login shown")
         expect(page.locator("#who")).to_contain_text("dr-kim")
@@ -83,6 +110,7 @@ with sync_playwright() as p:
         print("DONE", flush=True)
     except Exception as e:           # noqa: BLE001
         print("FAIL", type(e).__name__, str(e)[:400], flush=True)
+        print("TRACE", " | ".join(globals().get("trace", [])[-12:]), flush=True)
         sys.exit(1)
     finally:
         b.close()

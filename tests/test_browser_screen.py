@@ -40,7 +40,7 @@ def make_platform(qa_port, mutate):
     """platform 공개 입구의 대역: 쿠키로 사람을 고르고 userinfo 를 주며, 클라이언트의 신원 헤더는 지우고 게이트웨이 토큰·신원 헤더를 붙여 서비스로 전달한다."""
     class H(http.server.BaseHTTPRequestHandler):
         def log_message(self, *a):
-            if os.environ.get("QA_DBG"):
+            if os.environ.get("PLATFORM_DEBUG"):
                 print("PLATFORM", a, flush=True)
 
         def _who(self):
