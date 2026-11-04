@@ -11,7 +11,40 @@ if [ -n "${PYTHON:-}" ]; then PY="$PYTHON"; elif [ -x "$here/../.venv/bin/python
   echo "build-image: 해석기를 찾지 못했다. bash scripts/setup-env.sh 로 .venv를 만들거나 PYTHON을 지정하라(boundary-contracts 2.5 이상과 jsonschema 필요)" >&2; exit 2; fi
 # 요청 해석 결과(셸 대입문)는 먼저 변수로 받아 종료 코드를 확인한다: eval "$(...)"는 실패를 삼켜 다음 줄에서 엉뚱한 오류로 끝난다
 parsed="$("$PY" "$here/_build_request.py" "$1")" || { echo "build-image: 요청을 해석하지 못했다(위 메시지 참고)" >&2; exit 2; }
-eval "$parsed"      # SRC REVISION BOUNDARY_VERSION SURVEY_MAJOR IMAGE_TAG BOUNDARY_SRC SURVEY_SRC
+eval "$parsed"      # SRC REVISION BOUNDARY_VERSION SURVEY_MAJOR IMAGE_TAG VARIANT BOUNDARY_SRC SURVEY_SRC
+if [ "$VARIANT" = db ]; then
+  # 영역 DB 이미지(question-authoring-db, D126, 계약 DatabaseDeclaration): postgres 위에 초기화 스크립트와 선언을 얹는다. 라이브러리 wheel 은 설치하지 않는다.
+  # 라벨 io.openit.database 는 db/database.json 을 계약 DatabaseDeclaration 으로 검증한 compact JSON 이다(실패하면 빌드하지 않는다). 네 Env 스키마에 없는 url_env 이름도 거부한다.
+  lock_boundary="$(sed -n 's/^boundary-contracts @ .*@\(v[0-9][0-9.]*\)$/\1/p' "$SRC/requirements.lock" 2>/dev/null || true)"
+  [ "$BOUNDARY_VERSION" = "$lock_boundary" ] || { echo "build-image: 요청의 계약 버전($BOUNDARY_VERSION)이 requirements.lock($lock_boundary)과 다르다. 라벨이 거짓이 되므로 빌드하지 않는다" >&2; exit 2; }
+  dbdecl="$("$PY" - "$SRC/db/database.json" <<'PYE'
+import json, sys
+import boundary_contracts as b
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+errs = list(b.validator("DatabaseDeclaration").iter_errors(d))
+if errs:
+    print("DatabaseDeclaration 위반: " + "/".join(map(str, errs[0].absolute_path)) + f" ({errs[0].validator})", file=sys.stderr); sys.exit(2)
+env = b.load_schema("QuestionAuthoringEnv")["properties"]
+for a in d["accounts"]:
+    for n in a["url_env"]:
+        if n not in env:
+            print(f"url_env {n} 이 QuestionAuthoringEnv 에 없다", file=sys.stderr); sys.exit(2)
+print(json.dumps(d, ensure_ascii=False, separators=(",", ":")))
+PYE
+)" || { echo "build-image: db/database.json 이 계약 DatabaseDeclaration 을 어긴다" >&2; exit 2; }
+  tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+  mkdir -p "$tmp/ctx"; cp -r "$SRC/db" "$tmp/ctx/db"
+  epoch="$(git -C "$SRC" show -s --format=%ct "$REVISION" 2>/dev/null || echo 0)"; find "$tmp/ctx" -exec touch -h -d "@$epoch" {} +
+  echo "build-image: $IMAGE_TAG 빌드 (db 변형, revision $REVISION)" >&2
+  "$DOCKER" build -q -t "$IMAGE_TAG" -f "$tmp/ctx/db/Dockerfile" --label "io.openit.database=$dbdecl" --build-arg COMMIT="$REVISION" --build-arg BOUNDARY_TAG="$BOUNDARY_VERSION" \
+    --build-arg SURVEY_SCHEMA_TAG="$SURVEY_MAJOR" --build-arg SOURCE_DATE_EPOCH="$epoch" --provenance=false --sbom=false "$tmp/ctx" >&2
+  id="$("$DOCKER" image inspect --format '{{.Id}}' "$IMAGE_TAG")"
+  "$DOCKER" image inspect --format '{{json .Config.Labels}}' "$IMAGE_TAG" | "$PY" -c '
+import json, sys
+labels = {k: v for k, v in json.load(sys.stdin).items() if k.startswith("io.openit.")}
+print(json.dumps({"image": sys.argv[1], "image_id": sys.argv[2], "labels": labels}, ensure_ascii=False, separators=(",", ":")))' "$IMAGE_TAG" "$id"
+  exit 0
+fi
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 ctx="$tmp/ctx"; mkdir -p "$ctx/build/wheels"
 # 빌드 컨텍스트는 source_dir 안의 이 영역 소스뿐이다(.git, 가상환경, 이전 빌드 산출물 제외). source_dir은 고치지 않는다.

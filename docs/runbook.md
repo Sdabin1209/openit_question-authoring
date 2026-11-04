@@ -58,6 +58,9 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 
 로그는 표준 출력. 운영 데이터는 PostgreSQL 서버에 있다(서비스별 데이터베이스·계정, 이 서비스 계정에는 이 데이터베이스만 준다). SQLite 경로를 쓸 때만 `/data` 볼륨이 필요하다. `/readyz`는 DB 종류(`"db": "sqlite"|"postgres"`)만 보여주고 접속 정보는 절대 쓰지 않는다. 시작 시 스키마를 멱등하게 만든다(`CREATE TABLE IF NOT EXISTS`, advisory lock 아래). 버전·검수·변경 분류는 DB 트리거가 UPDATE/DELETE를 막는다.
 
+## 영역 DB 이미지 (ADR 0029)
+`VARIANT=db bash scripts/build-local-image.sh question-authoring-db:dev` 로 빌드한다(`scripts/build-image.sh` 의 변형 `db`). 컨테이너 환경: `POSTGRES_PASSWORD_FILE`, `DB_ACCOUNT_SECRETS_DIR`(계정 이름 = 파일 이름), `DB_TLS_DIR`(tls.crt·tls.key). 앱은 `QA_DATABASE_URL_FILE` 의 URI(`sslmode=verify-full`)로 붙는다.
+
 ## 백업과 복구 (ADR 0030)
 - 백업: `python -m question_authoring backup`(잡 선언 `backup`). 종료 코드 0 성공, 75 저장소에 닿지 못함(다시 시도 가능), 1 그 밖의 실패. 마지막 줄은 계약 BackupJobResult JSON.
 - 복구: `python -m question_authoring restore [--snapshot latest|<ID>]`(잡 `restore`). 빈 PostgreSQL 에만 한다(비어 있지 않으면 412로 거절). 보존은 백업 잡이 `forget --prune`(일 7·주 4·월 6)으로 지킨다(ADR 0030).

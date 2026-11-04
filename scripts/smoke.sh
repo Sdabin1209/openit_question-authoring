@@ -16,11 +16,11 @@ SECDIR="$(mktemp -d)"
 SMOKE_DB="${SMOKE_DB:-sqlite}"
 NET=question-authoring-smoke-net-$$; PGNAME=question-authoring-smoke-pg-$$; CURLC=question-authoring-smoke-curl-$$
 # 왜 호스트 포트를 거치지 않나: Docker Desktop 의 호스트 포트 전달은 부하 직후 연결을 거부·지연시켜 스모크가 간헐 실패했다(전체 시험 바로 뒤 재현).
-# 표준 해법은 사용자 정의 브리지 네트워크의 컨테이너 이름 DNS 이다: 같은 네트워크의 짧은 확인 컨테이너(공식 curl 이미지)에서 이미지 컨테이너 이름으로 부른다.
+# 표준 해법은 Docker 의 컨테이너 네트워크 모드이다: 앱 컨테이너와 네트워크 이름공간을 공유하는 짧은 확인 컨테이너(공식 curl 이미지)에서 루프백으로 부른다.
 CURL_IMAGE=curlimages/curl:8.10.1
 cu() { "$DOCKER" exec "$CURLC" curl "$@"; }           # 확인 컨테이너 안의 curl
 cud() { "$DOCKER" exec -i "$CURLC" curl "$@"; }        # 표준 입력으로 본문을 주는 호출(--data-binary @-)
-BASE="http://$NAME:8080"
+BASE="http://127.0.0.1:8080"      # 확인 컨테이너는 앱 컨테이너의 네트워크 이름공간에 붙는다(--network container:<이름>): 평문은 루프백만(RUNTIME R1.1), 호스트 포트도 거치지 않는다
 # 왜 정리 전에 출력하나: 병렬 실행 중 한 번 실패했을 때 컨테이너가 이미 지워져 원인을 볼 수 없었다. 어느 단계에서든 실패(종료 코드 0이 아님)하면 컨테이너를 지우기 전에
 # 로그 마지막 100줄과 상태(ExitCode, OOMKilled 등)를 낸다. inspect는 State만 낸다(전체를 내면 환경 변수가 섞인다).
 on_exit() {
@@ -44,7 +44,6 @@ REVTOKEN=smoke-reviewer-token
 printf '%s' "$TOKEN:smoke-author:question-author,$REVTOKEN:smoke-reviewer:clinical-reviewer" > "$SECDIR/author_tokens"
 printf '%s' "smoke=read-token" > "$SECDIR/read_tokens"
 "$DOCKER" network create "$NET" >/dev/null
-"$DOCKER" run -d --name "$CURLC" --network "$NET" --entrypoint sleep "$CURL_IMAGE" 3600 >/dev/null      # 확인 컨테이너(이 스크립트가 만든 이름만 정리한다)
 if [ "$SMOKE_DB" = postgres ]; then
   PGPW=$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')
   printf '%s' "$PGPW" > "$SECDIR/pg_password"; chmod 644 "$SECDIR/pg_password"
@@ -58,7 +57,8 @@ else
 fi
 chmod 755 "$SECDIR"; chmod 644 "$SECDIR"/*
 "$DOCKER" run -d --name "$NAME" --network "$NET" "${EXTRA[@]}" -v "$SECDIR:/run/secrets:ro" -e QA_REQUIRE_TWO_PERSON=true -e QA_AUTHOR_TOKENS_FILE=/run/secrets/author_tokens -e QA_READ_TOKENS_FILE=/run/secrets/read_tokens "$IMG" >/dev/null
-echo "접속: $BASE (사용자 정의 네트워크 $NET, 호스트 포트 없음)"
+"$DOCKER" run -d --name "$CURLC" --network "container:$NAME" --entrypoint sleep "$CURL_IMAGE" 3600 >/dev/null      # 확인 컨테이너(이 스크립트가 만든 이름만 정리한다)
+echo "접속: $BASE (확인 컨테이너가 $NAME 의 네트워크를 공유, 호스트 포트 없음)"
 # 왜 30초: 단독 기동 시간 측정(2026-11-03, 이 PC, 3회): 컨테이너 시작부터 /healthz 응답까지 각 1초(정수 초 측정, 실제 1~2초 미만). 여러 영역 스모크를 한 서버에서 병렬로 돌리면 느려질 수 있어 단독 측정값의 여러 배 여유를 둔다(표준 값이 아니라 측정에서 거꾸로 정한 값).
 START=$SECONDS
 for i in $(seq 1 30); do
@@ -116,6 +116,7 @@ fi
 if [ "$SMOKE_DB" = postgres ]; then
   # 컨테이너를 다시 띄워도 데이터가 남는다(서버 쪽 저장소)
   "$DOCKER" restart "$NAME" >/dev/null
+  "$DOCKER" rm -f "$CURLC" >/dev/null; "$DOCKER" run -d --name "$CURLC" --network "container:$NAME" --entrypoint sleep "$CURL_IMAGE" 3600 >/dev/null      # 재시작하면 네트워크 이름공간이 새로 생기므로 확인 컨테이너를 다시 붙인다
   for i in $(seq 1 30); do cu -fsS "$BASE/readyz" >/dev/null 2>&1 && break; sleep 1; done
   cu -fsS -H "$RT" "$BASE/v1/question-sets" | grep -q '"qs-smoke"' || { echo "재시작 뒤 데이터가 없음"; exit 1; }
   echo "재시작 뒤 데이터 유지 확인"

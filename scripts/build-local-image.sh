@@ -5,10 +5,11 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 DOCKER="${DOCKER:-docker}"
-IMG="$1"; OUT="${2:-/dev/null}"
+IMG="$1"; OUT="${2:-/dev/null}"; VARIANT="${VARIANT:-}"      # VARIANT=db 면 영역 DB 이미지
 PY="${PYTHON:-$here/.venv/bin/python}"
 BCV="$(sed -n 's/^boundary-contracts @ .*@\(v[0-9.]*\)$/\1/p' "$here/requirements.lock")"
 SST="$(sed -n 's/^openit-survey-schema @ .*@\(survey-schema-v[0-9.]*\)#.*$/\1/p' "$here/requirements.lock")"
+VJSON=""; [ -z "$VARIANT" ] || VJSON=", \"variant\": \"$VARIANT\""      # 헤레독 안에서 따옴표가 깨지지 않게 미리 만든다
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 mkdir "$T/bc" "$T/ss"
 git -C "$here/../boundary-contracts" archive "$BCV" | tar -x -C "$T/bc"
@@ -16,6 +17,6 @@ git -C "$here/../survey-service" archive "$SST" schema | tar -x -C "$T/ss"
 cat > "$T/request.json" <<EOF
 {"source_dir": "$here", "revision": "$(git -C "$here" rev-parse --short HEAD)",
  "versions": {"boundary": "$BCV", "survey_schema": "${SST#survey-schema-}"},
- "dependency_sources": {"boundary": "$T/bc", "survey_schema": "$T/ss/schema"}, "image_tag": "$IMG"}
+ "dependency_sources": {"boundary": "$T/bc", "survey_schema": "$T/ss/schema"}, "image_tag": "$IMG"$VJSON}
 EOF
 DOCKER="$DOCKER" PYTHON="$PY" bash "$here/scripts/build-image.sh" "$T/request.json" | tail -1 | tee "$OUT"

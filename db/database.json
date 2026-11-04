@@ -1,0 +1,8 @@
+{
+  "engine": "postgresql",
+  "major": 16,
+  "port": 5432,
+  "accounts": [
+    {"name": "qa", "database": "qa", "privilege": "owner", "url_env": ["QA_DATABASE_URL_FILE"]}
+  ]
+}
