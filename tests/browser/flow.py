@@ -30,6 +30,16 @@ def wait_reachable(url):
     raise RuntimeError("대역에 닿지 못한다")
 
 
+def goto(pg, url):
+    for attempt in range(4):
+        try:
+            pg.goto(url)
+            return
+        except Exception as e:      # noqa: BLE001  하네스 포트 전달이 연결을 빈 응답으로 끊는 경우만 다시 한다(제품 응답이 아니다: 대역이 응답을 로그에 남긴다)
+            if "ERR_EMPTY_RESPONSE" not in str(e) or attempt == 3:
+                raise
+
+
 def step(name):
     print("STEP", name, flush=True)
 
@@ -47,7 +57,7 @@ with sync_playwright() as p:
         page.on("requestfailed", lambda r: trace.append(f"REQFAIL {r.url} {r.failure}"))        # 실패 때 원인을 보이려는 기록(단언에는 쓰지 않는다)
         page.on("request", lambda r: trace.append(f"REQ {r.url}"))
         page.on("console", lambda m: trace.append(f"CONSOLE {m.type} {m.text[:120]}"))
-        page.goto(base + "/ui/")
+        goto(page, base + "/ui/")
         step("login shown")
         expect(page.locator("#who")).to_contain_text("dr-kim")
         expect(page.locator("#who")).to_contain_text("author")
@@ -82,7 +92,7 @@ with sync_playwright() as p:
         park = b.new_context()
         park.add_cookies([{"name": "who", "value": "park", "url": base}])
         pg2 = park.new_page()
-        pg2.goto(base + "/ui/")
+        goto(pg2, base + "/ui/")
         expect(pg2.locator("#who")).to_contain_text("clinical-reviewer")
         pg2.click("[data-tab=review]")
         expect(pg2.locator("#review-form [name=ref] option")).to_have_count(1)

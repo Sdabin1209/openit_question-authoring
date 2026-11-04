@@ -39,6 +39,8 @@ class FakeGate:
 def make_platform(qa_port, mutate):
     """platform 공개 입구의 대역: 쿠키로 사람을 고르고 userinfo 를 주며, 클라이언트의 신원 헤더는 지우고 게이트웨이 토큰·신원 헤더를 붙여 서비스로 전달한다."""
     class H(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"      # 연결 재사용: 모든 응답에 Content-Length 가 있다. 새 연결이 적을수록 하네스의 포트 전달 경쟁(빈 응답)이 줄어든다
+
         def log_message(self, *a):
             if os.environ.get("PLATFORM_DEBUG"):
                 print("PLATFORM", a, flush=True)
