@@ -1,16 +1,14 @@
 """RUNTIME R10.1 실제 왕복: 표준 restic rest-server(TLS·기본 인증) 컨테이너에 backup 잡이 자기 영역 게이트웨이 출구(CONNECT 터널)로 보내고,
 스냅숏을 새 데이터베이스에 복구해 행을 확인한다. 실제 PostgreSQL(TEST_DATABASE_URL)과 docker 가 필요하다(없으면 SKIP).
 restic 은 공식 restic/restic 이미지를 래퍼 스크립트로 부른다(이 PC 에는 restic 바이너리가 없다; 제품 이미지는 apt 의 restic 을 쓰고 스모크가 실행을 확인한다).
-정리는 이 시험이 띄운 이름의 컨테이너·스키마·스레드만 한다."""
+정리는 이 시험이 띄운 이름의 컨테이너·망·스키마만 한다."""
 import contextlib
 import json
 import os
 import re
 import shutil
-import socket
-import stat
 import subprocess
-import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -23,7 +21,13 @@ from question_authoring.wiring.service import AuthoringService
 from question_authoring.wiring.stores import PostgresQuestionStore
 
 DOCKER = shutil.which("docker")
-HOST_NAME = "backup-store"          # 프록시 우회(Go 는 localhost·loopback 주소로는 HTTPS_PROXY 를 쓰지 않는다)를 피하려는 서비스 이름
+HOST_NAME = "backup-store"          # 프록시 우회(Go 는 localhost·loopback 주소로는 HTTPS_PROXY 를 쓰지 않는다)를 피하려는 서비스 이름. 같은 docker 망의 별칭이다
+STORE_PORT = 8000
+# 왜 digest 고정: latest 태그는 시험이 도는 날마다 바뀔 수 있다(재현성). 값은 이 PC 에서 시험이 통과한 이미지의 RepoDigest 다
+REST_IMAGE = "restic/rest-server@sha256:d2aff06f47eb38637dff580c3e6bce4af98f386c396a25d32eb6727ec96214a5"
+RESTIC_IMAGE = "restic/restic@sha256:9940e6c7421ab3a21ee9fdc4e91596d04c792b600d31b102696c75cbf3ac4481"
+PY_IMAGE = "python@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159"       # python:3.12-slim
+PROXY_PY = Path(__file__).resolve().parent / "backup_e2e" / "connect_proxy.py"
 
 
 def sh(*a, check=True, timeout=120, **k):
@@ -31,62 +35,27 @@ def sh(*a, check=True, timeout=120, **k):
 
 
 class ConnectProxy:
-    """자기 영역 게이트웨이 출구의 대역: CONNECT 줄을 기록하고 이름을 loopback 으로 풀어 터널을 연다(허용 목록: backup-store 하나)."""
-    def __init__(self, port_of_store):
-        self.lines, self.port_of_store = [], port_of_store
-        self.sock = socket.socket()
-        self.sock.bind(("0.0.0.0", 0))      # 컨테이너가 host-gateway 로 닿는다(이 환경의 docker 엔진은 호스트 loopback 을 공유하지 않는다)
-        self.sock.listen(8)
-        self.port = self.sock.getsockname()[1]
-        self.stop = False
-        threading.Thread(target=self._accept, daemon=True).start()
+    """자기 영역 게이트웨이 출구의 대역: 같은 docker 망의 컨테이너(connect_proxy.py)다. CONNECT 줄은 컨테이너 로그에 남는다."""
+    def __init__(self, name):
+        self.name = name
 
-    def _accept(self):
-        while not self.stop:
-            try:
-                c, _ = self.sock.accept()
-            except OSError:
-                return
-            threading.Thread(target=self._serve, args=(c,), daemon=True).start()
+    @property
+    def lines(self):
+        r = sh(DOCKER, "logs", self.name, check=False)
+        return [l.split("CONNECT-LINE ", 1)[1] for l in (r.stdout + r.stderr).splitlines() if l.startswith("CONNECT-LINE ")]
 
-    def _serve(self, c):
-        with c:
-            data = b""
-            while b"\r\n\r\n" not in data:
-                chunk = c.recv(4096)
-                if not chunk:
-                    return
-                data += chunk
-            line = data.split(b"\r\n", 1)[0].decode()
-            self.lines.append(line)
-            m = re.match(r"CONNECT ([\w.-]+):(\d+) HTTP/1\.1", line)
-            if not m or m.group(1) != HOST_NAME:
-                c.sendall(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
-                return
-            up = socket.create_connection(("127.0.0.1", self.port_of_store), timeout=30)
-            c.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
 
-            def pipe(a, b):
-                try:
-                    while True:
-                        d = a.recv(65536)
-                        if not d:
-                            break
-                        b.sendall(d)
-                except OSError:
-                    pass
-                finally:
-                    with contextlib.suppress(OSError):
-                        b.shutdown(socket.SHUT_WR)
-            t = threading.Thread(target=pipe, args=(up, c), daemon=True)
-            t.start()
-            pipe(c, up)
-            t.join(30)
-            up.close()
-
-    def close(self):
-        self.stop = True
-        self.sock.close()
+def wait_log(name, needle, seconds=60):
+    """매달림 감시: 컨테이너가 준비 문구를 낼 때까지(조건)."""
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        r = sh(DOCKER, "logs", name, check=False)
+        if needle in r.stdout + r.stderr:
+            return
+        if sh(DOCKER, "inspect", "-f", "{{.State.Running}}", name, check=False).stdout.strip() != "true":
+            break
+        time.sleep(0.3)
+    raise AssertionError(f"{name}: '{needle}' 가 나오지 않았다: " + (sh(DOCKER, "logs", name, check=False).stderr[-400:]))
 
 
 @pytest.fixture(scope="module")
@@ -104,33 +73,34 @@ def store_env(tmp_path_factory):
     sh("openssl", "x509", "-req", "-in", "srv.csr", "-CA", "root.crt", "-CAkey", "root.key", "-CAcreateserial", "-out", "srv.crt", "-days", "1", "-extfile", "ext.cnf", cwd=d)
     pw = uuid.uuid4().hex
     d.chmod(0o777)       # htpasswd 를 컨테이너가 쓴다
-    sh(DOCKER, "run", "--rm", "-v", f"{d}:/certs", "--entrypoint", "htpasswd", "restic/rest-server:latest", "-B", "-b", "-c", "/certs/htpasswd", "backup-user", pw)   # rest-server 의 표준 사용자 생성 도구(bcrypt)
+    sh(DOCKER, "run", "--rm", "-v", f"{d}:/certs", "--entrypoint", "htpasswd", REST_IMAGE, "-B", "-b", "-c", "/certs/htpasswd", "backup-user", pw)   # rest-server 의 표준 사용자 생성 도구(bcrypt)
     for f in d.iterdir():
         with contextlib.suppress(PermissionError):      # htpasswd 는 컨테이너(root)가 만들었다: 이미 읽을 수 있다
             f.chmod(0o644)
-    name = f"qa-e2e-rest-{os.getpid()}-{uuid.uuid4().hex[:6]}"
-    sh(DOCKER, "run", "-d", "--name", name, "-p", "127.0.0.1::8000", "-v", f"{d}:/certs:ro", "-e", "PASSWORD_FILE=/certs/htpasswd",
-       "-e", "OPTIONS=--tls --tls-cert /certs/srv.crt --tls-key /certs/srv.key", "restic/rest-server:latest")
+    u = f"{os.getpid()}-{uuid.uuid4().hex[:6]}"
+    net, name, pname = f"qa-e2e-net-{u}", f"qa-e2e-rest-{u}", f"qa-e2e-proxy-{u}"
     try:
-        port = int(sh(DOCKER, "port", name, "8000/tcp").stdout.split(":")[-1])
-        for _ in range(100):                                   # 매달림 감시: 서버가 뜰 때까지(조건)
-            if socket.socket().connect_ex(("127.0.0.1", port)) == 0:
-                break
-            import time; time.sleep(0.1)
+        sh(DOCKER, "network", "create", net)
+        # 호스트 포트·host.docker.internal 을 거치지 않는다: 저장소(별칭 backup-store)·프록시·restic 이 모두 이 망 안에서 이름으로 만난다
+        sh(DOCKER, "run", "-d", "--name", name, "--network", net, "--network-alias", HOST_NAME, "-v", f"{d}:/certs:ro", "-e", "PASSWORD_FILE=/certs/htpasswd",
+           "-e", "OPTIONS=--tls --tls-cert /certs/srv.crt --tls-key /certs/srv.key", REST_IMAGE)
+        wait_log(name, "start server on")
+        sh(DOCKER, "run", "-d", "--name", pname, "--network", net, "-v", f"{PROXY_PY}:/p/proxy.py:ro", PY_IMAGE, "python", "-u", "/p/proxy.py", HOST_NAME, HOST_NAME, str(STORE_PORT), "3128")
+        wait_log(pname, "LISTENING")
         (d / "repo-password").write_text("repo-pass-" + uuid.uuid4().hex)
         (d / "repo-password").chmod(0o644)
         wrapper = d / "restic"
         wrapper.write_text(f"""#!/bin/sh
-exec {DOCKER} run --rm -i --add-host host.docker.internal:host-gateway -v {d}:{d}:ro \\
+exec {DOCKER} run --rm -i --network {net} -v {d}:{d}:ro \\
   -e RESTIC_REPOSITORY -e RESTIC_PASSWORD_FILE -e RESTIC_REST_USERNAME -e RESTIC_REST_PASSWORD -e HTTPS_PROXY -e SSL_CERT_FILE -e RESTIC_CACHE_DIR -e HOME \\
-  restic/restic:latest "$@"
+  {RESTIC_IMAGE} "$@"
 """)
         wrapper.chmod(0o755)
-        proxy = ConnectProxy(port)
-        yield {"dir": d, "port": port, "pw": pw, "proxy": proxy, "proxy_url": f"http://host.docker.internal:{proxy.port}", "wrapper": str(wrapper), "name": name}
-        proxy.close()
+        yield {"dir": d, "port": STORE_PORT, "pw": pw, "proxy": ConnectProxy(pname), "proxy_url": f"http://{pname}:3128", "wrapper": str(wrapper), "name": name}
     finally:
-        subprocess.run([DOCKER, "rm", "-f", name], capture_output=True, timeout=60)         # 이 시험이 띄운 이름만
+        for n in (pname, name):                                                              # 이 시험이 띄운 이름만
+            subprocess.run([DOCKER, "rm", "-f", n], capture_output=True, timeout=60)
+        subprocess.run([DOCKER, "network", "rm", net], capture_output=True, timeout=60)
 
 
 def env_for(se, url_with_schema, tmp):
