@@ -47,6 +47,30 @@
         "QA_DB_CONNECT_TIMEOUT_SECONDS"
       ],
       "timeout_seconds": 1800
+    },
+    {
+      "name": "restore",
+      "argv": [
+        "python",
+        "-m",
+        "question_authoring",
+        "restore"
+      ],
+      "idempotent": true,
+      "secret_files": [
+        "QA_DATABASE_URL_FILE",
+        "OPENIT_BACKUP_CREDENTIALS_FILE",
+        "OPENIT_BACKUP_REPO_PASSWORD_FILE"
+      ],
+      "needs": [
+        "postgres"
+      ],
+      "env": [
+        "OPENIT_BACKUP_URL",
+        "OPENIT_EGRESS_PROXY",
+        "QA_DB_CONNECT_TIMEOUT_SECONDS"
+      ],
+      "timeout_seconds": 1800
     }
   ]
 }

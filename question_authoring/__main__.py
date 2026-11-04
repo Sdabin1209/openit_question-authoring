@@ -177,20 +177,25 @@ def main(argv=None) -> int:
             raise SystemExit("purge 출력이 계약 PurgeResult를 어긴다: " + "; ".join(errs[:3]))
         print(json.dumps(result), flush=True)   # 왜 JSON: deploy가 한 줄을 읽는다(파이썬 dict 표기는 JSON이 아니다)
         return 0
-    if argv[:1] == ["backup"]:
+    if argv[:1] in (["backup"], ["restore"]):
         check_environment()
         _require_production_config(need_tokens=False)
         from .wiring import backup_flow
         ts = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")   # noqa: E731
         started, result, err = ts(), None, None
         try:
-            result = backup_flow.run(os.environ, proxy=egress_proxy_from(os.environ))
-        except (BoundaryError, ValueError) as e:              # 실패도 마지막 줄 JSON 과 0 이 아닌 종료 코드(R9.2, BackupJobResult). 서비스 출력은 바뀌지 않는다. 메시지에는 비밀이 없다
+            proxy = egress_proxy_from(os.environ)
+            if argv[0] == "backup":
+                result = backup_flow.run(os.environ, proxy=proxy)
+            else:
+                snap = argv[argv.index("--snapshot") + 1] if "--snapshot" in argv[1:] and argv.index("--snapshot") + 1 < len(argv) else "latest"
+                result = backup_flow.restore(os.environ, snap, proxy=proxy)
+        except (BoundaryError, ValueError) as e:     # 실패도 마지막 줄 JSON 과 0 이 아닌 종료 코드(R9.2, BackupJobResult). 서비스 출력은 바뀌지 않는다. 메시지에는 비밀이 없다
             err = e if isinstance(e, BoundaryError) else BoundaryError("INVALID_RECORD", "OPENIT_EGRESS_PROXY 가 계약(R1.8)을 어긴다")
         line = backup_flow.result_line(started, ts(), ok=result, error=err)
         errs = contract.problems("BackupJobResult", None, line)
         if errs:
-            raise SystemExit("백업 출력이 계약 BackupJobResult를 어긴다: " + "; ".join(errs[:3]))      # 생산자 출력 검증(CONVENTIONS 3절)
+            raise SystemExit("출력이 계약 BackupJobResult를 어긴다: " + "; ".join(errs[:3]))      # 생산자 출력 검증(CONVENTIONS 3절)
         print(json.dumps(line), flush=True)
         return backup_flow.exit_code(err)
     api, _ = build()

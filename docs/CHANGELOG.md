@@ -1,8 +1,8 @@
 # 변경 이력
 
-## 미배포 (2026-11-04) 코드 단계: 계약 v3.4.8, link v0.4.14
+## 미배포 (2026-11-04) 코드 단계: 계약 v3.4.9, link v0.4.15
 
-- 잠금: boundary-contracts v3.4.8, openit-link v0.4.14(로컬 미러 `head/shared/gitconfig-local-mirrors` 로 설치, 구조 점검 S14).
+- 잠금: boundary-contracts v3.4.9, openit-link v0.4.15(로컬 미러 `head/shared/gitconfig-local-mirrors` 로 설치, 구조 점검 S14).
 - RUNTIME R1.8: I7 호출(`link_failures_read`)이 `egress_proxy_from(environ)` 의 자기 영역 게이트웨이 출구로만 나간다. 기동 때 `CommonEnv`(OPENIT_*)도 검사한다.
 - R5.1: `/readyz` 아님 표기 `not_ready`(옛 `not-ready` 폐지). R10.11: `GET /metrics`(Prometheus 텍스트, 인증 없음, DB 불가에도 200).
 - R10.3: `QA_FAILURES_TIMEOUT_SECONDS` 기본 10초(ec629be 의 30초를 계약 10초로 되돌림). 새 `QA_GATE_*`(10초).
@@ -10,6 +10,7 @@
 - R8.1·R10.5: 503 로그에 예외 종류·위치, 로그 쓰기 실패는 요청을 실패시키지 않음.
 - CONVENTIONS 6절: 신원 헤더는 게이트웨이 토큰 요청에서만 쓴다(다른 모든 토큰은 무시, 시험).
 - 저작 화면 `/ui/`(S21)와 읽기 경로 `GET /v1/set-versions`·`GET /v1/set-decisions`(release-gate 판정은 읽기만, 제출 없음). ADR 0031.
+- 복구 잡 `restore`(스냅숏 latest|ID → 빈 DB, 순번 맞춤), 백업 끝의 `forget --prune` 보존, 브라우저 시험(Playwright 공식 이미지)과 실제 restic rest-server 왕복 시험.
 - 백업 잡 `backup`(R10.1, restic REST, 결과 BackupJobResult, 종료 코드 0/75/1), 이미지에 restic. ADR 0029·0030. 잡 선언에 `timeout_seconds`, 노출 선언에 `egress`·`max_body_bytes`·`/ui/`·`/metrics`(denied).
 
 ## 미배포 (2026-11-03) 사람 역할은 X-Openit-Roles (계약 v3.4.0, ADR 0028)

@@ -55,7 +55,9 @@ def test_backup_goes_out_through_the_own_gateway_with_secrets_only_in_the_child_
     r = Runner()
     out = backup_flow.run(env_of(tmp_path), proxy="http://127.0.0.1:3128", runner=r)
     assert out == {"snapshot_id": "abc123def", "bytes": 31}
-    argv, child, stdin = r.calls[-1]
+    argv, child, stdin = next(c for c in r.calls if c[0][1] == "backup")
+    forget = r.calls[-1][0]
+    assert forget[:3] == ["restic", "forget", "--prune"] and "--keep-daily" in forget and "--tag" in forget      # 보존은 영역이 지킨다(append-only 아님)
     assert argv[:2] == ["restic", "backup"] and stdin == b"COPY versions FROM STDIN;\nrow\n\\.\n"
     assert child["HTTPS_PROXY"] == "http://127.0.0.1:3128"                         # R1.8: 자기 영역 게이트웨이 출구
     assert child["RESTIC_REPOSITORY"] == "rest:https://backup-store:8443/question-authoring"
@@ -157,3 +159,56 @@ def test_bad_egress_proxy_refuses_to_start(tmp_path, monkeypatch):
     with pytest.raises(SystemExit) as e:
         qa_main.main(["backup"])
     assert "CommonEnv" in str(e.value) and "gateway.example" not in str(e.value)
+
+
+@pytest.mark.parametrize("bad", ["../../etc/passwd", "latest; rm -rf /", "XYZ", ""])
+def test_restore_refuses_a_snapshot_argument_that_is_not_latest_or_hex(tmp_path, bad):
+    with pytest.raises(BoundaryError) as e:
+        backup_flow.restore(env_of(tmp_path), bad, runner=Runner())
+    assert e.value.code == "INVALID_RECORD"
+
+
+def test_restore_latest_with_no_snapshots_is_not_found(tmp_path):
+    class R(Runner):
+        def __call__(self, argv, stdin=None, env=None, **kw):
+            r = super().__call__(argv, stdin, env, **kw)
+            return subprocess.CompletedProcess(argv, 0, stdout=b"[]") if argv[1] == "snapshots" else r
+    with pytest.raises(BoundaryError) as e:
+        backup_flow.restore(env_of(tmp_path), "latest", runner=R())
+    assert e.value.code == "NOT_FOUND"
+
+
+def test_forget_failure_fails_the_backup_job(tmp_path, fake_dump):
+    with pytest.raises(BoundaryError) as e:
+        backup_flow.run(env_of(tmp_path), runner=Runner(fail_on="forget"))
+    assert e.value.code == "UNAVAILABLE" and "forget" in e.value.message
+
+
+def test_copy_block_parser_does_not_end_a_block_at_an_escaped_backslash_before_a_dot():
+    """COPY 텍스트에서 값 끝의 역슬래시는 `\\\\` 로 나온다. 그 뒤에 점이 오는 행(`abc\\\\.`)을 종료 줄로 오인하지 않는다(왕복 시험에서 드러난 결함)."""
+    data = b"COPY versions FROM STDIN;\nq\tabc\\\\.\nnext\\n\n\\.\n\nCOPY reviews FROM STDIN;\n\\.\n\n"
+    assert backup_flow._BLOCK.findall(data) == [(b"versions", b"q\tabc\\\\.\nnext\\n\n"), (b"reviews", b"")]
+
+
+def test_restore_refuses_a_snapshot_whose_tables_are_not_this_areas(tmp_path):
+    """모르는 표를 SQL 에 넣지 않는다(표 이름은 스냅숏 내용이므로 신뢰하지 않는다)."""
+    class R(Runner):
+        def __call__(self, argv, stdin=None, env=None, **kw):
+            if argv[1] == "snapshots":
+                return subprocess.CompletedProcess(argv, 0, stdout=b'[{"id":"abcdef0123456789","time":"2026-01-01T00:00:00Z"}]')
+            if argv[1] == "dump":
+                kw["stdout"].write(b"COPY users FROM STDIN;\n\\.\n\n")
+                return subprocess.CompletedProcess(argv, 0)
+            return super().__call__(argv, stdin, env, **kw)
+    import question_authoring.wiring.stores as stores
+    class Dummy:
+        def __init__(self, *a, **k): pass
+        def close(self): pass
+    orig = stores.PostgresQuestionStore
+    stores.PostgresQuestionStore = Dummy
+    try:
+        with pytest.raises(BoundaryError) as e:
+            backup_flow.restore(env_of(tmp_path), "latest", runner=R())
+    finally:
+        stores.PostgresQuestionStore = orig
+    assert e.value.code == "INTEGRITY_ERROR"

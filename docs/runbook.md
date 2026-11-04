@@ -60,7 +60,7 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 
 ## 백업과 복구 (ADR 0030)
 - 백업: `python -m question_authoring backup`(잡 선언 `backup`). 종료 코드 0 성공, 75 저장소에 닿지 못함(다시 시도 가능), 1 그 밖의 실패. 마지막 줄은 계약 BackupJobResult JSON.
-- 복구(수동, 실제 백업 저장소로 시험하지 못했다): 새 PostgreSQL 에 서비스를 한 번 기동해 마이그레이션을 적용 → `restic dump <스냅숏> question-authoring.copy` 의 `COPY <표> FROM STDIN;` 블록을 `psql` 에 넣는다.
+- 복구: `python -m question_authoring restore [--snapshot latest|<ID>]`(잡 `restore`). 빈 PostgreSQL 에만 한다(비어 있지 않으면 412로 거절). 보존은 백업 잡이 `forget --prune`(일 7·주 4·월 6)으로 지킨다(ADR 0030).
 - 로컬 미러로 의존 설치: `GIT_CONFIG_GLOBAL=<워크스페이스>/head/shared/gitconfig-local-mirrors bash scripts/setup-env.sh`(원격 동결 중의 표준 경로, 구조 점검 S14).
 
 ## 저작 화면

@@ -43,7 +43,10 @@ def test_every_job_declares_a_time_limit_and_backup_is_the_real_command():
     from question_authoring import __main__ as qa_main
     assert all(isinstance(j.get("timeout_seconds"), int) and j["timeout_seconds"] >= 1 for j in DECL["jobs"])
     b = next(j for j in DECL["jobs"] if j["name"] == "backup")
-    assert b["argv"] == ["python", "-m", "question_authoring", "backup"] and 'argv[:1] == ["backup"]' in inspect.getsource(qa_main.main)
+    assert b["argv"] == ["python", "-m", "question_authoring", "backup"] and 'argv[:1] in (["backup"], ["restore"])' in inspect.getsource(qa_main.main)
+    r = next(j for j in DECL["jobs"] if j["name"] == "restore")
+    assert r["argv"] == ["python", "-m", "question_authoring", "restore"] and 'argv[:1] in (["backup"], ["restore"])' in inspect.getsource(qa_main.main)
+    assert set(r["secret_files"]) == set(b["secret_files"]) and "schedule" not in r        # 주기 없이 선언한다(R10.12: 주기는 deploy 의 배포 설정)
     assert set(b["secret_files"]) == {"QA_DATABASE_URL_FILE", "OPENIT_BACKUP_CREDENTIALS_FILE", "OPENIT_BACKUP_REPO_PASSWORD_FILE"}
     from question_authoring.wiring import backup_flow
 
