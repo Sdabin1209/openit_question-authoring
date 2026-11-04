@@ -14,7 +14,7 @@
 | 입력(미구현) | release-gate | 판정 조회 | I4 |
 | 입력 | 사람(저자) | 문항 자료 파일, 화면 입력, 확인 | 저작 API `/v1/drafts`, `/v1/materials` 등(docs/design.md 8절) |
 
-이웃 영역의 코드는 가져오지 않는다. 계약은 `boundary-contracts`, 문진 스키마는 `openit-survey-schema` 패키지로만(버전은 `requirements.lock`과 `deploy/scripts/lib.sh`가 정본) 쓴다(docs/boundary.md, requirements.lock).
+이웃 영역의 코드는 가져오지 않는다. 계약은 `boundary-contracts`, 문진 스키마는 `openit-survey-schema` 패키지로만(버전 정본은 `requirements.lock`) 쓴다(docs/boundary.md, requirements.lock).
 
 ## 구조
 
@@ -52,7 +52,7 @@
 bash scripts/setup-env.sh        # .venv 생성·재사용, requirements.lock 태그로 설치, pytest, -e . --no-deps
 . .venv/bin/activate
 python -m pytest -q
-# PostgreSQL 시험(선택): export TEST_DATABASE_URL="$(bash ../deploy/scripts/dev-postgres.sh up qa)"; 끝나면 ... down qa  (없으면 해당 시험은 SKIP)
+# PostgreSQL 시험(선택): export TEST_DATABASE_URL="$(bash scripts/dev-postgres.sh up)"; 끝나면 bash scripts/dev-postgres.sh down  (없으면 해당 시험은 SKIP)
 ```
 이미지 스모크(빌드, 기동, `/healthz`, `/readyz`, 등록-미리보기-확인, 인증 거부, 비root, 라벨 확인. 포트는 Docker가 배정):
 ```
@@ -70,7 +70,7 @@ scripts/smoke.sh
 
 ## 현재 상태
 
-**시험 상태**(계약 v3.4.9, link v0.4.15 기준): 코드 단계(2026-11-04) 시험은 PostgreSQL 포함 `python -m pytest -q -rsf` 의 마지막 줄과 `scripts/smoke.sh` 의 `SMOKE OK` 가 정본이다. 이 변경에서 더한 시험: `tests/test_runtime_r5_r10.py`(R5.1·R10.11·신원 헤더), `tests/test_r10_8_authoring_writes.py`(R10.8), `tests/test_backup_flow.py`(R10.1), `tests/test_authoring_screen.py`, `tests/test_decisions_and_versions.py`. 시험 개수는 문서에 적지 않고 실행해서 센다. PostgreSQL 포함 전체: `TEST_DATABASE_URL="$(bash ../deploy/scripts/dev-postgres.sh up qa)" python -m pytest -q -rsf`(끝나면 `... down qa`). 마지막 줄의 `N passed`가 개수이고 `skipped`가 0이어야 PostgreSQL 시험까지 돈 것이다(`TEST_DATABASE_URL`이 없으면 PostgreSQL 시험 162건 안팎이 건너뜀으로 센다). 이미지: `scripts/smoke.sh`가 `SMOKE OK`를 내면 통과. 깨끗한 두 번째 환경에서의 재현은 하지 않았다.
+**시험 상태**(계약 v3.4.9, link v0.4.15 기준): 코드 단계(2026-11-04) 시험은 PostgreSQL 포함 `python -m pytest -q -rsf` 의 마지막 줄과 `scripts/smoke.sh` 의 `SMOKE OK` 가 정본이다. 이 변경에서 더한 시험: `tests/test_runtime_r5_r10.py`(R5.1·R10.11·신원 헤더), `tests/test_r10_8_authoring_writes.py`(R10.8), `tests/test_backup_flow.py`(R10.1), `tests/test_authoring_screen.py`, `tests/test_decisions_and_versions.py`. 시험 개수는 문서에 적지 않고 실행해서 센다. PostgreSQL 포함 전체: `TEST_DATABASE_URL="$(bash scripts/dev-postgres.sh up)" python -m pytest -q -rsf`(끝나면 `bash scripts/dev-postgres.sh down`). 마지막 줄의 `N passed`가 개수이고 `skipped`가 0이어야 PostgreSQL 시험까지 돈 것이다(`TEST_DATABASE_URL`이 없으면 PostgreSQL 시험 162건 안팎이 건너뜀으로 센다). 이미지: `scripts/smoke.sh`가 `SMOKE OK`를 내면 통과. 깨끗한 두 번째 환경에서의 재현은 하지 않았다.
 
 2026-10-28 묶음(옛 표기 0.7.0, 패키지 버전은 pyproject의 0.1.0; 시험 개수는 위 "시험 상태" 문단, SQLite·PostgreSQL 스모크 SMOKE OK): 전수 점검 반영(추출기 선형화, 4-eyes 기본, 엄격 입력, 환자 정보 탐지 확대, 운영 구성 거부, 동시 요청 상한, SIGTERM, 보존 `purge`, v2 Trace 문항 ID). 상세와 한계는 docs/CHANGELOG.md, docs/boundary.md.
 
@@ -87,7 +87,7 @@ PostgreSQL 대기 상한(옛 표기 0.6.2, 2026-10-28, FAULT_MATRIX P0-3/E1): �
 
 ## 이 영역의 열린 항목
 
-헤드 대장(`../head/docs/OPEN_GAPS.md`, 읽기 전용으로 읽음)에서 영역 칸에 question-authoring이 적힌 항목은 확인하지 못했다. 이 영역에 직접 걸린 열린 ID는 없다.
+헤드 대장(OPEN_GAPS)에서 영역 칸에 question-authoring이 적힌 항목은 확인하지 못했다. 이 영역에 직접 걸린 열린 ID는 없다.
 다만 전 영역에 걸친 U06(일반 Linux 서버 설치 미확인)과 U12(두 번째 독립 머신에서의 영역 시험 미확인)는 이 영역에도 해당한다(사용자·환경 몫). 대장에 없는 이 영역의 남은 일은 STATUS의 "남은 일"이다: 콘솔·템플릿·사전(저자와 헤드 협의), PDF·Word 추출기(실제 저자 형식 확인 필요), I4·I8(상대 계약 필요), 인증 방식(결정 필요).
 
 ## 더 자세한 문서

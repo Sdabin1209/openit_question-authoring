@@ -6,3 +6,4 @@ __pycache__/
 build/
 *.sqlite3
 .gen/
+.dev-postgres/

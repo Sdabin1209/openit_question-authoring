@@ -8,7 +8,7 @@ bash scripts/setup-env.sh   # 환경 준비의 정본(멱등). 이웃 폴더 불
 python -m pytest -q
 ```
 
-경계 계약 스키마는 `boundary_contracts`, 문진 스키마는 `openit-survey-schema` 패키지의 것을 쓴다(버전 정본은 `requirements.lock`과 `deploy/scripts/lib.sh`). 복사본은 없다.
+경계 계약 스키마는 `boundary_contracts`, 문진 스키마는 `openit-survey-schema` 패키지의 것을 쓴다(버전 정본은 `requirements.lock`). 복사본은 없다.
 
 ## 이미지 스모크 시험 (D22)
 
@@ -68,7 +68,7 @@ DOCKER=podman scripts/smoke.sh   # 실행 파일 이름만 바꿀 수 있다. �
 
 ## PostgreSQL 시험
 
-`export TEST_DATABASE_URL="$(bash ../deploy/scripts/dev-postgres.sh up qa)"`(deploy의 일회용 postgres, 빈 포트, `qa` 계정·데이터베이스, 암호는 일회용 임의값) 후 `python -m pytest -q -rs`. `TEST_DATABASE_URL`이 없으면 PostgreSQL 시험은 SKIP이며 통과로 세지 않는다. 시험마다 임시 스키마를 만들고 지운다. 연결 끊김 복구 시험은 `pg_terminate_backend`로 서버 프로세스를 끊어 확인한다. 이미지 스모크의 PostgreSQL 경로: `SMOKE_DB=postgres bash scripts/smoke.sh`(임시 네트워크에 postgres를 띄움). 끝나면 `bash ../deploy/scripts/dev-postgres.sh down qa`.
+`export TEST_DATABASE_URL="$(bash scripts/dev-postgres.sh up)"`(이 리포의 `compose.dev.yaml`: 일회용 postgres:16, Docker 가 배정한 빈 포트, `qa` 계정·데이터베이스, 암호는 일회용 임의값 파일, 데이터는 tmpfs) 후 `python -m pytest -q -rs`. 끝나면 `bash scripts/dev-postgres.sh down`. 같은 리포에서 둘을 동시에 띄우려면 `DEV_PG_SUFFIX=<이름>`. `TEST_DATABASE_URL` 이 없으면 PostgreSQL 시험은 SKIP 이다.
 
 ## 흔한 상황
 
