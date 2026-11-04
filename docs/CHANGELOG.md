@@ -1,8 +1,8 @@
 # 변경 이력
 
-## 미배포 (2026-11-04) 코드 단계: 계약 v3.4.12, link v0.4.18
+## 미배포 (2026-11-04) 코드 단계: 계약 v3.4.13, link v0.4.19
 
-- 잠금: boundary-contracts v3.4.12, openit-link v0.4.18(로컬 미러 `head/shared/gitconfig-local-mirrors` 로 설치, 구조 점검 S14).
+- 잠금: boundary-contracts v3.4.13, openit-link v0.4.19(로컬 미러 `head/shared/gitconfig-local-mirrors` 로 설치, 구조 점검 S14).
 - RUNTIME R1.8: I7 호출(`link_failures_read`)이 `egress_proxy_from(environ)` 의 자기 영역 게이트웨이 출구로만 나간다. 기동 때 `CommonEnv`(OPENIT_*)도 검사한다.
 - R5.1: `/readyz` 아님 표기 `not_ready`(옛 `not-ready` 폐지). R10.11: `GET /metrics`(Prometheus 텍스트, 인증 없음, DB 불가에도 200).
 - R10.3: `QA_FAILURES_TIMEOUT_SECONDS` 기본 10초(ec629be 의 30초를 계약 10초로 되돌림). 새 `QA_GATE_*`(10초).
