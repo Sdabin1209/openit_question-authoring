@@ -2,6 +2,7 @@
 
 ## 미배포 (2026-11-04) 코드 단계: 계약 v3.4.14, link v0.4.20
 
+- question-authoring-db 이미지에 HEALTHCHECK(선언 계정·TLS 접속 확인, ADR 0029).
 - 잠금: boundary-contracts v3.4.14, openit-link v0.4.20(로컬 미러 `head/shared/gitconfig-local-mirrors` 로 설치, 구조 점검 S14).
 - RUNTIME R1.8: I7 호출(`link_failures_read`)이 `egress_proxy_from(environ)` 의 자기 영역 게이트웨이 출구로만 나간다. 기동 때 `CommonEnv`(OPENIT_*)도 검사한다.
 - R5.1: `/readyz` 아님 표기 `not_ready`(옛 `not-ready` 폐지). R10.11: `GET /metrics`(Prometheus 텍스트, 인증 없음, DB 불가에도 200).

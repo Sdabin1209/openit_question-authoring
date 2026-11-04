@@ -56,7 +56,7 @@ def make_certs(d, host):
 
 class Stack:
     """한 번의 DB 컨테이너(이름·네트워크·비밀 폴더). 클라이언트는 같은 네트워크의 postgres 이미지 psql 이다."""
-    def __init__(self, tag, tmp, decl=None, mount_init=None, tls=True):
+    def __init__(self, tag, tmp, decl=None, mount_init=None, tls=True, extra_cmd=()):
         u = uuid.uuid4().hex[:8]
         self.net, self.name, self.tmp = f"qa-db-net-{u}", f"qa-db-{u}", tmp
         (tmp / "certs").mkdir()
@@ -82,7 +82,7 @@ class Stack:
             mount_init.chmod(0o755)
             args += ["-v", f"{mount_init}:/docker-entrypoint-initdb.d/10-accounts.sh:ro"]
         sh(DOCKER, "network", "create", self.net)
-        sh(DOCKER, "run", "-d", "--name", self.name, "--network", self.net, *args, tag)
+        sh(DOCKER, "run", "-d", "--name", self.name, "--network", self.net, *args, tag, *(["postgres", *extra_cmd] if extra_cmd else []))
 
     def wait_ready(self):
         end = time.monotonic() + 90
@@ -236,3 +236,51 @@ def test_renewed_server_certificate_is_picked_up_without_restart(stack, tmp_path
         time.sleep(5)
     assert rc == 0, err
     assert "다시 읽었다" in sh(DOCKER, "logs", s.name, check=False).stderr
+
+
+def health_rc(s):
+    r = sh(DOCKER, "exec", s.name, "qa-db-healthcheck.sh", check=False)
+    return r.returncode, r.stderr
+
+
+def test_image_declares_a_healthcheck_and_a_normal_server_is_healthy(db_image, stack):
+    tag, _ = db_image
+    hc = json.loads(sh(DOCKER, "image", "inspect", "-f", "{{json .Config.Healthcheck}}", tag).stdout)
+    assert hc["Test"] == ["CMD", "qa-db-healthcheck.sh"] and hc["Interval"] > 0 and hc["Timeout"] > 0
+    s = stack()
+    assert s.wait_ready()
+    assert health_rc(s) == (0, "")                                                              # 선언 계정이 있고 TLS 로 접속을 받는다
+    end = time.monotonic() + 120                                                                # 매달림 감시: 주기 15초 + 여유. Docker 가 실제로 healthy 로 표시하는지
+    st = ""
+    while time.monotonic() < end:
+        st = sh(DOCKER, "inspect", "-f", "{{.State.Health.Status}}", s.name).stdout.strip()
+        if st == "healthy":
+            break
+        time.sleep(3)
+    assert st == "healthy", st
+
+
+def test_mutation_server_without_tls_is_unhealthy(stack, db_image):
+    """변이: 서버 인자 뒤에 -c ssl=off 를 붙이면(마지막 설정이 이긴다) TLS 없이 뜬다. 서버는 살아 있고 pg_isready 는 통과하지만 점검은 unhealthy 여야 한다."""
+    s = stack(extra_cmd=["-c", "ssl=off"])
+    assert s.wait_ready()
+    assert sh(DOCKER, "exec", s.name, "pg_isready", "-U", "postgres", check=False).returncode == 0
+    rc, err = health_rc(s)
+    assert rc == 1 and "TLS" in err, (rc, err)
+
+
+def test_mutation_missing_declared_account_is_unhealthy(stack):
+    """변이: 선언에 없는 계정을 선언한 것처럼 점검하면(초기화 뒤 선언 파일만 바꾼다) 계정 확인에서 unhealthy 가 된다."""
+    s = stack()
+    assert s.wait_ready()
+    bad = dict(TEST_DECL, accounts=[{"name": "ghost", "database": "qa", "privilege": "owner", "url_env": ["QA_DATABASE_URL_FILE"]}])
+    sh(DOCKER, "exec", s.name, "sh", "-c", f"printf '%s' '{json.dumps(bad)}' > /tmp/decl.json")
+    r = sh(DOCKER, "exec", "-e", "DB_DECLARATION=/tmp/decl.json", s.name, "qa-db-healthcheck.sh", check=False)
+    assert r.returncode == 1 and "준비되지" in r.stderr, (r.returncode, r.stderr)
+
+
+def test_without_tls_files_the_container_never_becomes_healthy(stack):
+    s = stack(tls=False)
+    time.sleep(8)
+    assert sh(DOCKER, "inspect", "-f", "{{.State.Running}}", s.name, check=False).stdout.strip() == "false"   # 시작하지 않는 컨테이너는 healthy 가 될 수 없다
+    assert sh(DOCKER, "inspect", "-f", "{{.State.Health.Status}}", s.name).stdout.strip() != "healthy"
