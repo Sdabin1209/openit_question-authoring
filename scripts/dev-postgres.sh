@@ -10,6 +10,8 @@ SUFFIX="${DEV_PG_SUFFIX:+-$DEV_PG_SUFFIX}"
 PROJECT="question-authoring-dev-pg${SUFFIX}"
 STATE="$here/.dev-postgres/${PROJECT}"
 export QA_DEV_PG_STATE="$STATE"
+# shellcheck disable=SC1091
+QA_PG_IMAGE="$(. "$here/images.env"; printf %s "$POSTGRES_IMAGE")"; export QA_PG_IMAGE   # 이미지 고정값의 정본은 images.env
 compose() { docker compose -p "$PROJECT" -f "$here/compose.dev.yaml" "$@"; }
 dsn() {
   local port pw

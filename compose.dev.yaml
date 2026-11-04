@@ -1,10 +1,10 @@
 # 개발·시험용 일회용 PostgreSQL(워크스페이스 CLAUDE.md D22: DB 같은 앱 밖 의존은 compose.dev.yaml 로 띄운다). 앱은 컨테이너 밖(가상환경)에서 돈다.
 # 직접 쓰지 말고 scripts/dev-postgres.sh up|down 으로 쓴다(프로젝트 이름·상태 폴더·암호 파일을 그 스크립트가 정한다).
 # 왜 호스트 포트를 Docker 배정(127.0.0.1::5432)으로: 여러 영역·여러 실행이 같은 서버에서 동시에 돌아도 포트가 부딪히지 않는다. 데이터는 tmpfs 라 down 하면 사라진다.
-# postgres:16 은 ADR 0029(운영과 같은 주 버전). 암호는 일회용 임의값을 파일로 준다(D84).
+# 이미지는 images.env 의 POSTGRES_IMAGE(digest 고정). postgres 16 은 ADR 0029(운영과 같은 주 버전). 암호는 일회용 임의값을 파일로 준다(D84).
 services:
   postgres:
-    image: postgres:16
+    image: ${QA_PG_IMAGE:?scripts/dev-postgres.sh 로 실행한다(images.env 의 POSTGRES_IMAGE)}
     environment:
       POSTGRES_USER: qa
       POSTGRES_DB: qa

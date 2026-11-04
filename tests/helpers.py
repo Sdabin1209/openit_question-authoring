@@ -1,3 +1,4 @@
+from pathlib import Path
 import time
 
 from question_authoring.wiring.service import Actor
@@ -137,3 +138,11 @@ class FakeMonotonic:
 
     def advance(self, secs):
         self.now += secs
+
+
+def image(key):
+    """기반 이미지 고정값(images.env 의 KEY=값). 시험이 쓰는 이미지도 digest 로 고정한다."""
+    for line in (Path(__file__).resolve().parent.parent / "images.env").read_text(encoding="utf-8").splitlines():
+        if line.startswith(key + "="):
+            return line.split("=", 1)[1]
+    raise KeyError(key)

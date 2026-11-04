@@ -4,6 +4,7 @@
 # 실행 파일 이름은 DOCKER 환경 변수로만 바꿀 수 있다(기본 docker).
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
+POSTGRES_IMAGE="$(. "$here/images.env"; printf %s "$POSTGRES_IMAGE")"   # digest 고정(images.env)
 DOCKER="${DOCKER:-docker}"
 "$DOCKER" info >/dev/null 2>&1 || { echo "오류: $DOCKER 데몬에 연결할 수 없다. 데몬이 실행 중이고 이 사용자가 접근할 수 있는지 확인하라." >&2; exit 1; }
 IMG=question-authoring:smoke-$$   # 왜 $$: 스모크가 동시에 돌면 고정 태그를 서로 덮어쓰고 정리가 남의 이미지를 지웠다(병렬 재현). 실행마다 고유 태그, 정리는 자기 태그만
@@ -47,7 +48,7 @@ printf '%s' "smoke=read-token" > "$SECDIR/read_tokens"
 if [ "$SMOKE_DB" = postgres ]; then
   PGPW=$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')
   printf '%s' "$PGPW" > "$SECDIR/pg_password"; chmod 644 "$SECDIR/pg_password"
-  "$DOCKER" run -d --name "$PGNAME" --network "$NET" -e POSTGRES_USER=qa -e POSTGRES_DB=qa -e POSTGRES_PASSWORD_FILE=/run/secrets/pg_password -v "$SECDIR/pg_password:/run/secrets/pg_password:ro" postgres:16 >/dev/null
+  "$DOCKER" run -d --name "$PGNAME" --network "$NET" -e POSTGRES_USER=qa -e POSTGRES_DB=qa -e POSTGRES_PASSWORD_FILE=/run/secrets/pg_password -v "$SECDIR/pg_password:/run/secrets/pg_password:ro" "$POSTGRES_IMAGE" >/dev/null
   for i in $(seq 1 60); do "$DOCKER" exec "$PGNAME" pg_isready -U qa -d qa >/dev/null 2>&1 && break; sleep 1; done
   sleep 2
   printf '%s' "postgresql://qa:$PGPW@$PGNAME:5432/qa" > "$SECDIR/database_url"

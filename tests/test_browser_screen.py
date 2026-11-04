@@ -13,11 +13,11 @@ from pathlib import Path
 
 import pytest
 
-from helpers import HANG_GUARD_SECONDS
+from helpers import HANG_GUARD_SECONDS, image
 from test_decisions_and_versions import GATE_DECISION
 
 DOCKER = shutil.which("docker")
-PW_IMAGE = "mcr.microsoft.com/playwright/python:v1.49.0-noble"     # 브라우저는 이미지에 있고 파이썬 패키지(버전은 이미지 태그와 같다)는 실행 때 PyPI 에서 받는다
+PW_IMAGE = image("PLAYWRIGHT_IMAGE")     # 브라우저는 이미지에 있고 파이썬 패키지(버전은 이미지 태그와 같다)는 실행 때 PyPI 에서 받는다
 ROOT = Path(__file__).resolve().parent.parent
 HERE = Path(__file__).resolve().parent
 

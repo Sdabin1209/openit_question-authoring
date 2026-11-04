@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from conftest import example_text, pg_schema
-from helpers import AUTHOR, HANG_GUARD_SECONDS, publish
+from helpers import AUTHOR, HANG_GUARD_SECONDS, image, publish
 from question_authoring.wiring import backup_flow
 from question_authoring.wiring.service import AuthoringService
 from question_authoring.wiring.stores import PostgresQuestionStore
@@ -23,10 +23,8 @@ from question_authoring.wiring.stores import PostgresQuestionStore
 DOCKER = shutil.which("docker")
 HOST_NAME = "backup-store"          # 프록시 우회(Go 는 localhost·loopback 주소로는 HTTPS_PROXY 를 쓰지 않는다)를 피하려는 서비스 이름. 같은 docker 망의 별칭이다
 STORE_PORT = 8000
-# 왜 digest 고정: latest 태그는 시험이 도는 날마다 바뀔 수 있다(재현성). 값은 이 PC 에서 시험이 통과한 이미지의 RepoDigest 다
-REST_IMAGE = "restic/rest-server@sha256:d2aff06f47eb38637dff580c3e6bce4af98f386c396a25d32eb6727ec96214a5"
-RESTIC_IMAGE = "restic/restic@sha256:9940e6c7421ab3a21ee9fdc4e91596d04c792b600d31b102696c75cbf3ac4481"
-PY_IMAGE = "python@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159"       # python:3.12-slim
+# 왜 digest 고정: latest 태그는 시험이 도는 날마다 바뀔 수 있다(재현성). 값의 정본은 images.env
+REST_IMAGE, RESTIC_IMAGE, PY_IMAGE = image("REST_SERVER_IMAGE"), image("RESTIC_IMAGE"), image("PYTHON_IMAGE")
 PROXY_PY = Path(__file__).resolve().parent / "backup_e2e" / "connect_proxy.py"
 
 

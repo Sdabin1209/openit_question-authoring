@@ -4,6 +4,7 @@
 
 - 브라우저 시험: 저자 화면의 검수 제출 전에 확정 버전 선택지가 채워지길 기다리고 응답(403)을 기다린다(필수 select 가 비어 있으면 브라우저가 제출을 막아 부하 때 한 번 실패했다).
 - 백업 왕복 시험: rest-server·CONNECT 프록시(컨테이너)·restic 이 같은 docker 망에서 서비스 이름으로 만난다(호스트 포트·host.docker.internal 제거). 세 이미지는 digest 로 고정. 부하 때 호스트 포트 전달이 흔들려 한 번 실패했다.
+- 기반 이미지(python, postgres, playwright, restic 둘)를 digest 로 고정한다. 정본은 images.env, 올리는 방법도 거기에 있다. Dockerfile ARG 기본값이 같은 값인지 tests/test_images_pinned.py 가 본다.
 - question-authoring-db 이미지에 HEALTHCHECK(선언 계정·TLS 접속 확인, ADR 0029).
 - 잠금: boundary-contracts v3.4.17, openit-link v0.4.22(로컬 미러 `head/shared/gitconfig-local-mirrors` 로 설치, 구조 점검 S14).
 - RUNTIME R1.8: I7 호출(`link_failures_read`)이 `egress_proxy_from(environ)` 의 자기 영역 게이트웨이 출구로만 나간다. 기동 때 `CommonEnv`(OPENIT_*)도 검사한다.

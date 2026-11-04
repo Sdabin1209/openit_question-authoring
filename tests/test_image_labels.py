@@ -43,12 +43,31 @@ def test_labels_validate_against_contract_schema():
     assert list(validator("ImageLabels").iter_errors(dockerfile_labels())) == []
 
 
-def test_arg_defaults_are_na_not_none_unknown_unset():
-    """ARG 기본값은 계약이 값 없음으로 인정하는 `n/a`뿐이다(`none`·`unknown`·`unset` 불가). 실제 값은 빌드가 넘긴다."""
-    text = DOCKERFILE.read_text(encoding="utf-8")
+BASE_IMAGE_ARGS = {"PYTHON_IMAGE"}                       # 기반 이미지 ARG(라벨 값이 아니다). 이름 목록을 명시해 예외로 한다
+BASE_IMAGE_SHAPE = re.compile(r"[\w./-]+:[\w.-]+@sha256:[0-9a-f]{64}")      # <이미지>:<태그>@sha256:<64 hex>: digest 고정(공통 규칙 '빌드 때 고정')
+
+
+def check_arg_defaults(text):
     defaults = dict(re.findall(r"^ARG (\w+)=(\S+)$", text, re.M))
-    assert set(defaults) == {"COMMIT", "BOUNDARY_TAG", "SURVEY_SCHEMA_TAG"}
-    assert set(defaults.values()) == {"n/a"}
+    labels = {k: v for k, v in defaults.items() if k not in BASE_IMAGE_ARGS}
+    assert set(labels) == {"COMMIT", "BOUNDARY_TAG", "SURVEY_SCHEMA_TAG"}
+    assert set(labels.values()) == {"n/a"}
+    for k in BASE_IMAGE_ARGS:
+        assert BASE_IMAGE_SHAPE.fullmatch(defaults.get(k, "")), (k, defaults.get(k))
+
+
+def test_arg_defaults_are_na_not_none_unknown_unset():
+    """라벨용 ARG 기본값은 계약이 값 없음으로 인정하는 `n/a`뿐이다(`none`·`unknown`·`unset` 불가). 실제 값은 빌드가 넘긴다.
+    기반 이미지 ARG 는 라벨이 아니므로 예외이되 digest 로 고정된 모양이어야 한다."""
+    check_arg_defaults(DOCKERFILE.read_text(encoding="utf-8"))
+
+
+def test_mutation_base_image_without_digest_is_rejected():
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    bad = re.sub(r"(ARG PYTHON_IMAGE=[^@\s]+)@sha256:[0-9a-f]{64}", r"\1", text)
+    assert bad != text
+    with pytest.raises(AssertionError):
+        check_arg_defaults(bad)
 
 
 def test_bad_labels_are_rejected_by_contract():

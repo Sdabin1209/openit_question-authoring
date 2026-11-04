@@ -1,4 +1,6 @@
-FROM python:3.12-slim
+# 기반 이미지는 digest 로 고정한다(값의 정본은 images.env, 같은 값인지 tests/test_images_pinned.py 가 확인한다)
+ARG PYTHON_IMAGE=python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
+FROM ${PYTHON_IMAGE}
 ARG COMMIT=n/a
 ARG BOUNDARY_TAG=n/a
 ARG SURVEY_SCHEMA_TAG=n/a

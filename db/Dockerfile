@@ -1,4 +1,6 @@
-FROM postgres:16
+# 기반 이미지는 digest 로 고정한다(값의 정본은 images.env, 같은 값인지 tests/test_images_pinned.py 가 확인한다)
+ARG POSTGRES_IMAGE=postgres:16@sha256:1beaa3084eee2676f20a9cd9928f0bf2c5bf674f8e49f81017912183d377c61c
+FROM ${POSTGRES_IMAGE}
 ARG COMMIT=n/a
 ARG BOUNDARY_TAG=n/a
 ARG SURVEY_SCHEMA_TAG=n/a

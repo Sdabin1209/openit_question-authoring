@@ -31,7 +31,7 @@ def test_no_path_into_a_neighbour_other_than_the_allowed_reads():
 def test_dev_postgres_is_this_repos_own_script_and_compose_file():
     sh = (ROOT / "scripts" / "dev-postgres.sh").read_text(encoding="utf-8")
     comp = (ROOT / "compose.dev.yaml").read_text(encoding="utf-8")
-    assert "postgres:16" in comp and '"127.0.0.1::5432"' in comp                  # Docker 가 호스트 포트를 배정한다
+    assert "QA_PG_IMAGE" in comp and '"127.0.0.1::5432"' in comp                  # Docker 가 호스트 포트를 배정한다
     assert "question-authoring" in sh and "DEV_PG_SUFFIX" in sh                   # 이름에 리포 이름
     assert subprocess.run(["bash", "-n", str(ROOT / "scripts" / "dev-postgres.sh")], capture_output=True).returncode == 0
     assert ".dev-postgres/" in (ROOT / ".gitignore").read_text(encoding="utf-8")

@@ -11,11 +11,11 @@ from pathlib import Path
 import pytest
 from boundary_contracts import load_schema, validator
 
-from helpers import HANG_GUARD_SECONDS
+from helpers import HANG_GUARD_SECONDS, image
 
 DOCKER = shutil.which("docker")
 ROOT = Path(__file__).resolve().parent.parent
-PG = "postgres:16"
+PG = image("POSTGRES_IMAGE")            # digest 고정(images.env)
 PWS = {"qa": "owner-pass-1", "qa_app": "dml-pass-2"}
 # 시험용 선언: 제품 선언(owner 하나)에 dml 계정을 더한 것. 이미지 초기화 코드가 dml 경로도 맞게 하는지 보려고 /etc/openit/database.json 위에 덮어 마운트한다
 TEST_DECL = {"engine": "postgresql", "major": 16, "port": 5432, "accounts": [
