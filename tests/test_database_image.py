@@ -204,3 +204,35 @@ def test_max_connections_and_scram_are_set(stack):
     assert s.wait_ready()
     rc, out, _ = s.psql("qa", "SHOW max_connections; SHOW password_encryption; SHOW ssl")
     assert out.splitlines() == ["50", "scram-sha-256", "on"]
+
+
+def test_renewed_server_certificate_is_picked_up_without_restart(stack, tmp_path):
+    """갱신된 인증서를 스스로 다시 읽는다(step-ca 가 같은 파일을 바꾼다): 처음 인증서는 클라이언트가 믿지 않는 루트 A 가 서명했다 → verify-full 실패.
+    같은 파일을 클라이언트가 믿는 루트 B 가 서명한 인증서로 바꾸면 컨테이너를 다시 띄우지 않고 접속이 된다. 이미지의 주기는 60초이므로 조건(접속 성공)이 될 때까지 기다린다."""
+    s = stack()
+    assert s.wait_ready()
+    b = tmp_path / "rootB"
+    b.mkdir()
+    make_certs(b, s.name)                                   # 새 루트 B 와 그 서명 인증서(같은 이름)
+    trust_b = tmp_path / "trustB"
+    trust_b.mkdir()
+    shutil.copy(b / "root.crt", trust_b / "root.crt")
+
+    def connect():
+        r = sh(DOCKER, "run", "--rm", "--network", s.net, "-v", f"{trust_b}:/c:ro", "-e", f"PGPASSWORD={PWS['qa']}", "--entrypoint", "psql", PG,
+               f"host={s.name} dbname=qa user=qa sslmode=verify-full sslrootcert=/c/root.crt", "-X", "-At", "-c", "SELECT 1", check=False)
+        return r.returncode, r.stderr
+    rc, err = connect()
+    assert rc != 0 and "certificate verify failed" in err, err                                  # 처음에는 믿지 않는 루트라 거부
+    for f in ("tls.crt", "tls.key"):                                                           # 같은 파일 이름으로 갱신(마운트 폴더 안에서 덮어쓴다)
+        data = (b / f).read_bytes()
+        (s.tmp / "certs" / f).write_bytes(data)
+        (s.tmp / "certs" / f).chmod(0o644)
+    end = time.monotonic() + 150                                                               # 매달림 감시: 주기 60초 + 여유
+    while time.monotonic() < end:
+        rc, err = connect()
+        if rc == 0:
+            break
+        time.sleep(5)
+    assert rc == 0, err
+    assert "다시 읽었다" in sh(DOCKER, "logs", s.name, check=False).stderr
