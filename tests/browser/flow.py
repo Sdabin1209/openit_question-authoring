@@ -102,9 +102,14 @@ with sync_playwright() as p:
 
         step("author cannot approve (server decides, screen shows the error)")
         page.click("[data-tab=review]")
+        # 왜 선택지를 기다리나: 확정 버전 목록(select, required)은 탭을 열면 비동기로 채워진다. 비어 있을 때 제출하면 브라우저의 기본 검증이 제출 자체를 막아 요청이 가지 않는다.
+        expect(page.locator("#review-form [name=ref] option")).to_have_count(1)
         page.select_option("#review-form [name=decision]", "APPROVED")
         page.check("#review-form [name=clinical_basis_approved]")
-        page.click("#review-form button[type=submit]")
+        page.evaluate("document.querySelector('#msg').textContent = ''")      # 이전 메시지("확정했다")와 이번 결과를 헷갈리지 않게
+        with page.expect_response(lambda r: r.url.endswith("/v1/reviews") and r.request.method == "POST") as resp:
+            page.click("#review-form button[type=submit]")
+        assert resp.value.status == 403, resp.value.status
         expect(page.locator("#msg")).to_contain_text("PERMISSION_DENIED")
         assert not errors, errors
         print("DONE", flush=True)
