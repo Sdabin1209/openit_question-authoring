@@ -9,21 +9,9 @@ DOCKER="${DOCKER:-docker}"
 IMG=question-authoring:smoke-$$   # 왜 $$: 스모크가 동시에 돌면 고정 태그를 서로 덮어쓰고 정리가 남의 이미지를 지웠다(병렬 재현). 실행마다 고유 태그, 정리는 자기 태그만
 NAME=question-authoring-smoke-$$
 TOKEN=smoke-token
-# 빌드는 영역 진입점(scripts/build-image.sh, 계약 BuildImageRequest)으로 한다. 요청의 버전은 잠금 파일의 핀이고, 라이브러리 소스 트리는
-# 그 태그에서 꺼낸다(배포에서는 deploy가 하는 일을 개발용으로 대신한다. 이 한 곳만 이웃 리포를 읽는다).
-PY="${PYTHON:-$here/.venv/bin/python}"
-BCV="$(sed -n 's/^boundary-contracts @ .*@\(v[0-9.]*\)$/\1/p' "$here/requirements.lock")"
-SST="$(sed -n 's/^openit-survey-schema @ .*@\(survey-schema-v[0-9.]*\)#.*$/\1/p' "$here/requirements.lock")"
+# 빌드는 scripts/build-local-image.sh(영역 진입점 build-image.sh, 계약 BuildImageRequest)로 한다. 버전은 잠금 파일의 핀이다.
 BUILDTMP="$(mktemp -d)"
-mkdir "$BUILDTMP/bc" "$BUILDTMP/ss"
-git -C "$here/../boundary-contracts" archive "$BCV" | tar -x -C "$BUILDTMP/bc"
-git -C "$here/../survey-service" archive "$SST" schema | tar -x -C "$BUILDTMP/ss"
-cat > "$BUILDTMP/request.json" <<EOF
-{"source_dir": "$here", "revision": "$(git -C "$here" rev-parse --short HEAD)",
- "versions": {"boundary": "$BCV", "survey_schema": "${SST#survey-schema-}"},
- "dependency_sources": {"boundary": "$BUILDTMP/bc", "survey_schema": "$BUILDTMP/ss/schema"}, "image_tag": "$IMG"}
-EOF
-DOCKER="$DOCKER" PYTHON="$PY" bash "$here/scripts/build-image.sh" "$BUILDTMP/request.json" | tail -1 | tee "$BUILDTMP/result.json"
+bash "$here/scripts/build-local-image.sh" "$IMG" "$BUILDTMP/result.json"
 SECDIR="$(mktemp -d)"
 SMOKE_DB="${SMOKE_DB:-sqlite}"
 NET=question-authoring-smoke-net-$$; PGNAME=question-authoring-smoke-pg-$$
