@@ -215,11 +215,11 @@ class Api:
             # /metrics: 인증 없음(roles 비움, 토큰이 있어도 무시). 접근 통제는 망이다(RUNTIME R10.11, R6.2)
             Route("GET", "/metrics", lambda r: Response(200, self.metrics_text(), content_type="text/plain; version=0.0.4; charset=utf-8"), roles=frozenset(), max_body=MAX_BODY),
             R("GET", sc, lambda r, a: self._read(r), read, response="ListEnvelope"),   # R7: link App 이 내보내기 전에 계약으로 검증(HTTP.md I1 list_ids)
-            R("GET", sc + "/{qsid}/latest", lambda r, a: self._read(r), read),   # ArtifactRef 는 계약에 스키마 파일이 없다(clients check_ref 만): OPEN_GAPS G-HTTP-MD-CANONICAL
+            R("GET", sc + "/{qsid}/latest", lambda r, a: self._read(r), read, response="ArtifactRef"),   # R7(HTTP.md I1 latest, 계약 3.4.18)
             R("GET", sc + "/{qsid}/versions", lambda r, a: self._read(r), read, response="ListEnvelope"),   # R7(HTTP.md I1 list_versions)
             R("GET", sc + "/{qsid}/versions/{ver}", lambda r, a: self._read(r), read),
             R("GET", sc + "/{qsid}/versions/{ver}/reviews", lambda r, a: self._read(r), read),
-            R("GET", sc + "/{qsid}/versions/{ver}/change", lambda r, a: self._read(r), read),
+            R("GET", sc + "/{qsid}/versions/{ver}/change", lambda r, a: self._read(r), read, response="ChangeClassificationItem"),   # R7(계약 3.4.18)
             R("GET", "/v1/signals", self._signals, query=RQ("SignalsQuery"), response="SignalsResponse"),
             R("GET", "/v1/set-versions", self._set_versions, query=RQ("QuestionSetVersionsQuery"), response=D("QuestionSetVersions")),
             R("GET", "/v1/set-decisions", self._set_decisions, query=RQ("DecisionsQuery"), response=D("Decisions")),
