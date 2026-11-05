@@ -37,7 +37,7 @@ def db_image():
     r = subprocess.run(["bash", str(ROOT / "scripts" / "build-local-image.sh"), tag], capture_output=True, text=True, env=env, timeout=HANG_GUARD_SECONDS)
     assert r.returncode == 0, r.stderr[-800:]
     yield tag, json.loads(r.stdout.strip().splitlines()[-1])
-    subprocess.run([DOCKER, "rmi", tag], capture_output=True, timeout=120)
+    subprocess.run([DOCKER, "rmi", tag], capture_output=True)
 
 
 @pytest.fixture(scope="module")

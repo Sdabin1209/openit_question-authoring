@@ -38,7 +38,7 @@ def app_image():
     r = subprocess.run(["bash", str(ROOT / "scripts" / "build-local-image.sh"), tag], capture_output=True, text=True, env=env, timeout=HANG_GUARD_SECONDS)
     assert r.returncode == 0, r.stderr[-800:]
     yield tag
-    subprocess.run([DOCKER, "rmi", tag], capture_output=True, timeout=120)          # 이 시험이 만든 태그만
+    subprocess.run([DOCKER, "rmi", tag], capture_output=True)          # 이 시험이 만든 태그만
 
 
 def run_flow(app_image, tmp_path, mutate):
