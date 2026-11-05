@@ -6,11 +6,12 @@ set -eu
 install_tls() {
   TLS="${DB_TLS_DIR:-/certs}"
   [ -s "$TLS/tls.crt" ] && [ -s "$TLS/tls.key" ] || return 1
-  install -d -o postgres -g postgres -m 0700 /var/lib/postgresql-tls
-  install -o postgres -g postgres -m 0644 "$TLS/tls.crt" /var/lib/postgresql-tls/tls.crt.new
-  install -o postgres -g postgres -m 0600 "$TLS/tls.key" /var/lib/postgresql-tls/tls.key.new
-  mv /var/lib/postgresql-tls/tls.crt.new /var/lib/postgresql-tls/tls.crt       # 같은 폴더에서 rename: 서버가 반쯤 쓴 파일을 읽지 않는다
-  mv /var/lib/postgresql-tls/tls.key.new /var/lib/postgresql-tls/tls.key
+  # /run 아래에 둔다: deploy 는 읽기 전용 루트에 /tmp·/run(tmpfs)과 데이터 볼륨만 쓸 수 있게 준다(다른 영역 DB 이미지와 같다)
+  install -d -o postgres -g postgres -m 0700 /run/question-authoring-db-tls
+  install -o postgres -g postgres -m 0644 "$TLS/tls.crt" /run/question-authoring-db-tls/tls.crt.new
+  install -o postgres -g postgres -m 0600 "$TLS/tls.key" /run/question-authoring-db-tls/tls.key.new
+  mv /run/question-authoring-db-tls/tls.crt.new /run/question-authoring-db-tls/tls.crt       # 같은 폴더에서 rename: 서버가 반쯤 쓴 파일을 읽지 않는다
+  mv /run/question-authoring-db-tls/tls.key.new /run/question-authoring-db-tls/tls.key
 }
 fingerprint() { cat "${DB_TLS_DIR:-/certs}/tls.crt" "${DB_TLS_DIR:-/certs}/tls.key" 2>/dev/null | sha256sum | cut -d' ' -f1; }
 
@@ -31,7 +32,7 @@ if [ "${1:-}" = "postgres" ] && [ "$(id -u)" = "0" ]; then
   # max_connections 50: 서비스 동시 요청 기본 32(QA_MAX_CONCURRENT_REQUESTS) + 정리·백업 잡 + 관리용 여유. 측정하지 않은 시작값(ADR 0029)
   shift
   set -- postgres \
-    -c ssl=on -c ssl_cert_file=/var/lib/postgresql-tls/tls.crt -c ssl_key_file=/var/lib/postgresql-tls/tls.key -c ssl_min_protocol_version=TLSv1.2 \
+    -c ssl=on -c ssl_cert_file=/run/question-authoring-db-tls/tls.crt -c ssl_key_file=/run/question-authoring-db-tls/tls.key -c ssl_min_protocol_version=TLSv1.2 \
     -c hba_file=/etc/openit/pg_hba.conf -c password_encryption=scram-sha-256 -c max_connections=50 -c listen_addresses='*' "$@"
 fi
 exec docker-entrypoint.sh "$@"

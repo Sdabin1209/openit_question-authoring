@@ -82,7 +82,9 @@ class Stack:
             mount_init.chmod(0o755)
             args += ["-v", f"{mount_init}:/docker-entrypoint-initdb.d/10-accounts.sh:ro"]
         sh(DOCKER, "network", "create", self.net)
-        sh(DOCKER, "run", "-d", "--name", self.name, "--network", self.net, *args, tag, *(["postgres", *extra_cmd] if extra_cmd else []))
+        # deploy 와 같은 실행 조건: 읽기 전용 루트, 쓸 수 있는 곳은 /tmp·/run(tmpfs)과 데이터 볼륨뿐(deploy compose.yaml 의 영역 DB 서비스)
+        ro = ["--read-only", "--tmpfs", "/tmp", "--tmpfs", "/run", "-v", "/var/lib/postgresql/data"]
+        sh(DOCKER, "run", "-d", "--name", self.name, "--network", self.net, *ro, *args, tag, *(["postgres", *extra_cmd] if extra_cmd else []))
 
     def wait_ready(self):
         end = time.monotonic() + 90
