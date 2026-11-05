@@ -75,8 +75,8 @@ def run_flow(app_image, tmp_path, mutate):
                                f"pip install -q --disable-pip-version-check playwright==1.49.0 >/dev/null 2>&1 && python /t/flow.py http://{app}:8081"],
                               capture_output=True, text=True, timeout=HANG_GUARD_SECONDS)
     finally:
-        subprocess.run([DOCKER, "rm", "-f", app], capture_output=True, timeout=60)
-        subprocess.run([DOCKER, "network", "rm", net], capture_output=True, timeout=60)
+        subprocess.run([DOCKER, "rm", "-f", app], capture_output=True)
+        subprocess.run([DOCKER, "network", "rm", net], capture_output=True)
 
 
 def test_author_and_reviewer_flow_in_a_real_browser(app_image, tmp_path):

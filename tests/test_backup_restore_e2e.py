@@ -102,8 +102,8 @@ exec {DOCKER} run --rm -i --network {net} -v {d}:{d}:ro \\
         yield {"dir": d, "port": STORE_PORT, "pw": pw, "proxy": ConnectProxy(pname), "proxy_url": f"http://{pname}:3128", "wrapper": str(wrapper), "name": name}
     finally:
         for n in (pname, name):                                                              # 이 시험이 띄운 이름만
-            subprocess.run([DOCKER, "rm", "-f", n], capture_output=True, timeout=60)
-        subprocess.run([DOCKER, "network", "rm", net], capture_output=True, timeout=60)
+            subprocess.run([DOCKER, "rm", "-f", n], capture_output=True)
+        subprocess.run([DOCKER, "network", "rm", net], capture_output=True)
 
 
 def env_for(se, url_with_schema, tmp):

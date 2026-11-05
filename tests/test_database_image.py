@@ -102,8 +102,8 @@ class Stack:
         return r.returncode, r.stdout.strip(), r.stderr.strip()
 
     def close(self):
-        subprocess.run([DOCKER, "rm", "-f", self.name], capture_output=True, timeout=60)
-        subprocess.run([DOCKER, "network", "rm", self.net], capture_output=True, timeout=60)
+        subprocess.run([DOCKER, "rm", "-f", self.name], capture_output=True)   # 왜 timeout 없음: 정리는 데몬이 끝을 정한다(우리 코드가 아니다)
+        subprocess.run([DOCKER, "network", "rm", self.net], capture_output=True)
 
 
 @pytest.fixture
