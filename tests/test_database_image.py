@@ -66,9 +66,9 @@ class Stack:
         for n, pw in PWS.items():
             (tmp / "secrets" / n).write_text(pw)
         for p in list((tmp / "certs").iterdir()) + list((tmp / "secrets").iterdir()) + [tmp / "su-pass"]:
-            p.chmod(0o644)
+            p.chmod(0o640)
         for d in (tmp, tmp / "certs", tmp / "secrets"):
-            d.chmod(0o755)
+            d.chmod(0o750)
         if not tls:
             for f in ("tls.crt", "tls.key"):
                 (tmp / "certs" / f).unlink()
@@ -83,7 +83,8 @@ class Stack:
             args += ["-v", f"{mount_init}:/docker-entrypoint-initdb.d/10-accounts.sh:ro"]
         sh(DOCKER, "network", "create", self.net)
         # deploy 와 같은 실행 조건: 읽기 전용 루트, 쓸 수 있는 곳은 /tmp·/run(tmpfs)과 데이터 볼륨뿐(deploy compose.yaml 의 영역 DB 서비스)
-        ro = ["--read-only", "--tmpfs", "/tmp", "--tmpfs", "/run", "-v", "/var/lib/postgresql/data"]
+        ro = ["--group-add", str(os.getgid()), "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+              *[v for cap in ("CHOWN", "DAC_OVERRIDE", "FOWNER", "SETUID", "SETGID") for v in ("--cap-add", cap)], "--read-only", "--tmpfs", "/tmp", "--tmpfs", "/run", "-v", "/var/lib/postgresql/data"]
         sh(DOCKER, "run", "-d", "--name", self.name, "--network", self.net, *ro, *args, tag, *(["postgres", *extra_cmd] if extra_cmd else []))
 
     def wait_ready(self):
