@@ -26,7 +26,7 @@ def server(svc):
 
 
 def get(base, path, token=READ):
-    req = urllib.request.Request(base + path, headers={"Authorization": f"Bearer {token}"} if token else {})
+    req = urllib.request.Request(base + path, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"} if token else {})
     try:
         with urllib.request.urlopen(req) as r:
             return r.status, json.loads(r.read())
@@ -36,7 +36,7 @@ def get(base, path, token=READ):
 
 def post(base, path, body, token):
     req = urllib.request.Request(base + path, data=json.dumps(body).encode(), method="POST",
-                                 headers={"Authorization": f"Bearer {token}"})
+                                 headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req) as r:
             return r.status

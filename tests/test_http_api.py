@@ -8,7 +8,7 @@ H = {"Authorization": "Bearer tok-a"}
 
 
 def call(api, method, url, body=None, headers=H):
-    data = body if isinstance(body, bytes) else json.dumps(body or {}).encode()
+    data = b"" if body is None else body if isinstance(body, bytes) else json.dumps(body).encode()
     return api.handle(method, url, headers, data)
 
 
@@ -34,4 +34,4 @@ def test_flow_over_http(svc, store):
     assert call(api, "POST", "/v1/drafts", {})[0] == 400
     st, rv = call(api, "POST", "/v1/reviews", {"question_set": ref, "decision": "REJECTED",
                                                "clinical_basis_approved": False, "reason": "철회"})
-    assert st == 200 and store.reader().latest("qs-main") == ref
+    assert st == 200 and store.reader().latest("qs-main") == ref, rv

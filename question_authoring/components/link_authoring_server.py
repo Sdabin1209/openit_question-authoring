@@ -112,7 +112,7 @@ class Api:
         read = frozenset(write | {"reader"})
         self._counts: dict = {}              # (패턴, 상태) -> 건수. 프로세스 안의 값뿐이다(저장소를 부르지 않는다, R10.11)
         self._counts_lock = threading.Lock()
-        self.app = App(self._routes(read, write), tm, ready=self._readyz, on_result=self._count)
+        self.app = App(self._routes(read, write), tm, ready=self._readyz, on_result=self._count, contract_service="question-authoring", contract_bindings={"read_roles": sorted(read), "write_roles": sorted(write)})
 
     # ---- 입구 ----
     def handle(self, method: str, url: str, headers: Mapping[str, str], body: bytes = b"") -> tuple[int, dict]:
