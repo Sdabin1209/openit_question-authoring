@@ -122,7 +122,13 @@ class Api:
         env = {"REQUEST_METHOD": method, "PATH_INFO": unquote(u.path), "QUERY_STRING": u.query,
                "CONTENT_LENGTH": str(len(body)), "wsgi.input": io.BytesIO(body)}
         for k, v in headers.items():
-            env["HTTP_" + k.upper().replace("-", "_")] = v
+            if k.lower() == "content-type":
+                env["CONTENT_TYPE"] = v
+            else:
+                env["HTTP_" + k.upper().replace("-", "_")] = v
+        if body and "CONTENT_TYPE" not in env:
+            # 실제 클라이언트처럼 매체를 밝힌다(계약 openapi/question-authoring.json 이 정하고 link 가 강제, 3.4.19): 자료 원본은 octet-stream, 나머지는 JSON
+            env["CONTENT_TYPE"] = "application/octet-stream" if u.path == "/v1/materials" else "application/json"
         status, hdrs, data = self.app.handle(env)
         if not data:
             return status, {}

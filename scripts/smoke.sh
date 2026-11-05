@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# deploy 와 같은 실행 조건으로 띄운다(읽기 전용 루트, /tmp tmpfs, cap_drop ALL, no-new-privileges, 쓸 수 있는 경로는 deploy compose 와 같게): 2026-11-06 E2E 기동에서야 드러난 쓰기 경로 결함을 스모크에서 잡는다
 # 스모크 시험: 이미지를 빌드하고, 컨테이너를 띄워 /healthz, /readyz, 등록-확인 흐름을 확인한다.
 # SMOKE_DB=postgres면 임시 docker 네트워크에 postgres:16을 띄워 PostgreSQL 경로로 시험한다(기본은 SQLite 경로).
 # 실행 파일 이름은 DOCKER 환경 변수로만 바꿀 수 있다(기본 docker).
@@ -58,7 +59,7 @@ else
   EXTRA=(-e QA_DEV_MODE=1)   # SQLite는 개발·시험 구성이다. 운영 구성(PostgreSQL URL과 토큰)이 아니면 서비스가 시작을 거부한다
 fi
 chmod 755 "$SECDIR"; chmod 644 "$SECDIR"/*
-"$DOCKER" run -d --name "$NAME" --network "$NET" "${EXTRA[@]}" -v "$SECDIR:/run/secrets:ro" -e QA_REQUIRE_TWO_PERSON=true -e QA_AUTHOR_TOKENS_FILE=/run/secrets/author_tokens -e QA_READ_TOKENS_FILE=/run/secrets/read_tokens "$IMG" >/dev/null
+"$DOCKER" run -d --name "$NAME" --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /data:uid=10001,gid=10001 --network "$NET" "${EXTRA[@]}" -v "$SECDIR:/run/secrets:ro" -e QA_REQUIRE_TWO_PERSON=true -e QA_AUTHOR_TOKENS_FILE=/run/secrets/author_tokens -e QA_READ_TOKENS_FILE=/run/secrets/read_tokens "$IMG" >/dev/null
 "$DOCKER" run -d --name "$CURLC" --network "container:$NAME" --entrypoint sleep "$CURL_IMAGE" 3600 >/dev/null      # 확인 컨테이너(이 스크립트가 만든 이름만 정리한다)
 echo "접속: $BASE (확인 컨테이너가 $NAME 의 네트워크를 공유, 호스트 포트 없음)"
 # 왜 30초: 단독 기동 시간 측정(2026-11-03, 이 PC, 3회): 컨테이너 시작부터 /healthz 응답까지 각 1초(정수 초 측정, 실제 1~2초 미만). 여러 영역 스모크를 한 서버에서 병렬로 돌리면 느려질 수 있어 단독 측정값의 여러 배 여유를 둔다(표준 값이 아니라 측정에서 거꾸로 정한 값).
@@ -83,14 +84,14 @@ if [ "$SMOKE_DB" = postgres ]; then
   echo "DB 암호 비노출 확인(inspect, env, logs)"
 fi
 AUTH="Authorization: Bearer $TOKEN"
-did=$(cud -fsS -X POST -H "$AUTH" --data-binary @- <<<"$(sed s/qs-main/qs-smoke/ "$here/examples/question_form.txt")" \
+did=$(cud -fsS -X POST -H "$AUTH" -H "Content-Type: application/octet-stream" --data-binary @- <<<"$(sed s/qs-main/qs-smoke/ "$here/examples/question_form.txt")" \
   "$BASE/v1/materials?question_set_id=qs-smoke&filename=form.txt" | python3 -c 'import sys,json;print(json.load(sys.stdin)["draft_id"])')
 ph=$(cu -fsS -H "$AUTH" "$BASE/v1/drafts/$did/preview" | python3 -c 'import sys,json;d=json.load(sys.stdin);assert d["ready_to_confirm"];print(d["preview_hash"])')
-ref=$(cu -fsS -X POST -H "$AUTH" -d "{\"preview_hash\":\"$ph\"}" "$BASE/v1/drafts/$did/confirm"); echo "$ref"
+ref=$(cu -fsS -X POST -H "$AUTH" -H "Content-Type: application/json" -d "{\"preview_hash\":\"$ph\"}" "$BASE/v1/drafts/$did/confirm"); echo "$ref"
 # 4-eyes(D88): 저자의 확인만으로는 검수 완료가 아니다. 같은 저자가 스스로 임상 승인하면 거부되고, 검수 역할의 다른 주체가 승인해야 한다
-code=$(cu -s -o /dev/null -w '%{http_code}' -X POST -H "$AUTH" -d "{\"question_set\":$ref,\"decision\":\"APPROVED\",\"clinical_basis_approved\":true}" "$BASE/v1/reviews")
+code=$(cu -s -o /dev/null -w '%{http_code}' -X POST -H "$AUTH" -H "Content-Type: application/json" -d "{\"question_set\":$ref,\"decision\":\"APPROVED\",\"clinical_basis_approved\":true}" "$BASE/v1/reviews")
 [ "$code" = "403" ] || { echo "저자의 자기 승인이 거부되지 않음: $code"; exit 1; }
-cu -fsS -X POST -H "Authorization: Bearer $REVTOKEN" -d "{\"question_set\":$ref,\"decision\":\"APPROVED\",\"clinical_basis_approved\":true}" "$BASE/v1/reviews" >/dev/null
+cu -fsS -X POST -H "Authorization: Bearer $REVTOKEN" -H "Content-Type: application/json" -d "{\"question_set\":$ref,\"decision\":\"APPROVED\",\"clinical_basis_approved\":true}" "$BASE/v1/reviews" >/dev/null
 code=$(cu -s -o /dev/null -w '%{http_code}' "$BASE/v1/drafts")
 [ "$code" = "401" ] || { echo "인증 없는 요청이 401로 거부되지 않음(계약 CONVENTIONS 6절): $code"; exit 1; }
 cu -fsS -H "$AUTH" "$BASE/v1/signals" | grep -q DISABLED || { echo "신호 비활성 응답 실패"; exit 1; }

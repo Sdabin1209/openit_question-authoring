@@ -11,7 +11,8 @@ function say(text, kind) { const m = $("#msg"); m.textContent = text; m.classNam
 
 async function api(method, path, body, raw) {
   const opt = {method, headers: {"Accept": "application/json"}, credentials: "same-origin", redirect: "manual"};
-  if (body !== undefined) { opt.body = raw ? body : JSON.stringify(body); if (!raw) opt.headers["Content-Type"] = "application/json"; }
+  // 매체는 계약(openapi/question-authoring.json)이 정한다: JSON 본문은 application/json, 자료 원본(raw)은 application/octet-stream
+  if (body !== undefined) { opt.body = raw ? body : JSON.stringify(body); opt.headers["Content-Type"] = raw ? "application/octet-stream" : "application/json"; }
   let r;
   try { r = await fetch(path, opt); } catch (e) { throw {code: "NETWORK", message: "서버에 닿지 못했다. 잠시 뒤 다시 시도한다.", retryable: true}; }
   if (r.type === "opaqueredirect" || r.status === 302) { location.href = AUTH.login + "?rd=" + encodeURIComponent(location.pathname); throw {code: "LOGIN", message: "로그인이 필요하다."}; }

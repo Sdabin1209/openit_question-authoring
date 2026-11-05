@@ -34,7 +34,8 @@ def defv(schema, d):
 
 
 def call(api, method, url, body=None, headers=H):
-    data = body if isinstance(body, bytes) else json.dumps(body or {}).encode()
+    # GET 에는 본문을 보내지 않는다(계약이 GET 본문을 정하지 않는다, 실제 클라이언트도 보내지 않는다)
+    data = body if isinstance(body, bytes) else (b"" if body is None and method == "GET" else json.dumps(body or {}).encode())
     return api.handle(method, url, headers, data)
 
 
@@ -65,7 +66,7 @@ def test_request_bodies_invalid_examples_are_400(api, name):
     did = draft(api)
     st, out = call(api, "POST", BODY_ROUTES[name](did), ex("invalid", f"AuthoringRequests.{name}"))
     assert st == 400 and out["code"] == "INVALID_RECORD", (st, out)
-    assert "AuthoringRequests" in out["message"]
+    assert f"body ({name})" in out["message"], out          # 3.4.19 link: 위치와 그 요청의 스키마 이름(값은 싣지 않는다)
 
 
 @pytest.mark.parametrize("name", sorted(BODY_ROUTES))
@@ -73,7 +74,7 @@ def test_request_bodies_reject_unknown_key(api, name):
     did = draft(api)
     body = dict(ex("valid", f"AuthoringRequests.{name}"), typo_field=1)
     st, out = call(api, "POST", BODY_ROUTES[name](did), body)
-    assert st == 400 and "AuthoringRequests" in out["message"], (st, out)
+    assert st == 400 and f"body ({name})" in out["message"], (st, out)
 
 
 def test_unknown_key_does_not_reach_the_service(api, store):
@@ -85,14 +86,14 @@ def test_unknown_key_does_not_reach_the_service(api, store):
 def test_material_query_unknown_key_and_bad_flag(api):
     for q in ("question_set_id=qs-main&filename=f.txt&nope=1", "question_set_id=qs-main&filename=f.txt&accept_phi_warning=yes"):
         st, out = call(api, "POST", "/v1/materials?" + q, example_text())
-        assert st == 400 and "AuthoringRequests" in out["message"], (q, st, out)
+        assert st == 400 and out["message"].startswith("query"), (q, st, out)
 
 
 def test_signals_query_rejected(svc):
     api = Api(svc, {"tok-a": Actor("dr-kim", "question-author")}, signals=object())
     for q in ("max_cases=many", "typo=1"):
         st, out = call(api, "GET", "/v1/signals?" + q)
-        assert st == 400 and "AuthoringRequests" in out["message"], (q, st, out)
+        assert st == 400 and out["message"].startswith("query"), (q, st, out)
 
 
 def test_valid_request_examples_pass_the_request_check():

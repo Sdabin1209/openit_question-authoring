@@ -43,7 +43,8 @@ def api(svc4):
 
 
 def call(api, method, url, body=None, h=H):
-    return api.handle(method, url, h, body if isinstance(body, bytes) else json.dumps(body or {}).encode())
+    # GET 에는 본문을 보내지 않는다(계약이 GET 본문을 정하지 않는다, 실제 클라이언트도 보내지 않는다)
+    return api.handle(method, url, h, body if isinstance(body, bytes) else (b"" if body is None and method == "GET" else json.dumps(body or {}).encode()))
 
 
 def test_every_authoring_response_shape_passes_the_contract(api):
