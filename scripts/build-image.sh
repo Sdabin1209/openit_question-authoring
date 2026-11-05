@@ -6,6 +6,7 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ $# -eq 1 ] || { echo "사용: bash scripts/build-image.sh <요청 JSON 파일>" >&2; exit 2; }
 DOCKER="${DOCKER:-docker}"
+. "$(dirname "${BASH_SOURCE[0]}")/docker-env.sh"   # 사용자 ~/.docker 에 기대지 않는다
 # 해석기 기본은 영역 자신의 환경(scripts/setup-env.sh가 만든 리포의 .venv). 왜: 계약 패키지가 거기에 설치된다. PYTHON으로 바꿀 수 있다
 if [ -n "${PYTHON:-}" ]; then PY="$PYTHON"; elif [ -x "$here/../.venv/bin/python" ]; then PY="$here/../.venv/bin/python"; else
   echo "build-image: 해석기를 찾지 못했다. bash scripts/setup-env.sh 로 .venv를 만들거나 PYTHON을 지정하라(boundary-contracts 2.5 이상과 jsonschema 필요)" >&2; exit 2; fi

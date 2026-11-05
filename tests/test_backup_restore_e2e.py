@@ -28,6 +28,11 @@ REST_IMAGE, RESTIC_IMAGE, PY_IMAGE = image("REST_SERVER_IMAGE"), image("RESTIC_I
 PROXY_PY = Path(__file__).resolve().parent / "backup_e2e" / "connect_proxy.py"
 
 
+def docker_env():
+    """restic 래퍼(docker run)가 같은 설정·엔진으로 돈다(tests/helpers.py apply_docker_env 가 정한 값)."""
+    return {k: os.environ[k] for k in ("DOCKER_CONFIG", "DOCKER_HOST") if k in os.environ}
+
+
 def sh(*a, check=True, timeout=120, **k):
     return subprocess.run(a, capture_output=True, text=True, check=check, timeout=timeout, **k)
 
@@ -111,7 +116,7 @@ def env_for(se, url_with_schema, tmp):
     dbf.chmod(0o644)
     return {"OPENIT_BACKUP_URL": f"https://{HOST_NAME}:{se['port']}/question-authoring", "OPENIT_BACKUP_CREDENTIALS_FILE": str(cred),
             "OPENIT_BACKUP_REPO_PASSWORD_FILE": str(d / "repo-password"), "QA_DATABASE_URL_FILE": str(dbf),
-            "SSL_CERT_FILE": str(d / "root.crt"), "PATH": os.environ["PATH"]}
+            "SSL_CERT_FILE": str(d / "root.crt"), "PATH": os.environ["PATH"], **docker_env()}
 
 
 def with_schema(url, schema):
@@ -124,7 +129,7 @@ def with_schema(url, schema):
 def restic(se, env, *argv, stdin=None):
     child = {"PATH": env["PATH"], "HOME": "/tmp", "RESTIC_CACHE_DIR": "/tmp/restic-cache", "RESTIC_REPOSITORY": "rest:" + env["OPENIT_BACKUP_URL"],
              "RESTIC_PASSWORD_FILE": env["OPENIT_BACKUP_REPO_PASSWORD_FILE"], "RESTIC_REST_USERNAME": "backup-user", "RESTIC_REST_PASSWORD": se["pw"],
-             "HTTPS_PROXY": se["proxy_url"], "SSL_CERT_FILE": env["SSL_CERT_FILE"]}
+             "HTTPS_PROXY": se["proxy_url"], "SSL_CERT_FILE": env["SSL_CERT_FILE"], **docker_env()}
     return subprocess.run([se["wrapper"], *argv], capture_output=True, env=child, timeout=int(os.environ.get("RESTIC_DBG_TIMEOUT", HANG_GUARD_SECONDS)), stdin=stdin)
 
 

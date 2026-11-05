@@ -5,6 +5,7 @@
 # 환경: DEV_PG_SUFFIX(같은 리포에서 여러 개를 동시에 띄울 때 구분 이름). 컨테이너·프로젝트 이름에 리포 이름을 넣는다(여러 영역이 같은 서버에서 동시에 돌 때 충돌하지 않게).
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
+. "$(dirname "${BASH_SOURCE[0]}")/docker-env.sh"   # 사용자 ~/.docker 에 기대지 않는다
 CMD="${1:-}"
 SUFFIX="${DEV_PG_SUFFIX:+-$DEV_PG_SUFFIX}"
 PROJECT="question-authoring-dev-pg${SUFFIX}"

@@ -146,3 +146,26 @@ def image(key):
         if line.startswith(key + "="):
             return line.split("=", 1)[1]
     raise KeyError(key)
+
+
+def apply_docker_env():
+    """scripts/docker-env.sh 와 같은 규칙(DOCKER_CONFIG: 주어지면 그대로, 없으면 리포 build/docker-config 의 빈 설정. 현재 컨텍스트의 엔진이 기본 소켓이 아니면 DOCKER_HOST).
+    사용자 ~/.docker 는 읽지도 고치지도 않는다. docker 를 부르는 시험(자식 프로세스 포함)이 같은 설정을 쓰도록 import 때 한 번 적용한다."""
+    import os
+    import shutil
+    import subprocess
+    if os.environ.get("DOCKER_CONFIG") or shutil.which("docker") is None:
+        return
+    if not os.environ.get("DOCKER_HOST"):
+        r = subprocess.run(["docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"], capture_output=True, text=True)
+        ep = r.stdout.strip() if r.returncode == 0 else ""
+        if ep and ep != "unix:///var/run/docker.sock":
+            os.environ["DOCKER_HOST"] = ep
+    d = Path(__file__).resolve().parent.parent / "build" / "docker-config"
+    d.mkdir(parents=True, exist_ok=True)
+    if not (d / "config.json").exists():
+        (d / "config.json").write_text("{}\n", encoding="utf-8")
+    os.environ["DOCKER_CONFIG"] = str(d)
+
+
+apply_docker_env()
