@@ -293,9 +293,9 @@ def test_error_status_codes_match_contract_table(svc, monkeypatch):
     """QA-14: 상태 코드는 계약 CONVENTIONS.md 9절 표(독립 출처)에서 읽은 값과 같아야 한다. 표에 없는 코드(500, 413)를 내지 않는다."""
     import pathlib, re
     from question_authoring.components.link_authoring_server import STATUS
-    doc = pathlib.Path(__file__).resolve().parents[2] / "boundary-contracts" / "CONVENTIONS.md"
-    if not doc.exists():
-        pytest.skip("계약 문서가 이웃 폴더에 없다")
+    from pinned_tree import pinned_tree, ROOT as _R   # 계약 문서는 requirements.lock 의 고정 태그에서 읽는다(옆 폴더 작업 트리가 아니다, 건너뛰지 않는다)
+    tag = re.search(r"boundary-contracts\.git@(v[0-9.]+)", (_R / "requirements.lock").read_text(encoding="utf-8")).group(1)
+    doc = pinned_tree("boundary-contracts", tag) / "CONVENTIONS.md"
     table = {}
     for line in doc.read_text(encoding="utf-8").split("## 9.")[1].split("HTTP 층의")[0].splitlines():
         m = re.match(r"\|\s*([A-Z_, ]+?)\s*\|\s*(\d{3})\s*\|", line)
