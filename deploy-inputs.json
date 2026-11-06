@@ -1,0 +1,307 @@
+{
+  "schema_version": 1,
+  "image": "question-authoring",
+  "read_only_root": true,
+  "exec_absolute_argv": true,
+  "role_env": null,
+  "roles": {
+    "default": {
+      "env_schema": "QuestionAuthoringEnv",
+      "process": {
+        "uid": 10001,
+        "gid": 10001
+      },
+      "files": [
+        {
+          "path_env": "SSL_CERT_FILE",
+          "path": "/etc/openit/pki/root_ca.crt",
+          "directory": false,
+          "kind": "ca-bundle",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "QA_DATABASE_URL_FILE",
+          "path": "/run/secrets/db-qa-dsn",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "QA_FAILURES_TOKEN_FILE",
+          "path": "/run/secrets/ops-read-question-authoring",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "QA_AUTHOR_TOKENS_FILE",
+          "path": "/run/secrets/qa-author-tokens",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "QA_GATEWAY_TOKENS_FILE",
+          "path": "/run/secrets/qa-gateway-tokens",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "QA_READ_TOKENS_FILE",
+          "path": "/run/secrets/qa-read-tokens",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        }
+      ],
+      "writable": [
+        {
+          "path": "/data",
+          "persist": false,
+          "written_by": {
+            "uid": 10001,
+            "gid": 10001
+          }
+        },
+        {
+          "path": "/tmp",
+          "persist": false,
+          "written_by": {
+            "uid": 10001,
+            "gid": 10001
+          }
+        }
+      ],
+      "capabilities": [],
+      "sysctls": {}
+    }
+  },
+  "jobs": {
+    "backup": {
+      "env_schema": "QuestionAuthoringBackupEnv",
+      "process": {
+        "uid": 10001,
+        "gid": 10001
+      },
+      "files": [
+        {
+          "path_env": "SSL_CERT_FILE",
+          "path": "/etc/openit/pki/root_ca.crt",
+          "directory": false,
+          "kind": "ca-bundle",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "OPENIT_BACKUP_CREDENTIALS_FILE",
+          "path": "/run/secrets/backup-qa-credentials",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "OPENIT_BACKUP_REPO_PASSWORD_FILE",
+          "path": "/run/secrets/backup-qa-repo-password",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "QA_DATABASE_URL_FILE",
+          "path": "/run/secrets/db-qa-dsn",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        }
+      ],
+      "writable": [
+        {
+          "path": "/data",
+          "persist": false,
+          "written_by": {
+            "uid": 10001,
+            "gid": 10001
+          }
+        },
+        {
+          "path": "/tmp",
+          "persist": false,
+          "written_by": {
+            "uid": 10001,
+            "gid": 10001
+          }
+        }
+      ],
+      "capabilities": [],
+      "sysctls": {}
+    },
+    "purge": {
+      "env_schema": "QuestionAuthoringEnv",
+      "process": {
+        "uid": 10001,
+        "gid": 10001
+      },
+      "files": [
+        {
+          "path_env": "SSL_CERT_FILE",
+          "path": "/etc/openit/pki/root_ca.crt",
+          "directory": false,
+          "kind": "ca-bundle",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "QA_DATABASE_URL_FILE",
+          "path": "/run/secrets/db-qa-dsn",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "QA_FAILURES_TOKEN_FILE",
+          "path": "/run/secrets/ops-read-question-authoring",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "QA_AUTHOR_TOKENS_FILE",
+          "path": "/run/secrets/qa-author-tokens",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "QA_GATEWAY_TOKENS_FILE",
+          "path": "/run/secrets/qa-gateway-tokens",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "QA_READ_TOKENS_FILE",
+          "path": "/run/secrets/qa-read-tokens",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        }
+      ],
+      "writable": [
+        {
+          "path": "/data",
+          "persist": false,
+          "written_by": {
+            "uid": 10001,
+            "gid": 10001
+          }
+        },
+        {
+          "path": "/tmp",
+          "persist": false,
+          "written_by": {
+            "uid": 10001,
+            "gid": 10001
+          }
+        }
+      ],
+      "capabilities": [],
+      "sysctls": {}
+    },
+    "restore": {
+      "env_schema": "QuestionAuthoringBackupEnv",
+      "process": {
+        "uid": 10001,
+        "gid": 10001
+      },
+      "files": [
+        {
+          "path_env": "SSL_CERT_FILE",
+          "path": "/etc/openit/pki/root_ca.crt",
+          "directory": false,
+          "kind": "ca-bundle",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "OPENIT_BACKUP_CREDENTIALS_FILE",
+          "path": "/run/secrets/backup-qa-credentials",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "OPENIT_BACKUP_REPO_PASSWORD_FILE",
+          "path": "/run/secrets/backup-qa-repo-password",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "QA_DATABASE_URL_FILE",
+          "path": "/run/secrets/db-qa-dsn",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        }
+      ],
+      "writable": [
+        {
+          "path": "/data",
+          "persist": false,
+          "written_by": {
+            "uid": 10001,
+            "gid": 10001
+          }
+        },
+        {
+          "path": "/tmp",
+          "persist": false,
+          "written_by": {
+            "uid": 10001,
+            "gid": 10001
+          }
+        }
+      ],
+      "capabilities": [],
+      "sysctls": {}
+    }
+  }
+}

@@ -11,7 +11,8 @@ DOCKER="${DOCKER:-docker}"
 "$DOCKER" info >/dev/null 2>&1 || { echo "오류: $DOCKER 데몬에 연결할 수 없다. 데몬이 실행 중이고 이 사용자가 접근할 수 있는지 확인하라." >&2; exit 1; }
 IMG=question-authoring:smoke-$$   # 왜 $$: 스모크가 동시에 돌면 고정 태그를 서로 덮어쓰고 정리가 남의 이미지를 지웠다(병렬 재현). 실행마다 고유 태그, 정리는 자기 태그만
 NAME=question-authoring-smoke-$$
-TOKEN=smoke-token
+TOKEN=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+READTOKEN=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
 # 빌드는 scripts/build-local-image.sh(영역 진입점 build-image.sh, 계약 BuildImageRequest)로 한다. 버전은 잠금 파일의 핀이다.
 BUILDTMP="$(mktemp -d)"
 bash "$here/scripts/build-local-image.sh" "$IMG" "$BUILDTMP/result.json"
@@ -43,9 +44,9 @@ on_exit() {
 trap on_exit EXIT
 EXTRA=()
 # 비밀은 파일로 주입한다(D84): NAME_FILE. 환경 변수에는 경로만 있다.
-REVTOKEN=smoke-reviewer-token
+REVTOKEN=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
 printf '%s' "$TOKEN:smoke-author:question-author,$REVTOKEN:smoke-reviewer:clinical-reviewer" > "$SECDIR/author_tokens"
-printf '%s' "smoke=read-token" > "$SECDIR/read_tokens"
+printf '%s' "smoke=$READTOKEN" > "$SECDIR/read_tokens"
 "$DOCKER" network create "$NET" >/dev/null
 if [ "$SMOKE_DB" = postgres ]; then
   PGPW=$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')
@@ -77,7 +78,9 @@ ui=$(cu -fsS "$BASE/ui/") && grep -q "문진표 저작" <<<"$ui" || { echo "저�
 mt=$(cu -fsS -H "Authorization: Bearer wrong-token" "$BASE/metrics") && grep -q "^qa_up 1" <<<"$mt" || { echo "/metrics 가 인증 없이 200 이 아님(R10.11)"; exit 1; }
 "$DOCKER" exec "$NAME" restic version >/dev/null || { echo "백업 도구(restic)가 이미지에 없음(R10.1)"; exit 1; }
 [ "$("$DOCKER" exec "$NAME" id -u)" != "0" ] || { echo "root로 실행 중"; exit 1; }
-if "$DOCKER" inspect "$NAME" | grep -q -e "$TOKEN" -e read-token || "$DOCKER" exec "$NAME" env | grep -q -e "$TOKEN" -e read-token; then echo "비밀이 env/inspect에 노출됨"; exit 1; fi
+inspection=$("$DOCKER" inspect "$NAME")
+container_env=$("$DOCKER" exec "$NAME" env)
+if grep -Fq -e "$TOKEN" -e "$READTOKEN" -e "$REVTOKEN" <<<"$inspection" || grep -Fq -e "$TOKEN" -e "$READTOKEN" -e "$REVTOKEN" <<<"$container_env"; then echo "비밀이 env/inspect에 노출됨"; exit 1; fi
 echo "비밀 비노출 확인(inspect, exec env)"
 if [ "$SMOKE_DB" = postgres ]; then
   if "$DOCKER" inspect "$NAME" | grep -q "$PGPW" || "$DOCKER" exec "$NAME" env | grep -q "$PGPW" || "$DOCKER" logs "$NAME" 2>&1 | grep -q "$PGPW"; then echo "DB 암호가 노출됨"; exit 1; fi
@@ -95,7 +98,7 @@ cu -fsS -X POST -H "Authorization: Bearer $REVTOKEN" -H "Content-Type: applicati
 code=$(cu -s -o /dev/null -w '%{http_code}' "$BASE/v1/drafts")
 [ "$code" = "401" ] || { echo "인증 없는 요청이 401로 거부되지 않음(계약 CONVENTIONS 6절): $code"; exit 1; }
 cu -fsS -H "$AUTH" "$BASE/v1/signals" | grep -q DISABLED || { echo "신호 비활성 응답 실패"; exit 1; }
-RT="Authorization: Bearer read-token"
+RT="Authorization: Bearer $READTOKEN"
 cu -fsS -H "$RT" "$BASE/v1/question-sets" | grep -q '"qs-smoke"' || { echo "list_ids 실패"; exit 1; }
 cu -fsS -H "$RT" "$BASE/v1/question-sets/qs-smoke/latest?reviewed_only=true" | grep -q '"version": "1"' || { echo "latest 실패"; exit 1; }
 cu -fsS -H "$RT" "$BASE/v1/question-sets/qs-smoke/versions/1" | python3 -c 'import sys,json;assert json.load(sys.stdin)["version"]==1'

@@ -10,6 +10,36 @@ DOCKER="${DOCKER:-docker}"
 # 해석기 기본은 영역 자신의 환경(scripts/setup-env.sh가 만든 리포의 .venv). 왜: 계약 패키지가 거기에 설치된다. PYTHON으로 바꿀 수 있다
 if [ -n "${PYTHON:-}" ]; then PY="$PYTHON"; elif [ -x "$here/../.venv/bin/python" ]; then PY="$here/../.venv/bin/python"; else
   echo "build-image: 해석기를 찾지 못했다. bash scripts/setup-env.sh 로 .venv를 만들거나 PYTHON을 지정하라(boundary-contracts 2.5 이상과 jsonschema 필요)" >&2; exit 2; fi
+# 주입 선언(계약 ContainerInputs 3.5.0, 라벨 io.openit.inputs): 정본은 리포 안 JSON. 라벨로 달기 전에 계약으로 검증하고(R7), 빌드한 이미지의 실행 사용자와 대조한다.
+# 왜 대조하는가: 배치 영역은 선언의 숫자 uid:gid 로 파일·쓰기 권한을 준다. 이미지와 다르면 기동에서야 권한 오류가 난다(2026-11-06 DB 비밀 읽기 실패).
+inputs_label() {   # inputs_label <선언 파일> <이미지 이름> -> 한 줄 JSON(표준 출력)
+  "${PYTHON:-${PY:-python3}}" -c '
+import json, sys
+from boundary_contracts import validator
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+if d.get("image") != sys.argv[2]:
+    sys.exit("%s 의 image(%s)가 이미지 이름 %s 와 다르다" % (sys.argv[1], d.get("image"), sys.argv[2]))
+errs = list(validator("ContainerInputs").iter_errors(d))
+if errs:
+    sys.exit("%s 가 ContainerInputs 를 어긴다: " % sys.argv[1] + ", ".join("/" + "/".join(map(str, e.absolute_path)) + ":" + e.validator for e in errs[:5]))
+print(json.dumps(d, ensure_ascii=False, separators=(",", ":"), sort_keys=True))' "$1" "$2"
+}
+inputs_check() {   # inputs_check <이미지 태그> <inputs_label 출력>: 다르면 이미지를 지우고 실패
+  local u g cu
+  # 실행 사용자: 이미지 안 id 로 읽는다. id 가 없는 이미지(distroless)는 이미지 설정 User 가 숫자 uid:gid 일 때만 그 값을 쓴다(이름이면 판정하지 못해 실패)
+  if u=$("${DOCKER:-docker}" run --rm --network none --entrypoint id "$1" -u 2>/dev/null) && g=$("${DOCKER:-docker}" run --rm --network none --entrypoint id "$1" -g 2>/dev/null); then :
+  else
+    cu=$("${DOCKER:-docker}" image inspect "$1" --format '{{.Config.User}}' 2>/dev/null)
+    if [[ "$cu" =~ ^([0-9]+):([0-9]+)$ ]]; then u=${BASH_REMATCH[1]}; g=${BASH_REMATCH[2]}
+    else "${DOCKER:-docker}" rmi -f "$1" >/dev/null 2>&1; echo "build-image: 이미지 실행 사용자를 읽지 못했다(id 없음, User=$cu): $1" >&2; return 1; fi
+  fi
+  "${PYTHON:-${PY:-python3}}" -c '
+import json, sys
+d = json.loads(sys.argv[1]); u, g = int(sys.argv[2]), int(sys.argv[3])
+bad = sorted(k for s in ("roles", "jobs") for k, st in d[s].items() if (st["process"]["uid"], st["process"]["gid"]) != (u, g))
+sys.exit("주입 선언의 process 가 이미지 실행 사용자 %d:%d 와 다르다: %s" % (u, g, bad) if bad else 0)' "$2" "$u" "$g" \
+    || { "${DOCKER:-docker}" rmi -f "$1" >/dev/null 2>&1; echo "build-image: 주입 선언이 이미지와 다르다. 이미지를 지웠다: $1" >&2; return 1; }
+}
 # 요청 해석 결과(셸 대입문)는 먼저 변수로 받아 종료 코드를 확인한다: eval "$(...)"는 실패를 삼켜 다음 줄에서 엉뚱한 오류로 끝난다
 parsed="$("$PY" "$here/_build_request.py" "$1")" || { echo "build-image: 요청을 해석하지 못했다(위 메시지 참고)" >&2; exit 2; }
 eval "$parsed"      # SRC REVISION BOUNDARY_VERSION SURVEY_MAJOR IMAGE_TAG VARIANT BOUNDARY_SRC SURVEY_SRC
@@ -37,8 +67,10 @@ PYE
   mkdir -p "$tmp/ctx"; cp -r "$SRC/db" "$tmp/ctx/db"
   epoch="$(git -C "$SRC" show -s --format=%ct "$REVISION" 2>/dev/null || echo 0)"; find "$tmp/ctx" -exec touch -h -d "@$epoch" {} +
   echo "build-image: $IMAGE_TAG 빌드 (db 변형, revision $REVISION)" >&2
-  "$DOCKER" build -q -t "$IMAGE_TAG" -f "$tmp/ctx/db/Dockerfile" --label "io.openit.database=$dbdecl" --build-arg COMMIT="$REVISION" --build-arg BOUNDARY_TAG="$BOUNDARY_VERSION" \
+  inputs="$(inputs_label "$SRC/db/inputs.json" question-authoring-db)" || exit 2
+  "$DOCKER" build -q -t "$IMAGE_TAG" -f "$tmp/ctx/db/Dockerfile" --label "io.openit.database=$dbdecl" --label "io.openit.inputs=$inputs" --build-arg COMMIT="$REVISION" --build-arg BOUNDARY_TAG="$BOUNDARY_VERSION" \
     --build-arg SURVEY_SCHEMA_TAG="$SURVEY_MAJOR" --build-arg SOURCE_DATE_EPOCH="$epoch" --provenance=false --sbom=false "$tmp/ctx" >&2
+  inputs_check "$IMAGE_TAG" "$inputs" || exit 1
   id="$("$DOCKER" image inspect --format '{{.Id}}' "$IMAGE_TAG")"
   "$DOCKER" image inspect --format '{{json .Config.Labels}}' "$IMAGE_TAG" | "$PY" -c '
 import json, sys
@@ -93,9 +125,11 @@ if errs:
     sys.stderr.write("JobsDeclaration 위반: " + errs[0][:200] + "\n"); sys.exit(1)
 print(json.dumps(d, ensure_ascii=False, separators=(",", ":")))' "$ctx/deploy-jobs.json")" \
   || { echo "build-image: deploy-jobs.json이 계약 JobsDeclaration을 어기거나 읽을 수 없다" >&2; exit 2; }
+inputs="$(inputs_label "$SRC/deploy-inputs.json" question-authoring)" || exit 2
 echo "build-image: $IMAGE_TAG 빌드 (revision $REVISION, 계약 $BOUNDARY_VERSION, 문진 스키마 주 버전 $SURVEY_MAJOR)" >&2
-"$DOCKER" build -q -t "$IMAGE_TAG" --label "io.openit.exposure=$exposure" --label "io.openit.jobs=$jobs" --build-arg COMMIT="$REVISION" --build-arg BOUNDARY_TAG="$BOUNDARY_VERSION" \
+"$DOCKER" build -q -t "$IMAGE_TAG" --label "io.openit.exposure=$exposure" --label "io.openit.jobs=$jobs" --label "io.openit.inputs=$inputs" --build-arg COMMIT="$REVISION" --build-arg BOUNDARY_TAG="$BOUNDARY_VERSION" \
   --build-arg SURVEY_SCHEMA_TAG="$SURVEY_MAJOR" --build-arg SOURCE_DATE_EPOCH="$epoch" --provenance=false --sbom=false "$ctx" >&2
+inputs_check "$IMAGE_TAG" "$inputs" || exit 1
 # 라벨은 요청 값이 아니라 이미지에 실제로 붙은 것을 읽어 낸다
 id="$("$DOCKER" image inspect --format '{{.Id}}' "$IMAGE_TAG")"
 "$DOCKER" image inspect --format '{{json .Config.Labels}}' "$IMAGE_TAG" | "$PY" -c '

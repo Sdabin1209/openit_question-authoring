@@ -17,6 +17,7 @@ from referencing.jsonschema import DRAFT202012
 
 import boundary_contracts
 from boundary_contracts.errors import BoundaryError
+from boundary_contracts import format_checker as _bc_format_checker  # 형식(format) 검증기가 없으면 조용히 넘기지 않고 실패한다(계약 3.5.0)
 
 SCHEMA_DIR = Path(__file__).resolve().parents[2] / "schemas"
 _BASE = "https://openit.local/schemas/"
@@ -66,7 +67,7 @@ def _validator(name: str):
         else:
             base, _, frag = name.partition("#")
             uri = _BASE + base + ".schema.json" + (("#/$defs/" + frag) if frag else "")
-        _VAL[name] = jsonschema.Draft202012Validator({"$ref": uri}, registry=reg, format_checker=jsonschema.FormatChecker())
+        _VAL[name] = jsonschema.Draft202012Validator({"$ref": uri}, registry=reg, format_checker=_bc_format_checker({"$ref": uri}))
     return _VAL[name]
 
 

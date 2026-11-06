@@ -57,6 +57,7 @@ def _build(tmp_path, jobs_text):
     src.mkdir()
     (src / "Dockerfile").write_text("FROM scratch\n")
     (src / "deploy-exposure.json").write_text((ROOT / "deploy-exposure.json").read_text(encoding="utf-8"))
+    (src / "deploy-inputs.json").write_text((ROOT / "deploy-inputs.json").read_text(encoding="utf-8"))   # 주입 선언(계약 ContainerInputs 3.5.0)
     if jobs_text is not None:
         (src / "deploy-jobs.json").write_text(jobs_text)
     write_lock(src)

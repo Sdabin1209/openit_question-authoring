@@ -40,7 +40,10 @@ def test_required_labels_present_and_well_formed():
 def test_labels_validate_against_contract_schema():
     """계약 v2.2.2부터 ImageLabels가 패키지에 있다. 없으면 시험이 실패해야 한다(건너뛰지 않는다)."""
     from boundary_contracts import validator
-    assert list(validator("ImageLabels").iter_errors(dockerfile_labels())) == []
+    import json, pathlib
+    # 진입점(build-image)이 --label 로 다는 주입 선언(계약 ContainerInputs 3.5.0 필수): Dockerfile 만으로는 계약 이미지가 아니다
+    labels = {**dockerfile_labels(), "io.openit.inputs": json.dumps(json.loads((pathlib.Path(__file__).resolve().parents[1] / "deploy-inputs.json").read_text(encoding="utf-8")))}
+    assert list(validator("ImageLabels").iter_errors(labels)) == []
 
 
 BASE_IMAGE_ARGS = {"PYTHON_IMAGE"}                       # 기반 이미지 ARG(라벨 값이 아니다). 이름 목록을 명시해 예외로 한다

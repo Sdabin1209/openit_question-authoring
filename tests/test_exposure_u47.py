@@ -102,6 +102,7 @@ def test_build_image_attaches_the_declaration_as_label(tmp_path):
     src.mkdir()
     (src / "Dockerfile").write_text("FROM scratch\n")
     (src / "deploy-exposure.json").write_text((ROOT / "deploy-exposure.json").read_text(encoding="utf-8"))
+    (src / "deploy-inputs.json").write_text((ROOT / "deploy-inputs.json").read_text(encoding="utf-8"))   # 주입 선언(계약 ContainerInputs 3.5.0)
     (src / "deploy-jobs.json").write_text((ROOT / "deploy-jobs.json").read_text(encoding="utf-8"))
     write_lock(src)
     req = {"source_dir": str(src), "revision": "abcdef1", "versions": {"boundary": "v3.1.2", "survey_schema": "v3.0.0"},

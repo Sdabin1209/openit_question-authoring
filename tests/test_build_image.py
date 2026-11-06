@@ -46,6 +46,7 @@ def req(tmp_path):
     (src / "Dockerfile").write_text("FROM scratch\n")
     (src / "deploy-exposure.json").write_text((ROOT / "deploy-exposure.json").read_text(encoding="utf-8"))
     (src / "deploy-jobs.json").write_text((ROOT / "deploy-jobs.json").read_text(encoding="utf-8"))
+    (src / "deploy-inputs.json").write_text((ROOT / "deploy-inputs.json").read_text(encoding="utf-8"))   # 주입 선언(계약 ContainerInputs 3.5.0)
     (src / ".git").mkdir()
     (src / ".git" / "HEAD").write_text("x")
     (src / ".venv").mkdir()
@@ -113,11 +114,13 @@ FAKE_DOCKER = r'''#!/usr/bin/env bash
 # 가짜 docker: build 인자를 기록하고, inspect는 Dockerfile이 붙일 라벨을 인자에서 만들어 돌려준다
 log="$FAKE_LOG"
 case "$1" in
-  build) shift; echo "build $*" >> "$log"; ctx="${@: -1}"; ls -A "$ctx" >> "$log"; ls "$ctx/build/wheels" >> "$log" ;;
+  build) shift; echo "build $*" >> "$log"; printf '%s\0' "$@" > "$log.args"; ctx="${@: -1}"; ls -A "$ctx" >> "$log"; ls "$ctx/build/wheels" >> "$log" ;;
+  run) case "${@: -1}" in -u) echo 10001 ;; -g) echo 10001 ;; esac ;;   # 이미지 실행 사용자(주입 선언 정직성, 계약 ContainerInputs.process)
+  rmi) echo "rmi $*" >> "$log" ;;
   image) case "$4" in
       '{{.Id}}') echo "sha256:__SHA__" ;;
       *) c=$(grep -o -- '--build-arg COMMIT=[^ ]*' "$log" | cut -d= -f2); b=$(grep -o -- 'BOUNDARY_TAG=[^ ]*' "$log" | cut -d= -f2); s=$(grep -o -- 'SURVEY_SCHEMA_TAG=[^ ]*' "$log" | cut -d= -f2)
-         echo "{\"io.openit.service\":\"question-authoring\",\"io.openit.revision\":\"$c\",\"io.openit.contracts.boundary\":\"$b\",\"io.openit.contracts.survey-schema\":\"$s\",\"io.openit.model-runtime\":\"n/a\",\"org.other\":\"x\"}" ;;
+         echo "{\"io.openit.service\":\"question-authoring\",\"io.openit.revision\":\"$c\",\"io.openit.contracts.boundary\":\"$b\",\"io.openit.contracts.survey-schema\":\"$s\",\"io.openit.model-runtime\":\"n/a\",\"org.other\":\"x\"}" | python3 -c 'import json,sys; l=json.load(sys.stdin); a=open(sys.argv[1],"rb").read().split(b"\0"); l.update(dict(x.decode().split("=",1) for i,x in enumerate(a) if i and a[i-1]==b"--label" and x.startswith((b"io.openit.inputs=",)))); print(json.dumps(l))' "$log.args" ;;
     esac ;;
 esac
 '''
