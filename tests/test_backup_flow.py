@@ -71,7 +71,7 @@ def test_backup_goes_out_through_the_own_gateway_with_secrets_only_in_the_child_
 def run_main(tmp_path, monkeypatch, capsys, run):
     for k, v in env_of(tmp_path).items():
         monkeypatch.setenv(k, v)
-    monkeypatch.setenv("QA_DB_PATH", ":memory:")
+    monkeypatch.setenv("QA_DB_PATH", str(tmp_path / "questions.sqlite3"))   # 계약 4.0.0: 컨테이너 경로는 절대 경로(AbsolutePath)
     monkeypatch.setattr(backup_flow, "run", lambda env, proxy=None: run(env))
     rc = qa_main.main(["backup"])
     cap = capsys.readouterr()
@@ -154,7 +154,7 @@ def test_bad_egress_proxy_refuses_to_start(tmp_path, monkeypatch):
     """R1.8·CommonEnv: OPENIT_EGRESS_PROXY 가 loopback http 가 아니면 기동 때 거부한다(잡도 같다). 값은 메시지에 쓰지 않는다."""
     for k, v in env_of(tmp_path, OPENIT_EGRESS_PROXY="http://gateway.example:3128").items():
         monkeypatch.setenv(k, v)
-    monkeypatch.setenv("QA_DB_PATH", ":memory:")
+    monkeypatch.setenv("QA_DB_PATH", str(tmp_path / "questions.sqlite3"))   # 계약 4.0.0: 컨테이너 경로는 절대 경로(AbsolutePath)
     monkeypatch.setenv("QA_DEV_MODE", "1")
     with pytest.raises(SystemExit) as e:
         qa_main.main(["backup"])

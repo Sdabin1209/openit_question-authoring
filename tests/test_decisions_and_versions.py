@@ -2,7 +2,7 @@
 import json
 
 import pytest
-from boundary_contracts import load_schema, validator
+from boundary_contracts import PIPELINE_SCHEMA_VERSION, load_schema, validator
 from boundary_contracts.errors import BoundaryError
 
 from conftest import example_text
@@ -13,7 +13,7 @@ from question_authoring.wiring.service import Actor
 H = {"Authorization": "Bearer t-kim"}
 # 계약 예시(GateDecision.reject)를 이 시험의 문진표에 맞춘 값. 계약을 통과한다(아래 시험이 확인)
 GATE_DECISION = {
- "pipeline_schema_version": "3.0",
+ "pipeline_schema_version": PIPELINE_SCHEMA_VERSION,   # 계약 4.0.0: 클라이언트는 다른 MAJOR 레코드를 거부한다
  "decision_id": "gd-0002",
  "decided_at": "2026-10-14T00:00:00Z",
  "gate_policy_version": "1",
