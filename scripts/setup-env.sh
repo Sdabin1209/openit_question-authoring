@@ -35,7 +35,7 @@ rc=0
   echo "setup-env: OK ($(pwd)/.venv)"
 ) >&2 || rc=$?
 if [ $rc -eq 0 ]; then
-  printf '{"area":"question-authoring","status":"ok","exit_code":0,"seconds":%d,"environment":{"kind":"python-venv","path":".venv","test_command":[".venv/bin/python","-m","pytest","-q"]}}\n' "$((SECONDS - start))"
+  printf '{"area":"question-authoring","status":"ok","exit_code":0,"seconds":%d,"environment":{"kind":"python-venv","path":".venv","test_command":["bash","scripts/test-all.sh"]}}\n' "$((SECONDS - start))"
 else
   printf '{"area":"question-authoring","status":"fail","exit_code":%d,"seconds":%d}\n' "$rc" "$((SECONDS - start))"
 fi

@@ -46,7 +46,7 @@ def test_last_stdout_line_is_a_valid_report_even_with_noise(repo):
     assert not list(bc.validator("SetupEnvReport").iter_errors(rep)), rep
     assert "noise" not in p.stdout and "noise" in p.stderr              # 진행 기록은 표준 오류, 표준 출력에는 보고뿐
     assert rep["area"] == "question-authoring" and rep["status"] == "ok" and rep["exit_code"] == 0
-    assert rep["environment"] == {"kind": "python-venv", "path": ".venv", "test_command": [".venv/bin/python", "-m", "pytest", "-q"]}
+    assert rep["environment"] == {"kind": "python-venv", "path": ".venv", "test_command": ["bash", "scripts/test-all.sh"]}
 
 
 def test_failure_still_reports_a_valid_line_and_exits_nonzero(repo):
@@ -66,7 +66,7 @@ def test_rerun_is_idempotent(repo):
 def test_test_command_runs_this_areas_tests_from_the_repo_root(repo):
     """선언한 test_command가 리포 루트에서 이 영역 시험을 돌린다(전체 실행은 재귀라 수집만 한다. 깨끗한 clone에서 전체를 돌려 보고한다)."""
     cmd = json.loads(run(repo).stdout.strip().splitlines()[-1])["environment"]["test_command"]
-    assert cmd[:3] == [".venv/bin/python", "-m", "pytest"]
-    real = [sys.executable] + cmd[1:] + ["--collect-only", "tests/test_build_image.py"]    # 이 시험 환경의 python으로 같은 인자를 준다
-    p = subprocess.run(real, cwd=ROOT, capture_output=True, text=True)
+    assert cmd == ["bash", "scripts/test-all.sh"]   # PostgreSQL 포함 전체 시험(2026-11-07)
+    env = {**os.environ, "PYTHON": sys.executable, "TEST_DATABASE_URL": os.environ.get("TEST_DATABASE_URL") or "postgresql://unused@127.0.0.1:1/x"}   # 수집만: PostgreSQL 을 새로 띄우지 않는다
+    p = subprocess.run(cmd + ["--collect-only", "tests/test_build_image.py"], cwd=ROOT, capture_output=True, text=True, env=env)
     assert p.returncode == 0 and "test_build_image.py" in p.stdout
