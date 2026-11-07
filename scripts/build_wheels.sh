@@ -4,7 +4,7 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 . "$here/scripts/dep-repo.sh"   # 의존 리포 위치(환경 변수 → 옆 폴더 → 원격 태그 캐시)
-BC_TAG="${CONTRACTS_TAG:-v4.0.4}"
+BC_TAG="${CONTRACTS_TAG:-v4.0.5}"
 SS_TAG="${SURVEY_SCHEMA_TAG:-survey-schema-v4.1.4}"
 PY="${PYTHON:-python3}"
 rm -rf "$here/build"; mkdir -p "$here/build/bc-src" "$here/build/ss-src" "$here/build/wheels"
