@@ -7,3 +7,5 @@ build/
 *.sqlite3
 .gen/
 .dev-postgres/
+.logs/
+.docker-config/
