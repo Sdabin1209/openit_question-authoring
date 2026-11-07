@@ -65,6 +65,15 @@
           "schema": null,
           "required": true,
           "opened_by": "start-process"
+        },
+        {
+          "path_env": "QA_GATE_TOKEN_FILE",
+          "path": "/run/secrets/gate-read-question-authoring",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": false,
+          "opened_by": "start-process"
         }
       ],
       "writable": [
@@ -214,6 +223,15 @@
           "kind": "secret",
           "schema": null,
           "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "QA_GATE_TOKEN_FILE",
+          "path": "/run/secrets/gate-read-question-authoring",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": false,
           "opened_by": "start-process"
         }
       ],
