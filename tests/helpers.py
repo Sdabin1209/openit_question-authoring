@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import time
 
@@ -148,6 +149,18 @@ def image(key):
     raise KeyError(key)
 
 
+# 시험이 자식 프로세스에 넘기는 환경의 허용 목록(RUNTIME R9.1: 상속받은 환경을 통째로 넘기지 않는다). head check-container-inputs 의 최소 집합과 같다.
+# 그 호출에 더 필요한 이름은 min_env(NAME=값) 으로 이름을 명시해 더한다(예: GIT_CONFIG_GLOBAL, TEST_DATABASE_URL, 스크립트가 읽는 이름).
+ENV_ALLOWED = ("PATH", "HOME", "LANG", "TMPDIR", "DOCKER_CONFIG", "DOCKER_HOST")
+
+
+def min_env(*inherit, **extra):
+    """허용 목록의 이름 + inherit 로 이름을 댄 상속 변수 + extra 로 값을 준 변수. 호출 때마다 현재 환경에서 읽는다."""
+    env = {k: os.environ[k] for k in (*ENV_ALLOWED, *inherit) if k in os.environ}
+    env.update({k: str(v) for k, v in extra.items()})
+    return env
+
+
 def apply_docker_env():
     """scripts/docker-env.sh 와 같은 규칙(DOCKER_CONFIG: 주어지면 그대로, 없으면 리포 build/docker-config 의 빈 설정. 현재 컨텍스트의 엔진이 기본 소켓이 아니면 DOCKER_HOST).
     사용자 ~/.docker 는 읽지도 고치지도 않는다. docker 를 부르는 시험(자식 프로세스 포함)이 같은 설정을 쓰도록 import 때 한 번 적용한다."""
@@ -157,7 +170,7 @@ def apply_docker_env():
     if os.environ.get("DOCKER_CONFIG") or shutil.which("docker") is None:
         return
     if not os.environ.get("DOCKER_HOST"):
-        r = subprocess.run(["docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"], capture_output=True, text=True)
+        r = subprocess.run(["docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"], capture_output=True, text=True, env=min_env())
         ep = r.stdout.strip() if r.returncode == 0 else ""
         if ep and ep != "unix:///var/run/docker.sock":
             os.environ["DOCKER_HOST"] = ep

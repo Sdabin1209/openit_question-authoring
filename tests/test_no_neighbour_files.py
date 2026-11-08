@@ -1,5 +1,6 @@
 """워크스페이스 규칙: 이웃 영역 리포의 파일 구조(스크립트·설정 경로)에 기대지 않는다. 읽기가 허용된 것은 계약(boundary-contracts)·문진 스키마(survey-service/schema)·areas.json 뿐이다.
 이 리포의 안내·스크립트·시험이 `../deploy/…` 같은 이웃 경로를 실행·참조하지 않는지 본다(역사 기록인 CHANGELOG·audit 은 뺀다)."""
+from helpers import min_env
 import re
 import subprocess
 from pathlib import Path
@@ -33,5 +34,5 @@ def test_dev_postgres_is_this_repos_own_script_and_compose_file():
     comp = (ROOT / "compose.dev.yaml").read_text(encoding="utf-8")
     assert "QA_PG_IMAGE" in comp and '"127.0.0.1::5432"' in comp                  # Docker 가 호스트 포트를 배정한다
     assert "question-authoring" in sh and "DEV_PG_SUFFIX" in sh                   # 이름에 리포 이름
-    assert subprocess.run(["bash", "-n", str(ROOT / "scripts" / "dev-postgres.sh")], capture_output=True).returncode == 0
+    assert subprocess.run(["bash", "-n", str(ROOT / "scripts" / "dev-postgres.sh")], capture_output=True, env=min_env()).returncode == 0
     assert ".dev-postgres/" in (ROOT / ".gitignore").read_text(encoding="utf-8")

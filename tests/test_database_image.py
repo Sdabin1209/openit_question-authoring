@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from boundary_contracts import load_schema, validator
 
-from helpers import HANG_GUARD_SECONDS, image
+from helpers import HANG_GUARD_SECONDS, image, min_env
 
 DOCKER = shutil.which("docker")
 ROOT = Path(__file__).resolve().parent.parent
@@ -25,6 +25,7 @@ TEST_DECL = {"engine": "postgresql", "major": 16, "port": 5432, "accounts": [
 
 
 def sh(*a, check=True, timeout=HANG_GUARD_SECONDS, **k):
+    k.setdefault("env", min_env())   # R9.1: 상속 환경을 통째로 넘기지 않는다
     return subprocess.run(a, capture_output=True, text=True, check=check, timeout=timeout, **k)
 
 
@@ -34,7 +35,7 @@ DECLARED_UID, DECLARED_GID = (INPUTS["roles"]["default"]["process"][k] for k in 
 
 def _build_db_from_copy(tmp_path, mutate_dockerfile=None, mutate_inputs=None):
     """db/ 와 requirements.lock 만 가진 사본 소스로 scripts/build-image.sh(variant db)를 부른다. 선언 대조(inputs_check)를 실제 빌드 위에서 보려는 것이다."""
-    if DOCKER is None or subprocess.run([DOCKER, "info"], capture_output=True).returncode != 0:
+    if DOCKER is None or subprocess.run([DOCKER, "info"], capture_output=True, env=min_env()).returncode != 0:
         pytest.skip("docker 데몬 없음")
     src = tmp_path / "src"
     shutil.copytree(ROOT / "db", src / "db")
@@ -54,12 +55,11 @@ def _build_db_from_copy(tmp_path, mutate_dockerfile=None, mutate_inputs=None):
     req = {"source_dir": str(src), "revision": "abcdef1", "versions": {"boundary": bc, "survey_schema": "v4.0.0"}, "variant": "db", "image_tag": tag,
            "dependency_sources": {"boundary": str(tmp_path / "bc"), "survey_schema": str(tmp_path / "ss")}}
     (tmp_path / "req.json").write_text(json.dumps(req))
-    # 왜 이름을 고른다: 상속 환경을 통째로 넘기지 않는다(RUNTIME R9.1). 빌드 스크립트가 쓰는 이름(PATH, HOME, docker 설정·엔진 주소)과 해석기뿐이다
-    env = {k: os.environ[k] for k in ("PATH", "HOME", "DOCKER_CONFIG", "DOCKER_HOST") if k in os.environ}
-    env["PYTHON"] = str(ROOT / ".venv" / "bin" / "python")
+    # 왜 min_env: 상속 환경을 통째로 넘기지 않는다(RUNTIME R9.1). 빌드 스크립트가 쓰는 이름과 해석기뿐이다
+    env = min_env(PYTHON=str(ROOT / ".venv" / "bin" / "python"))
     r = subprocess.run(["bash", str(ROOT / "scripts" / "build-image.sh"), str(tmp_path / "req.json")], capture_output=True, text=True, env=env, timeout=HANG_GUARD_SECONDS)
-    exists = subprocess.run([DOCKER, "image", "inspect", tag], capture_output=True).returncode == 0
-    subprocess.run([DOCKER, "rmi", "-f", tag], capture_output=True)
+    exists = subprocess.run([DOCKER, "image", "inspect", tag], capture_output=True, env=min_env()).returncode == 0
+    subprocess.run([DOCKER, "rmi", "-f", tag], capture_output=True, env=min_env())
     return r, exists
 
 
@@ -90,15 +90,14 @@ def test_image_process_user_equals_the_inputs_declaration(db_image):
 
 @pytest.fixture(scope="module")
 def db_image():
-    if DOCKER is None or subprocess.run([DOCKER, "info"], capture_output=True).returncode != 0:
+    if DOCKER is None or subprocess.run([DOCKER, "info"], capture_output=True, env=min_env()).returncode != 0:
         pytest.skip("docker 데몬 없음")
     tag = f"question-authoring-db:test-{os.getpid()}-{uuid.uuid4().hex[:6]}"
-    env = dict(os.environ, VARIANT="db")
-    env.setdefault("GIT_CONFIG_GLOBAL", str(ROOT.parent / "head" / "shared" / "gitconfig-local-mirrors"))
+    env = min_env(VARIANT="db", GIT_CONFIG_GLOBAL=os.environ.get("GIT_CONFIG_GLOBAL") or str(ROOT.parent / "head" / "shared" / "gitconfig-local-mirrors"))
     r = subprocess.run(["bash", str(ROOT / "scripts" / "build-local-image.sh"), tag], capture_output=True, text=True, env=env, timeout=HANG_GUARD_SECONDS)
     assert r.returncode == 0, r.stderr[-800:]
     yield tag, json.loads(r.stdout.strip().splitlines()[-1])
-    subprocess.run([DOCKER, "rmi", tag], capture_output=True)
+    subprocess.run([DOCKER, "rmi", tag], capture_output=True, env=min_env())
 
 
 @pytest.fixture(scope="module")
@@ -167,8 +166,8 @@ class Stack:
         return r.returncode, r.stdout.strip(), r.stderr.strip()
 
     def close(self):
-        subprocess.run([DOCKER, "rm", "-f", self.name], capture_output=True)   # 왜 timeout 없음: 정리는 데몬이 끝을 정한다(우리 코드가 아니다)
-        subprocess.run([DOCKER, "network", "rm", self.net], capture_output=True)
+        subprocess.run([DOCKER, "rm", "-f", self.name], capture_output=True, env=min_env())   # 왜 timeout 없음: 정리는 데몬이 끝을 정한다(우리 코드가 아니다)
+        subprocess.run([DOCKER, "network", "rm", self.net], capture_output=True, env=min_env())
 
 
 @pytest.fixture

@@ -1,7 +1,7 @@
 """영역 빌드 진입점 scripts/build-image.sh (계약 BuildImageRequest/BuildImageResult, boundary-contracts 2.5.0, U42, ADR 0019).
 기대값 출처: 계약 스키마 설명(요청 검증, 쓰는 키가 없으면 실패, 결과는 표준 출력 마지막 줄, 라벨은 이미지에 붙은 io.openit.*).
 실제 docker 빌드는 scripts/smoke.sh가 한 번 한다. 여기서는 가짜 DOCKER로 인자와 결과 모양을 본다."""
-from helpers import HANG_GUARD_SECONDS
+from helpers import HANG_GUARD_SECONDS, min_env
 import importlib.util
 import json
 import os
@@ -66,7 +66,7 @@ def run(tmp_path, request, docker="/bin/false"):
     lk = tmp_path / "lk"
     if not lk.exists():
         make_tree(lk, "openit_link", "0.1.0")
-    env = dict(os.environ, DOCKER=docker, PYTHON=sys.executable, OPENIT_LINK_SPEC=str(lk), **OFFLINE_WHEEL)
+    env = min_env("FAKE_LOG", DOCKER=docker, PYTHON=sys.executable, OPENIT_LINK_SPEC=str(lk), **OFFLINE_WHEEL)   # FAKE_LOG: 가짜 docker 가 읽는 이름
     return subprocess.run(["bash", str(SCRIPT), str(f)], env=env, capture_output=True, text=True, timeout=HANG_GUARD_SECONDS)
 
 
@@ -106,7 +106,7 @@ def test_variant_is_rejected_because_this_repo_has_one_image(tmp_path, req):
 
 def test_missing_request_file_fails(tmp_path):
     p = subprocess.run(["bash", str(SCRIPT), str(tmp_path / "none.json")], capture_output=True, text=True,
-                       env=dict(os.environ, PYTHON=sys.executable))
+                       env=min_env(PYTHON=sys.executable))
     assert p.returncode == 2
 
 
@@ -161,7 +161,7 @@ def test_same_request_gives_same_wheels(tmp_path, req):
         w.mkdir()
         t = tmp_path / "t"
         subprocess.run([sys.executable, "-m", "pip", "wheel", "-q", "--no-deps", "-w", str(w), req["dependency_sources"]["boundary"]],
-                       env=dict(os.environ, SOURCE_DATE_EPOCH="0", **OFFLINE_WHEEL), check=True)
+                       env=min_env(SOURCE_DATE_EPOCH="0", **OFFLINE_WHEEL), check=True)
         return hashlib.sha256(next(w.glob("*.whl")).read_bytes()).hexdigest()
     assert digest() == digest()
 

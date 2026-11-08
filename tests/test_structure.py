@@ -1,4 +1,5 @@
 """구조 검사(DESIGN.md 6절, D117). 헤드의 head/scripts/structure-check.py와 같은 기준을 이 영역 안에서 강제한다."""
+from helpers import min_env
 import ast
 import json
 import os
@@ -72,7 +73,7 @@ def test_5_types_equal_regenerated_types():
         out = pathlib.Path(td) / "types"
         import boundary_contracts
         r = subprocess.run([sys.executable, str(ROOT / "scripts" / "gen_types.py"), "--out", str(out),
-                            "--contracts", str(boundary_contracts.schema_dir())], capture_output=True, text=True)
+                            "--contracts", str(boundary_contracts.schema_dir())], capture_output=True, text=True, env=min_env())
         assert r.returncode == 0, r.stderr[-500:]
         have = {p.name: p.read_text(encoding="utf-8") for p in (PKG / "types").glob("*.py")}
         want = {p.name: p.read_text(encoding="utf-8") for p in out.glob("*.py")}

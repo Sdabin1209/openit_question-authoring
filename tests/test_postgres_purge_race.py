@@ -7,7 +7,7 @@
  R4 모든 쓰기는 같은 advisory lock으로 직렬화된다. 연결이 여럿(스레드별 store, 별도 프로세스)이어도 같아야 한다.
  R5 오래 방치된 초안을 확인(confirm)하는 중에 purge가 그 초안과 원본을 지우면 버전이 없는 원본을 가리킬 수 있다.
 시험은 고정 sleep을 쓰지 않는다. 시작은 Barrier, 끝은 정해진 반복 횟수(또는 프로세스 종료)로 정한다. 반복 횟수는 QA_RACE_ROUNDS로 늘린다."""
-from helpers import HANG_GUARD_SECONDS
+from helpers import HANG_GUARD_SECONDS, min_env
 import os
 import subprocess
 import sys
@@ -198,7 +198,7 @@ def test_pg_upload_vs_purge_in_separate_processes(validators):
         st, ager = PostgresQuestionStore(url, schema=schema), PostgresQuestionStore(url, schema=schema)
         svc = AuthoringService(st, require_two_person=False)
         procs = [subprocess.Popen([sys.executable, "-c", _PURGER, schema, str(ROUNDS * 2)],
-                                  env=dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path)),   # 설치 여부와 무관하게 같은 코드를 읽는다
+                                  env=min_env("TEST_DATABASE_URL", PYTHONPATH=os.pathsep.join(sys.path)),   # 설치 여부와 무관하게 같은 코드를 읽는다
                                  
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE) for _ in range(2)]
         made = []

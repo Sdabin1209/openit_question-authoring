@@ -1,7 +1,7 @@
 """scripts/setup-env.sh의 결과 보고(계약 SetupEnvReport, boundary-contracts 2.6.0, U43): 표준 출력의 마지막 줄이 계약을 통과하고
 environment.test_command가 리포 루트에서 이 영역 시험을 돌린다. 설치(pip)는 가짜 .venv의 python으로 대신해 네트워크 없이 본다.
 진짜 설치까지의 확인은 깨끗한 clone에서 setup-env.sh를 직접 돌려 한다(보고서에 출력)."""
-from helpers import HANG_GUARD_SECONDS
+from helpers import HANG_GUARD_SECONDS, min_env
 import json
 import os
 import pathlib
@@ -35,7 +35,7 @@ def repo(tmp_path):
 
 def run(repo, **env):
     return subprocess.run(["bash", str(repo / "scripts" / "setup-env.sh")], cwd="/", capture_output=True, text=True, timeout=HANG_GUARD_SECONDS,
-                          env=dict(os.environ, **env))
+                          env=min_env(**env))
 
 
 def test_last_stdout_line_is_a_valid_report_even_with_noise(repo):
@@ -67,6 +67,6 @@ def test_test_command_runs_this_areas_tests_from_the_repo_root(repo):
     """선언한 test_command가 리포 루트에서 이 영역 시험을 돌린다(전체 실행은 재귀라 수집만 한다. 깨끗한 clone에서 전체를 돌려 보고한다)."""
     cmd = json.loads(run(repo).stdout.strip().splitlines()[-1])["environment"]["test_command"]
     assert cmd == ["bash", "scripts/test-all.sh"]   # PostgreSQL 포함 전체 시험(2026-11-07)
-    env = {**os.environ, "PYTHON": sys.executable, "TEST_DATABASE_URL": os.environ.get("TEST_DATABASE_URL") or "postgresql://unused@127.0.0.1:1/x"}   # 수집만: PostgreSQL 을 새로 띄우지 않는다
+    env = min_env(PYTHON=sys.executable, TEST_DATABASE_URL=os.environ.get("TEST_DATABASE_URL") or "postgresql://unused@127.0.0.1:1/x")   # 수집만: PostgreSQL 을 새로 띄우지 않는다
     p = subprocess.run(cmd + ["--collect-only", "tests/test_build_image.py"], cwd=ROOT, capture_output=True, text=True, env=env)
     assert p.returncode == 0 and "test_build_image.py" in p.stdout

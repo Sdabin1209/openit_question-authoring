@@ -1,5 +1,6 @@
 """U99: 바깥 호출의 TLS 설정. (1) 이웃 주소는 설정으로만 들어온다 (2) 인증서 검증을 끄는 코드가 없다 (3) 사설 루트는 표준 SSL_CERT_FILE만으로 믿는다
 (4) DB 접속의 sslmode 등은 접속 문자열 그대로 간다. TLS 종단은 deploy의 사이드카가 한다(이 서비스는 TLS 서버가 아니다)."""
+from helpers import min_env
 import json
 import re
 import shutil
@@ -54,7 +55,7 @@ def test_migration_uri_keeps_sslmode(monkeypatch):
 @pytest.mark.skipif(shutil.which("openssl") is None, reason="openssl 명령이 없다")
 def test_private_root_is_trusted_through_ssl_cert_file_only(tmp_path):
     d = tmp_path
-    run = lambda *a: subprocess.run(a, cwd=d, check=True, capture_output=True, timeout=60)
+    run = lambda *a: subprocess.run(a, cwd=d, check=True, capture_output=True, timeout=60, env=min_env())
     run("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "root.key", "-out", "root.crt", "-days", "1", "-subj", "/CN=test-root",
         "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign")
     run("openssl", "req", "-newkey", "rsa:2048", "-nodes", "-keyout", "srv.key", "-out", "srv.csr", "-subj", "/CN=localhost")

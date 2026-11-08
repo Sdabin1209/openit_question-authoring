@@ -1,4 +1,5 @@
 """Public input-declaration paths must not be mistaken for secret contents."""
+from helpers import min_env
 import os
 from pathlib import Path
 import subprocess
@@ -34,7 +35,7 @@ INGEST_TOKEN=$MARKER; READ_TOKEN=$MARKER; REVIEW_TOKEN=$MARKER; DEID_SALT=$MARKE
 ''' + actual_checks
         result = subprocess.run(
             ['bash', '-c', shell], capture_output=True, text=True, timeout=10,
-            env={**os.environ, 'FIXTURE': str(fixture), 'MARKER': token,
-                 'ENV_FIXTURE': token if leak == 'env' else 'TOKEN_FILE=/run/secrets/qa-read-tokens'},
+            env=min_env(FIXTURE=str(fixture), MARKER=token,
+                 ENV_FIXTURE=token if leak == 'env' else 'TOKEN_FILE=/run/secrets/qa-read-tokens'),
         )
         assert result.returncode == (0 if leak is None else 1), result.stderr

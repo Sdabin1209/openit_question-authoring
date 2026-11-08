@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from helpers import HANG_GUARD_SECONDS, image
+from helpers import HANG_GUARD_SECONDS, image, min_env
 from test_decisions_and_versions import GATE_DECISION
 
 DOCKER = shutil.which("docker")
@@ -23,22 +23,22 @@ HERE = Path(__file__).resolve().parent
 
 
 def sh(*a, check=True, timeout=HANG_GUARD_SECONDS, **k):
+    k.setdefault("env", min_env())   # R9.1: 상속 환경을 통째로 넘기지 않는다
     return subprocess.run(a, capture_output=True, text=True, check=check, timeout=timeout, **k)
 
 
 @pytest.fixture(scope="module")
 def app_image():
-    if DOCKER is None or subprocess.run([DOCKER, "info"], capture_output=True).returncode != 0:
+    if DOCKER is None or subprocess.run([DOCKER, "info"], capture_output=True, env=min_env()).returncode != 0:
         pytest.skip("docker 데몬 없음")
-    if subprocess.run([DOCKER, "image", "inspect", PW_IMAGE], capture_output=True).returncode != 0:
+    if subprocess.run([DOCKER, "image", "inspect", PW_IMAGE], capture_output=True, env=min_env()).returncode != 0:
         pytest.skip(f"{PW_IMAGE} 이미지가 없다(docker pull 필요)")
     tag = f"question-authoring:browser-{os.getpid()}-{uuid.uuid4().hex[:6]}"
-    env = dict(os.environ)
-    env.setdefault("GIT_CONFIG_GLOBAL", str(ROOT.parent / "head" / "shared" / "gitconfig-local-mirrors"))     # 원격 동결 중의 표준 경로(S14)
+    env = min_env(GIT_CONFIG_GLOBAL=os.environ.get("GIT_CONFIG_GLOBAL") or str(ROOT.parent / "head" / "shared" / "gitconfig-local-mirrors"))   # 빌드 스크립트가 읽는 이름만     # 원격 동결 중의 표준 경로(S14)
     r = subprocess.run(["bash", str(ROOT / "scripts" / "build-local-image.sh"), tag], capture_output=True, text=True, env=env, timeout=HANG_GUARD_SECONDS)
     assert r.returncode == 0, r.stderr[-800:]
     yield tag
-    subprocess.run([DOCKER, "rmi", tag], capture_output=True)          # 이 시험이 만든 태그만
+    subprocess.run([DOCKER, "rmi", tag], capture_output=True, env=min_env())          # 이 시험이 만든 태그만
 
 
 def run_flow(app_image, tmp_path, mutate):
@@ -66,17 +66,17 @@ def run_flow(app_image, tmp_path, mutate):
         while time.monotonic() < end:
             if subprocess.run([DOCKER, "exec", app, "python", "-c", "import urllib.request as u,urllib.error as e\n"
                                "try: u.urlopen('http://127.0.0.1:8081/oauth2/userinfo', timeout=2)\n"
-                               "except e.HTTPError: pass"], capture_output=True).returncode == 0:
+                               "except e.HTTPError: pass"], capture_output=True, env=min_env()).returncode == 0:
                 break
             time.sleep(0.5)
         else:
             raise AssertionError("앱 컨테이너가 준비되지 않았다: " + sh(DOCKER, "logs", "--tail", "20", app, check=False).stdout[-500:])
         return subprocess.run([DOCKER, "run", "--rm", "--ipc=host", "--network", net, "-v", f"{d}:/t:ro", PW_IMAGE, "sh", "-c",
                                f"pip install -q --disable-pip-version-check playwright==1.49.0 >/dev/null 2>&1 && python /t/flow.py http://{app}:8081"],
-                              capture_output=True, text=True, timeout=HANG_GUARD_SECONDS)
+                              capture_output=True, text=True, timeout=HANG_GUARD_SECONDS, env=min_env())
     finally:
-        subprocess.run([DOCKER, "rm", "-f", app], capture_output=True)
-        subprocess.run([DOCKER, "network", "rm", net], capture_output=True)
+        subprocess.run([DOCKER, "rm", "-f", app], capture_output=True, env=min_env())
+        subprocess.run([DOCKER, "network", "rm", net], capture_output=True, env=min_env())
 
 
 def test_author_and_reviewer_flow_in_a_real_browser(app_image, tmp_path):

@@ -9,7 +9,7 @@ import sys
 
 import boundary_contracts as bc
 
-from helpers import HANG_GUARD_SECONDS
+from helpers import HANG_GUARD_SECONDS, min_env
 from test_build_image import FAKE_DOCKER, OFFLINE_WHEEL, SHA, make_tree, write_lock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -71,7 +71,7 @@ def _build(tmp_path, jobs_text):
     (tmp_path / "req.json").write_text(json.dumps(req))
     log = tmp_path / "log.txt"
     p = subprocess.run(["bash", str(ROOT / "scripts" / "build-image.sh"), str(tmp_path / "req.json")], capture_output=True, text=True,
-                       env=dict(os.environ, DOCKER=str(fake), PYTHON=sys.executable, FAKE_LOG=str(log),
+                       env=min_env(DOCKER=str(fake), PYTHON=sys.executable, FAKE_LOG=str(log),
                                 OPENIT_LINK_SPEC=make_tree(tmp_path / "lk", "openit_link", "0.1.0"), **OFFLINE_WHEEL), timeout=HANG_GUARD_SECONDS)
     return p, log
 

@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from conftest import example_text, pg_schema
-from helpers import AUTHOR, HANG_GUARD_SECONDS, image, publish
+from helpers import AUTHOR, HANG_GUARD_SECONDS, image, publish, min_env
 from question_authoring.wiring import backup_flow
 from question_authoring.wiring.service import AuthoringService
 from question_authoring.wiring.stores import PostgresQuestionStore
@@ -34,6 +34,7 @@ def docker_env():
 
 
 def sh(*a, check=True, timeout=120, **k):
+    k.setdefault("env", min_env())   # R9.1: 상속 환경을 통째로 넘기지 않는다
     return subprocess.run(a, capture_output=True, text=True, check=check, timeout=timeout, **k)
 
 
@@ -63,7 +64,7 @@ def wait_log(name, needle, seconds=60):
 
 @pytest.fixture(scope="module")
 def store_env(tmp_path_factory):
-    if DOCKER is None or subprocess.run([DOCKER, "info"], capture_output=True).returncode != 0:
+    if DOCKER is None or subprocess.run([DOCKER, "info"], capture_output=True, env=min_env()).returncode != 0:
         pytest.skip("docker 데몬 없음")
     if not os.environ.get("TEST_DATABASE_URL"):
         pytest.skip("TEST_DATABASE_URL 없음: PostgreSQL 시험 건너뜀")
@@ -102,8 +103,8 @@ exec {DOCKER} run --rm -i --network {net} -v {d}:{d}:ro \\
         yield {"dir": d, "port": STORE_PORT, "pw": pw, "proxy": ConnectProxy(pname), "proxy_url": f"http://{pname}:3128", "wrapper": str(wrapper), "name": name}
     finally:
         for n in (pname, name):                                                              # 이 시험이 띄운 이름만
-            subprocess.run([DOCKER, "rm", "-f", n], capture_output=True)
-        subprocess.run([DOCKER, "network", "rm", net], capture_output=True)
+            subprocess.run([DOCKER, "rm", "-f", n], capture_output=True, env=min_env())
+        subprocess.run([DOCKER, "network", "rm", net], capture_output=True, env=min_env())
 
 
 def env_for(se, url_with_schema, tmp):
