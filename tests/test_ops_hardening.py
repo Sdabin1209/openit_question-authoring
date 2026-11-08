@@ -228,7 +228,7 @@ def test_purge_threaded_with_uploads_never_loses_a_referenced_source(validators)
     store.close()
 
 
-def test_gateway_email_style_user_ids(validators):
+def test_gateway_dotted_user_ids_and_at_sign_is_refused(validators):   # 계약 5.0.0 HumanUserId = Id: '@' 은 형식 밖(4.x 의 이메일형 사본 _USER_RE 를 지웠다)
     from question_authoring.components.link_authoring_server import Api
     s = AuthoringService(MemoryQuestionStore(), require_two_person=True)   # 4-eyes 동작 시험: 기본은 false(L13)
     api = Api(s, {}, gateway_tokens={"gw"})
@@ -236,19 +236,19 @@ def test_gateway_email_style_user_ids(validators):
     def call(user, method="GET", path="/v1/drafts", body=b""):
         h = {"Authorization": "Bearer gw", "X-Openit-User": user, "X-Openit-Roles": "clinical-reviewer" if user.startswith("park") else "author"}
         return api.handle(method, path, h, body)
-    assert call("kim@hosp.kr")[0] == 200 and call("park.md@hosp.kr")[0] == 200
-    st, out = call("kim@hosp.kr", "POST", "/v1/materials?question_set_id=qs-e&filename=f.txt", example_text("qs-e"))
+    assert call("kim.hosp")[0] == 200 and call("park.md.hosp")[0] == 200
+    st, out = call("kim.hosp", "POST", "/v1/materials?question_set_id=qs-e&filename=f.txt", example_text("qs-e"))
     assert st == 200
     did = out["draft_id"]
-    ph = call("kim@hosp.kr", "GET", f"/v1/drafts/{did}/preview")[1]["preview_hash"]
-    st, ref = call("kim@hosp.kr", "POST", f"/v1/drafts/{did}/confirm", json.dumps({"preview_hash": ph}).encode())
+    ph = call("kim.hosp", "GET", f"/v1/drafts/{did}/preview")[1]["preview_hash"]
+    st, ref = call("kim.hosp", "POST", f"/v1/drafts/{did}/confirm", json.dumps({"preview_hash": ph}).encode())
     assert st == 200
-    assert s.store.get_reviews(ref)[0]["reviewer_id"] == "kim:at:hosp.kr"          # 계약 Id에 맞게 기록된다
-    st, _ = call("park.md@hosp.kr", "POST", "/v1/reviews", json.dumps(
+    assert s.store.get_reviews(ref)[0]["reviewer_id"] == "kim.hosp"          # 계약 Id 라 그대로 기록된다
+    st, _ = call("park.md.hosp", "POST", "/v1/reviews", json.dumps(
         {"question_set": ref, "decision": "APPROVED", "clinical_basis_approved": True}).encode())
     assert st == 200 and s.store.reader().latest("qs-e", reviewed_only=True) == ref
     # 안전하지 않은 형식은 모두 거부
-    for bad in ("a b@x", "a@b@c", "x:y", "<s>@x", "a%40b", "a" * 70 + "@x", "@x", "kim@"):
+    for bad in ("kim@hosp.kr", "a b@x", "a@b@c", "<s>@x", "a%40b", "a" * 129, "@x", "kim@", "-kim"):
         assert call(bad)[0] == 403, bad
 
 

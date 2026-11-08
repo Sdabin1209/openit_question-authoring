@@ -35,7 +35,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 
-from boundary_contracts import read_secret
+from boundary_contracts import read_secret, secret_format_problems
 from boundary_contracts.clients import egress_proxy_from
 from boundary_contracts.errors import BoundaryError
 
@@ -126,22 +126,30 @@ def _require_production_config(*, need_tokens: bool) -> None:
         raise SystemExit("저자 토큰이 없다(QA_AUTHOR_TOKENS 또는 QA_GATEWAY_TOKENS). 개발·시험이면 QA_DEV_MODE=1을 준다")
 
 
+def _secret_list(name: str, kind: str) -> str:
+    """토큰 목록 비밀을 읽고 계약 형식(secret_format_problems, 계약 5.0.1)으로 검사한다. 없으면 빈 문자열. 위반은 값 없이 이름과 형식 이름만 말하고 시작하지 않는다(D117: 형식 정의는 계약 한 곳)."""
+    raw = read_secret(name) or ""
+    if raw and secret_format_problems(kind, raw):
+        raise SystemExit(f"{name} 의 형식이 계약 비밀 형식 {kind} 를 어긴다(값은 출력하지 않는다)")
+    return raw
+
+
 def build() -> tuple[Api, AuthoringStore]:
     env = os.environ
     check_environment()
     dev = _bool("QA_DEV_MODE", False)
     _require_production_config(need_tokens=True)
     tokens = {}
-    for item in filter(None, (read_secret("QA_AUTHOR_TOKENS") or "").split(",")):
+    for item in filter(None, _secret_list("QA_AUTHOR_TOKENS", "token_actor_role_list").split(",")):
         tok, aid, role = item.split(":")
         if role not in ROLES:
             raise SystemExit(f"QA_AUTHOR_TOKENS의 역할은 {', '.join(ROLES)} 중 하나여야 한다")
         tokens[tok] = Actor(aid, role)
-    gateway_tokens = {t for t in (read_secret("QA_GATEWAY_TOKENS") or "").split(",") if t}
+    gateway_tokens = {t for t in _secret_list("QA_GATEWAY_TOKENS", "token_list").split(",") if t}
     deadline = RequestDeadline(time.monotonic, _seconds("QA_REQUEST_DEADLINE_SECONDS", DEFAULT_REQUEST_DEADLINE_SECONDS))   # 사람용 요청 전체 마감(D120)
     store = open_store(deadline.remaining)
     read_tokens = {}
-    for item in filter(None, (read_secret("QA_READ_TOKENS") or "").split(",")):
+    for item in filter(None, _secret_list("QA_READ_TOKENS", "role_token_list").split(",")):
         role, tok = item.split("=", 1)
         read_tokens[tok] = role
     two = _bool("QA_REQUIRE_TWO_PERSON", False)   # 기본 false(L13, ADR 0026)

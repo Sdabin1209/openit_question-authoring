@@ -90,11 +90,11 @@ def test_missing_or_empty_file_error_names_path_not_value(tmp_path, monkeypatch)
 
 def test_malformed_secret_exception_does_not_contain_value(tmp_path, monkeypatch):
     _files(tmp_path, monkeypatch, author=f"{AUTH_SECRET}-no-colons")
-    with pytest.raises(Exception) as e:
+    with pytest.raises((Exception, SystemExit)) as e:   # 계약 비밀 형식 검사(5.0.1)는 SystemExit 으로 시작을 막는다
         build()
     assert AUTH_SECRET not in str(e.value) and AUTH_SECRET not in repr(e.value)
     _files(tmp_path, monkeypatch, read=f"{READ_SECRET}-no-equals")
-    with pytest.raises(Exception) as e:
+    with pytest.raises((Exception, SystemExit)) as e:   # 계약 비밀 형식 검사(5.0.1)는 SystemExit 으로 시작을 막는다
         build()
     assert READ_SECRET not in str(e.value) and READ_SECRET not in repr(e.value)
 

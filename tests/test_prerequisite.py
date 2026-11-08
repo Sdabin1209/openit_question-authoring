@@ -18,11 +18,11 @@ def form(pre, extra_slot=""):
     return (f"문진표 ID: qs-p\n문진표 제목: 시험\n세션 설정\n위험 문구: 없음\n확인 한도: 3\n인식 실패 연속 한도: 3\n질문 횟수 한도: 3\n"
             + "".join(f"고정 문장 {k}: 문장\n" for k in ("ASK_REPEAT", "FAREWELL", "RISK_NOTICE", "CALL_STAFF", "RESUME", "SURVEY_STOPPED")) + "\n"
             
-            f"문항 A: 가\n순서: 1\n선행 조건: 없음\n질문: 가?\n거절 설명: x\n정책: 질문 한도 3, 모름 2, 거절 2\n"
+            f"문항 Q1: 가\n순서: 1\n선행 조건: 없음\n질문: 가?\n거절 설명: x\n정책: 질문 한도 3, 모름 2, 거절 2\n"
             f"슬롯 yn: 필수\n자료형: boolean\n다시 묻기: x\n예아니오: 없음\n위험 기준: 없음\n"
             f"슬롯 days: 필수\n자료형: integer\n다시 묻기: x\n예아니오: 없음\n위험 기준: 없음\n"
             f"슬롯 kind: 필수\n자료형: option\n선택지: a, b\n다시 묻기: x\n예아니오: 없음\n위험 기준: 없음\n\n"
-            f"문항 B: 나\n순서: 2\n선행 조건: {pre}\n질문: 나?\n거절 설명: x\n정책: 질문 한도 3, 모름 2, 거절 2\n"
+            f"문항 Q2: 나\n순서: 2\n선행 조건: {pre}\n질문: 나?\n거절 설명: x\n정책: 질문 한도 3, 모름 2, 거절 2\n"
             f"슬롯 s: 필수\n자료형: boolean\n다시 묻기: x\n예아니오: 없음\n위험 기준: 없음\n")
 
 
@@ -33,25 +33,25 @@ def pre_of(pre):
 
 @pytest.mark.parametrize("op", OPS)
 def test_six_operators_parse_with_number_value(op):
-    r, p = pre_of(f"A.days {op} 3")
-    assert p == {"slot": {"question_id": "A", "repeat_key": "", "slot_id": "days"}, "op": op, "value": 3} and not r.flags
+    r, p = pre_of(f"Q1.days {op} 3")
+    assert p == {"slot": {"question_id": "Q1", "repeat_key": "", "slot_id": "days"}, "op": op, "value": 3} and not r.flags
     assert isinstance(p["value"], int) and not isinstance(p["value"], bool)
 
 
 def test_value_conversion_follows_the_slot_kind():
-    assert pre_of("A.yn == true")[1]["value"] is True
-    assert pre_of("A.yn != false")[1]["value"] is False
-    assert pre_of("A.days >= 2.5")[1]["value"] == 2.5
-    assert pre_of("A.kind == a")[1]["value"] == "a"
+    assert pre_of("Q1.yn == true")[1]["value"] is True
+    assert pre_of("Q1.yn != false")[1]["value"] is False
+    assert pre_of("Q1.days >= 2.5")[1]["value"] == 2.5
+    assert pre_of("Q1.kind == a")[1]["value"] == "a"
 
 
-@pytest.mark.parametrize("pre,slot", [("A.yn == maybe", "yn"), ("A.days == many", "days")])
+@pytest.mark.parametrize("pre,slot", [("Q1.yn == maybe", "yn"), ("Q1.days == many", "days")])
 def test_unconvertible_value_is_flagged_not_guessed(pre, slot):
     r, p = pre_of(pre)
     assert p == "UNSET" and ("/questions/1/prerequisite", "UNSURE") in {(f.path, f.kind) for f in r.flags}
 
 
-@pytest.mark.parametrize("pre", ["A.days = 3", "A.days <> 3", "A.days 3", "A.days ==", "A == 3", "A.days == 3 4"])
+@pytest.mark.parametrize("pre", ["Q1.days = 3", "Q1.days <> 3", "Q1.days 3", "Q1.days ==", "Q1 == 3", "Q1.days == 3 4"])
 def test_bad_forms_are_flagged(pre):
     r, p = pre_of(pre)
     assert p == "UNSET" and any(f.kind == "UNSURE" for f in r.flags)
@@ -61,7 +61,7 @@ def bank_with(op, value, slot="days"):
     r = TextFormExtractor().extract(form("없음").encode(), "f.txt")
     b = r.bank
     b["version"] = 1
-    b["questions"][1]["prerequisite"] = {"slot": {"question_id": "A", "repeat_key": "", "slot_id": slot}, "op": op, "value": value}
+    b["questions"][1]["prerequisite"] = {"slot": {"question_id": "Q1", "repeat_key": "", "slot_id": slot}, "op": op, "value": value}
     return b
 
 
@@ -112,14 +112,14 @@ def test_id_must_equal_upload_id(svc):
 
 
 def test_i1_response_carries_id_and_title(svc, store):
-    ref = publish(svc, "qs-p", text=form("A.days != 0").encode())
+    ref = publish(svc, "qs-p", text=form("Q1.days != 0").encode())
     bank = store.reader().get_question_bank(ref)
     assert bank["question_set_id"] == "qs-p" and bank["title"] == "시험"
     assert bank["questions"][1]["prerequisite"]["op"] == "!="
 
 
 def test_preview_and_diff_show_op_and_title(svc):
-    out = svc.ingest_material(AUTHOR, "qs-p", "f.txt", form("A.days >= 2").encode())
+    out = svc.ingest_material(AUTHOR, "qs-p", "f.txt", form("Q1.days >= 2").encode())
     t = svc.get_preview(out["draft_id"])["text"]
     assert "문진표 ID: qs-p" in t and "문진표 제목: 시험" in t and ">= 2" in t
     a = bank_with("==", 3)

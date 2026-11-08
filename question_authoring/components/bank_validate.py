@@ -8,16 +8,13 @@ import copy
 from collections import Counter
 from typing import Any
 
-import jsonschema
-
 import survey_schema
 from boundary_contracts.errors import BoundaryError
-from boundary_contracts.schemas_api import ContractValidator
-from boundary_contracts import format_checker as _bc_format_checker  # 형식(format) 검증기가 없으면 조용히 넘기지 않고 실패한다(계약 3.5.0)
+from boundary_contracts import schema_validator
 
 INPUT_SCHEMA = "BankValidateInput"
 OUTPUT_SCHEMA = "BankValidateResult"
-# 문진 스키마의 정수 CONTRACT_VERSION(런타임 호환 번호). openit-survey-schema 4.0.0 패키지의 CONTRACT_VERSION 파일이 1이다(정수 버전은 4.0.0에서 올리지 않았다)(D14: 정확히 일치해야 한다). 올릴 때는 패키지와 함께 바꾼다
+# 문진 스키마의 정수 CONTRACT_VERSION(런타임 호환 번호). openit-survey-schema 5.0.0 패키지도 정수 CONTRACT_VERSION 이 1이다(정수 버전은 올리지 않았다)(D14: 정확히 일치해야 한다). 올릴 때는 패키지와 함께 바꾼다
 SUPPORTED_RUNTIME_CONTRACT_VERSION = 1
 _V = None
 
@@ -29,15 +26,24 @@ def _validator():
             qb = survey_schema.load_schema("QuestionBank", SUPPORTED_RUNTIME_CONTRACT_VERSION)
         except KeyError as e:
             raise BoundaryError("UNSUPPORTED_VERSION", f"문진 스키마 정수 버전 {SUPPORTED_RUNTIME_CONTRACT_VERSION}이 설치되어 있지 않다") from e
-        # 왜 감싼다: 계약 5.0.0 의 비유한 수 검사를 받는다(5.0.1 의 schema_validator 로 바꿀 자리)
-        _V = ContractValidator(jsonschema.Draft202012Validator(qb, format_checker=_bc_format_checker(qb)))
+        # 왜 schema_validator: 문진 스키마 5.x 는 계약 안정 URI $ref 를 가져 표준 검증기로는 풀리지 않는다. 계약 registry·형식 강제·비유한 수 거부를 받는다(계약 5.0.1)
+        _V = schema_validator(qb)
     return _V
+
+
+def _describe(e) -> str:
+    """오류 한 줄: 위치와 규칙 이름만. 왜 e.message 가 아니다: 값이 오류 응답에 실리지 않게(INTERFACES I7). 빠진 칸은 이름만 덧붙인다(값 아님): 저자가 무엇이 비었는지 알아야 한다"""
+    msg = f"/{'/'.join(map(str, e.absolute_path))}: {e.validator} 규칙 위반"
+    if e.validator == "required" and isinstance(e.instance, dict):
+        missing = [n for n in e.validator_value if n not in e.instance]
+        if missing:
+            msg += " (없음: " + ", ".join(missing) + ")"
+    return msg
 
 
 def question_bank_errors(bank: Any) -> list[str]:
     v = _validator()
-    return [f"/{'/'.join(map(str, e.absolute_path))}: {e.validator} 규칙 위반"   # 왜 e.message 가 아니다: 값이 오류 응답에 실리지 않게 위치와 규칙 이름만(INTERFACES I7)
-            for e in sorted(v.iter_errors(bank), key=lambda e: list(map(str, e.absolute_path)))]
+    return [_describe(e) for e in sorted(v.iter_errors(bank), key=lambda e: list(map(str, e.absolute_path)))]
 
 
 def run(inp: dict) -> dict:

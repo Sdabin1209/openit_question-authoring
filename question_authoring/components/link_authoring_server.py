@@ -181,8 +181,7 @@ class Api:
                 r = "question-author"
             else:
                 raise BoundaryError("PERMISSION_DENIED", "권한이 없다")      # 역할 헤더가 없거나 이 서비스의 역할이 없다
-            # 계약의 Id(reviewer_id)는 '@'를 허용하지 않는다. 이메일형 ID는 '@'를 ':at:'로 바꿔 기록한다(역변환 가능, 충돌 없음: 입력에 ':'를 허용하지 않는다)
-            return Actor(user.replace("@", ":at:"), r)
+            return Actor(user, r)      # 계약 5.0.0: X-Openit-User 는 HumanUserId(= Id)라 그대로 기록한다(옛 이메일형 '@'→':at:' 치환은 없앴다)
         return Actor(req.actor, role)
 
     def _wrap(self, fn):

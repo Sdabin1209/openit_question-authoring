@@ -7,21 +7,16 @@
 from __future__ import annotations
 
 import json
+import re
 import types
 from pathlib import Path
 from typing import Any, Callable
 
-import jsonschema
-from referencing import Registry, Resource
-from referencing.jsonschema import DRAFT202012
-
 import boundary_contracts
 from boundary_contracts.errors import BoundaryError
-from boundary_contracts.schemas_api import ContractValidator
-from boundary_contracts import format_checker as _bc_format_checker  # 형식(format) 검증기가 없으면 조용히 넘기지 않고 실패한다(계약 3.5.0)
+from boundary_contracts.schema_sources import CONTRACT_URI
 
 SCHEMA_DIR = Path(__file__).resolve().parents[2] / "schemas"
-_BASE = "https://openit.local/schemas/"
 
 
 class ComponentOutputError(Exception):
@@ -35,41 +30,58 @@ def schema_dir() -> Path:
     return Path(p) if p else SCHEMA_DIR
 
 
-def _build() -> tuple[Registry, dict]:
-    reg = Registry()
-    own: dict[str, dict] = {}
-    cdir = boundary_contracts.schema_dir()
-    for p in sorted(cdir.glob("*.schema.json")):
-        reg = reg.with_resource(_BASE + p.name, Resource.from_contents(json.loads(p.read_text(encoding="utf-8")), DRAFT202012))
-    for p in sorted(schema_dir().glob("*.json")):
-        doc = json.loads(p.read_text(encoding="utf-8"))
-        own[p.stem] = doc
-        reg = reg.with_resource(_BASE + p.name, Resource.from_contents(doc, DRAFT202012))
-    return reg, own
+_OWN_REF = re.compile(r"^([A-Za-z0-9_]+)\.json$")   # 영역 스키마끼리의 참조(파일 이름만, 조각 없음)
 
 
-_REG: tuple[Registry, dict] | None = None
+def _own(name: str) -> dict:
+    return json.loads((schema_dir() / (name + ".json")).read_text(encoding="utf-8"))
+
+
+def _bundle(name: str) -> dict:
+    """영역 스키마 하나를 계약 검증기가 받는 한 문서로 묶는다. 영역 스키마끼리의 참조(`Actor.json`)는 `$defs` 로 넣고,
+    계약 참조(`_common.schema.json#/...`)는 그대로 둔다: 루트 `$id` 를 계약 안정 URI 와 같은 폴더에 두어 상대 참조가 계약 스키마로 풀린다.
+    왜 묶나: 계약의 schema_validator(5.0.1)는 계약 registry 만 쓰므로 영역 스키마를 따로 등록할 수 없다."""
+    defs: dict[str, dict] = {}
+
+    def rewrite(node):
+        if isinstance(node, dict):
+            out = {}
+            for k, v in node.items():
+                if k in ("$id", "$schema"):
+                    continue
+                if k == "$ref" and isinstance(v, str) and _OWN_REF.match(v):
+                    dep = _OWN_REF.match(v).group(1)
+                    if dep not in defs:
+                        defs[dep] = {}                    # 순환 방지: 자리를 먼저 잡는다
+                        defs[dep] = rewrite(_own(dep))
+                    out[k] = "#/$defs/" + dep
+                else:
+                    out[k] = rewrite(v)
+            return out
+        if isinstance(node, list):
+            return [rewrite(v) for v in node]
+        return node
+
+    root = rewrite(_own(name))
+    root["$id"] = CONTRACT_URI + "area-" + name + ".json"
+    if defs:
+        root["$defs"] = {**root.get("$defs", {}), **defs}
+    return root
+
+
 _VAL: dict[str, Any] = {}
-
-
-def registry() -> tuple[Registry, dict]:
-    global _REG
-    if _REG is None:
-        _REG = _build()
-    return _REG
 
 
 def _validator(name: str):
     """name: 영역 스키마 이름(`DraftEditInput`) 또는 계약 스키마 이름(`ReviewRecord`, 'AuthoringRequests#Edit' 같은 $defs 포함)."""
     if name not in _VAL:
-        reg, own = registry()
-        if name in own:
-            uri = _BASE + name + ".json"
+        if (schema_dir() / (name + ".json")).exists():
+            schema = _bundle(name)
         else:
             base, _, frag = name.partition("#")
-            uri = _BASE + base + ".schema.json" + (("#/$defs/" + frag) if frag else "")
-        # 왜 감싼다: 영역 내부 스키마용 검증기도 계약의 비유한 수 검사(NaN·무한대)를 받아야 한다(계약 5.0.0). 5.0.1 의 schema_validator 로 바꿀 자리
-        _VAL[name] = ContractValidator(jsonschema.Draft202012Validator({"$ref": uri}, registry=reg, format_checker=_bc_format_checker({"$ref": uri})))
+            schema = {"$ref": CONTRACT_URI + base + ".schema.json" + (("#/$defs/" + frag) if frag else "")}
+        # 왜 schema_validator: 계약 registry(안정 URI)·형식 검사 강제·비유한 수 거부를 한 곳에서 받는다(계약 5.0.1, D117). 직접 만든 Draft202012Validator 는 쓰지 않는다
+        _VAL[name] = boundary_contracts.schema_validator(schema)
     return _VAL[name]
 
 
