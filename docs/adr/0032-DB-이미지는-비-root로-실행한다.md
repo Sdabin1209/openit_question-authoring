@@ -25,7 +25,7 @@
 - 얻는 것: root 없음, capability 없음, 비밀 사본 없음, 선언과 실제 사용자가 빌드 때 대조된다(`scripts/build-image.sh` 의 inputs_check).
 - 시험(변이로 지킨다): `tests/test_database_image.py` 는 실제 빌드 위에서 (1) USER 줄을 뺀 Dockerfile 이 빌드 단계의 선언 대조에서 거부되고 이미지가 지워지는 것, (2) 선언을 0:0 으로 바꾼 것이 거부되는 것, (3) 원본은 통과하는 것, (4) 컨테이너 안 `id` 가 선언과 같은 것을 본다. 시험 컨테이너는 capability 없이, `/run` 을 선언한 uid:gid 소유 tmpfs 로 띄운다.
 - 감수하는 것 / 전제: **deploy compose 를 같이 바꿔야 기동한다.** 이 DB 서비스의 `cap_add` 를 제거하고, `/run` tmpfs 를 `uid=999,gid=999` 로 준다(`/tmp` 도 선언대로 쓸 수 있어야 한다). 비밀·인증서 파일은 999:999 가 읽을 수 있어야 한다. compose 는 deploy(헤드) 소유라 이 영역은 고치지 않는다. 바뀌기 전의 compose 로는 `/run` 에 쓰지 못해 인증서 복사에서 멈춘다. 이 영역에서는 deploy 의 실제 compose 로 기동해 보지 않았다.
-- 확인하지 못한 것: 기존 root 소유 데이터 볼륨을 가진 배포의 전환(소유권 변경 필요). 이 영역은 운영 데이터가 없다는 전제이며 확인하지 않았다.
+- 기존 데이터 볼륨: 고정 digest 의 `postgres:16` 이미지의 `/usr/local/bin/docker-entrypoint.sh`(`docker_create_db_directories`)를 읽었다. root 로 시작하면 PGDATA(`/var/lib/postgresql/data`)와 `/var/run/postgresql` 의 postgres 소유가 아닌 항목을 `chown postgres` 한다. 옛 진입점은 root 로 시작해 이 경로를 탔으므로 기존 볼륨은 이미 postgres(999) 소유일 가능성이 크다(읽은 것은 진입점과 이미지 기본 소유자 postgres 뿐이다). 운영 볼륨의 실제 소유자는 확인하지 않았다. 이 영역에는 운영 데이터가 없다는 전제이며 이것도 확인하지 않았다.
 
 ## 되돌리는 조건
 공식 postgres 이미지가 postgres 이외의 사용자나 root 시작을 전제하도록 바뀌거나, 배포가 999:999 로 파일을 줄 수 없는 환경이면 다시 정한다. 그때는 새 ADR 이 이 결정을 대체한다.

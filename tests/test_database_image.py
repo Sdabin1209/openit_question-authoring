@@ -54,7 +54,9 @@ def _build_db_from_copy(tmp_path, mutate_dockerfile=None, mutate_inputs=None):
     req = {"source_dir": str(src), "revision": "abcdef1", "versions": {"boundary": bc, "survey_schema": "v4.0.0"}, "variant": "db", "image_tag": tag,
            "dependency_sources": {"boundary": str(tmp_path / "bc"), "survey_schema": str(tmp_path / "ss")}}
     (tmp_path / "req.json").write_text(json.dumps(req))
-    env = dict(os.environ, PYTHON=str(ROOT / ".venv" / "bin" / "python"))
+    # 왜 이름을 고른다: 상속 환경을 통째로 넘기지 않는다(RUNTIME R9.1). 빌드 스크립트가 쓰는 이름(PATH, HOME, docker 설정·엔진 주소)과 해석기뿐이다
+    env = {k: os.environ[k] for k in ("PATH", "HOME", "DOCKER_CONFIG", "DOCKER_HOST") if k in os.environ}
+    env["PYTHON"] = str(ROOT / ".venv" / "bin" / "python")
     r = subprocess.run(["bash", str(ROOT / "scripts" / "build-image.sh"), str(tmp_path / "req.json")], capture_output=True, text=True, env=env, timeout=HANG_GUARD_SECONDS)
     exists = subprocess.run([DOCKER, "image", "inspect", tag], capture_output=True).returncode == 0
     subprocess.run([DOCKER, "rmi", "-f", tag], capture_output=True)
