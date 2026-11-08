@@ -11,9 +11,9 @@
 - `python -m pytest -q`: PostgreSQL 포함 전체 통과(0.6.0, `TEST_DATABASE_URL` 설정 시). 미설정 시 PostgreSQL 항목은 SKIP.
 - model-runtime: 이 영역은 설치하지 않고 코드에서도 쓰지 않는다. 이미지 라벨 `io.openit.model-runtime`은 `n/a`다(Dockerfile). 규칙 미리보기(I8)는 계약 3.0.0에서 퇴역한 turn-engine 몫이라 이 영역에서 하지 않는다.
 
-- 0.6.2: PostgreSQL 접속·문장·`/readyz` 대기 상한(FAULT_MATRIX P0-3/E1). pytest 218개 통과(`TEST_DATABASE_URL` 설정), 미설정 시 160 통과 + 58 SKIP. 스모크 SQLite·PostgreSQL 모두 SMOKE OK. 컨테이너 조합 재측정은 deploy E2E 5p(헤드).
+- 0.6.2: PostgreSQL 접속·문장·`/readyz` 대기 상한(FAULT_MATRIX P0-3/E1). pytest 통과(`TEST_DATABASE_URL` 설정; 미설정 시 PostgreSQL 시험은 SKIP, 개수는 실행 출력이 정본). 스모크 SQLite·PostgreSQL 모두 SMOKE OK. 컨테이너 조합 재측정은 deploy E2E 5p(헤드).
 
-- 0.6.3: E2·D5 장애 동작(docs/boundary.md), 큰 자료 쓰기 상한, 이메일 패턴 제곱 지연 수정. pytest 283개 통과(`TEST_DATABASE_URL` 설정), 미설정 206 통과 + 77 SKIP. 운영 구성에서 저자 경로를 열지는 사용자 결정(E2)이라 손대지 않았다.
+- 0.6.3: E2·D5 장애 동작(docs/boundary.md), 큰 자료 쓰기 상한, 이메일 패턴 제곱 지연 수정. pytest 통과(`TEST_DATABASE_URL` 설정; 미설정 시 PostgreSQL 시험은 SKIP, 개수는 실행 출력이 정본). 운영 구성에서 저자 경로를 열지는 사용자 결정(E2)이라 손대지 않았다.
 
 - 2026-10-29 단위 3: 계약 v2.2.1 핀(`requirements.lock`, `scripts/build_wheels.sh`), 문진 스키마 survey-schema-v1.1.0 핀(태그는 헤드가 단다). 저작 API 요청은 `AuthoringRequests`로 검사하고 **모르는 키를 거부**한다(동작 변경: 이전에는 무시). 응답은 `AuthoringResponses`·`SignalsResponse`·`ReadyzResponse`로 자기 검사(어기면 503). 환자 확인·검수의 `ext`는 `QuestionAuthoringExt`로 쓰기 전에 검사. 환경 변수는 `QuestionAuthoringDeployInterface.Environment`로 시작 때 검사. `purge` 출력은 JSON 한 줄(`PurgeResult`). 결함 수정: 추출기 선택 전에 실패한 자료의 출처에 `extractor: null`이 들어가 계약을 어기던 것. 시험 개수는 README "시험 상태"(이번 실행 값은 그곳에 갱신).
 
