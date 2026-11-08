@@ -65,6 +65,18 @@ def check_environment(environ=None) -> None:
         raise SystemExit("환경 변수가 계약(CommonEnv)을 어긴다: " + "; ".join(errs[:5]))
 
 
+def check_backup_environment(environ=None) -> None:
+    """백업·복구 잡의 환경 변수를 계약 QuestionAuthoringBackupEnv(4.0.x, allOf BackupJobEnv -> CommonEnv)로 검사한다.
+    왜 서비스 Env(QuestionAuthoringEnv)가 아닌가: 그 스키마는 서비스 기동 조건(운영이면 저자·gateway 토큰 필수)을 갖는다. 백업 잡에는 토큰이 주입되지 않으므로
+    서비스 Env 로 검사하면 운영 구성에서 잡이 언제나 거부된다(2026-11-08 E2E 단계 9). 계약은 잡 전용 스키마를 따로 둔다(이름·형식은 같은 정의를 $ref).
+    QA_·OPENIT_ 이름만 넘긴다(다른 접두사는 계약 밖). 빈 문자열은 "설정 안 함". 값은 오류에 쓰지 않는다(비밀이 섞일 수 있다)."""
+    environ = os.environ if environ is None else environ
+    env = {k: v for k, v in environ.items() if k.startswith(("QA_", "OPENIT_")) and v.strip() != ""}
+    errs = contract.problems("QuestionAuthoringBackupEnv", None, env)
+    if errs:
+        raise SystemExit("환경 변수가 계약(QuestionAuthoringBackupEnv)을 어긴다: " + "; ".join(errs[:5]))
+
+
 def _seconds(name: str, default: float) -> float:
     raw = os.environ.get(name)
     if raw is None or raw.strip() == "":
@@ -178,12 +190,19 @@ def main(argv=None) -> int:
         print(json.dumps(result), flush=True)   # 왜 JSON: deploy가 한 줄을 읽는다(파이썬 dict 표기는 JSON이 아니다)
         return 0
     if argv[:1] in (["backup"], ["restore"]):
-        check_environment()
-        _require_production_config(need_tokens=False)
         from .wiring import backup_flow
         ts = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")   # noqa: E731
         started, result, err = ts(), None, None
         try:
+            check_backup_environment()
+            _require_production_config(need_tokens=False)
+        except SystemExit as e:
+            # 설정 오류도 마지막 줄 BackupJobResult(failed, INVALID_RECORD) + 종료 코드 1(R9.2, 계약 4.0.0): 판정하는 쪽은 마지막 줄만 읽는다.
+            # 메시지는 변수 이름·규칙 이름뿐이다(값 없음)
+            err = BoundaryError("INVALID_RECORD", str(e.code))
+        try:
+            if err is not None:
+                raise err
             proxy = egress_proxy_from(os.environ)
             if argv[0] == "backup":
                 result = backup_flow.run(os.environ, proxy=proxy)

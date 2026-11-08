@@ -150,15 +150,41 @@ def test_dump_copies_every_table_from_a_real_postgres_in_one_readonly_transactio
             s.close()
 
 
-def test_bad_egress_proxy_refuses_to_start(tmp_path, monkeypatch):
+def test_bad_egress_proxy_refuses_to_start(tmp_path, monkeypatch, capsys):
     """R1.8·CommonEnv: OPENIT_EGRESS_PROXY 가 loopback http 가 아니면 기동 때 거부한다(잡도 같다). 값은 메시지에 쓰지 않는다."""
     for k, v in env_of(tmp_path, OPENIT_EGRESS_PROXY="http://gateway.example:3128").items():
         monkeypatch.setenv(k, v)
     monkeypatch.setenv("QA_DB_PATH", str(tmp_path / "questions.sqlite3"))   # 계약 4.0.0: 컨테이너 경로는 절대 경로(AbsolutePath)
     monkeypatch.setenv("QA_DEV_MODE", "1")
-    with pytest.raises(SystemExit) as e:
-        qa_main.main(["backup"])
-    assert "CommonEnv" in str(e.value) and "gateway.example" not in str(e.value)
+    rc = qa_main.main(["backup"])
+    cap = capsys.readouterr()
+    line = json.loads(cap.out.strip().splitlines()[-1])      # 설정 오류도 마지막 줄 BackupJobResult(R9.2)
+    assert rc == 1 and line["status"] == "failed" and line["error"]["code"] == "INVALID_RECORD"
+    assert "QuestionAuthoringBackupEnv" in line["error"]["message"] and "gateway.example" not in cap.out + cap.err
+
+
+def test_production_backup_env_without_service_tokens_passes_the_contract_check(tmp_path, monkeypatch, capsys):
+    """2026-11-08 E2E 단계 9 회귀: 운영 구성(QA_DEV_MODE 없음)의 백업 잡에는 저자·gateway 토큰이 주입되지 않는다(compose job-*-backup).
+    잡 환경은 QuestionAuthoringBackupEnv 로 검사해야 하고, 서비스 Env(토큰 필수)로 검사하면 잡이 결과 줄 없이 거부됐다."""
+    for k in [k for k in __import__("os").environ if k.startswith("QA_")]:
+        monkeypatch.delenv(k)
+    for k, v in env_of(tmp_path).items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setattr(backup_flow, "run", lambda env, proxy=None: {"snapshot_id": "abc", "bytes": 5})
+    rc = qa_main.main(["backup"])
+    line = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert rc == 0 and line["status"] == "ok"
+
+
+def test_missing_backup_input_is_a_failed_result_line_not_a_bare_exit(tmp_path, monkeypatch, capsys):
+    for k, v in env_of(tmp_path).items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.delenv("OPENIT_BACKUP_URL")
+    rc = qa_main.main(["backup"])
+    out = capsys.readouterr().out
+    line = json.loads(out.strip().splitlines()[-1])
+    assert rc == 1 and line["status"] == "failed" and line["error"]["code"] == "INVALID_RECORD" and "OPENIT_BACKUP_URL" in line["error"]["message"]
+    assert "S3CRET" not in out and "DBSECRET" not in out
 
 
 @pytest.mark.parametrize("bad", ["../../etc/passwd", "latest; rm -rf /", "XYZ", ""])

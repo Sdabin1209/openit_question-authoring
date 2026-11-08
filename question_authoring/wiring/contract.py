@@ -31,6 +31,11 @@ def problems(schema: str, def_name: Optional[str], value: Any) -> list[str]:
             need = sorted({n for c in e.context if c.validator == "required" for n in c.validator_value})
             if need:
                 msg += " (필요: " + " 또는 ".join(need) + ")"
+        elif e.validator == "required" and isinstance(e.instance, dict):
+            # 빠진 이름만 쓴다(값 아님): 운영자가 어느 입력이 주입되지 않았는지 알게
+            missing = [n for n in e.validator_value if n not in e.instance]
+            if missing:
+                msg += " (없음: " + ", ".join(missing) + ")"
         out.append(msg)
     return out
 
