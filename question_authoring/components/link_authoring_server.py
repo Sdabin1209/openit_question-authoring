@@ -8,11 +8,11 @@ import contextlib
 import threading
 from dataclasses import dataclass
 import json
-import re
 from typing import Callable, Iterable, Mapping, Optional
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+from boundary_contracts import is_id
 from boundary_contracts.errors import BoundaryError
 from openit_link import App, Response, Route
 from openit_link.server import STATUS  # noqa: F401  상태 코드 표는 라이브러리 것을 다시 내보낸다(시험이 계약 표와 대조한다)
@@ -54,9 +54,6 @@ def _check_response(schema: str, def_name: Optional[str], value):
         raise ResponseContractError(f"{schema}{'.' + def_name if def_name else ''} 위반: {errs[0]}")
     return value
 
-
-# gateway 사용자 ID: 일반 ID 또는 이메일형(local@domain). 문자 집합과 길이를 제한한다(총 길이가 계약 Id의 128자 안에 들도록 local 60, domain 60).
-_USER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,59}(?:@[A-Za-z0-9][A-Za-z0-9.-]{0,59})?$")
 
 # 왜 8MiB: 도입 시 근거 기록 없음. 문항 자료는 작은 텍스트 양식이라 넉넉한 선이다. 라이브러리 Route.max_body와 waitress max_request_body_size가 강제한다(초과는 413). ADR 0016
 MAX_BODY = 8 * 1024 * 1024
@@ -174,7 +171,7 @@ class Api:
             user = req.user
             if not user:       # 사람 행위자 호출에 신원이 없다(계약: X-Openit-User 없으면 401)
                 raise BoundaryError("PERMISSION_DENIED", "인증이 필요하다", {"http_status": 401})
-            if not _USER_RE.match(user):
+            if not is_id(user):      # 계약 HumanUserId(= Id): 정규식 사본을 두지 않는다(D117, 계약 5.0.0)
                 raise BoundaryError("PERMISSION_DENIED", "권한이 없다")
             granted = {r.strip() for r in (req.headers.get("x-openit-roles") or "").split(",")}
             # 왜 경로로 고르나: Actor는 역할 하나다. 두 역할을 가진 사용자는 검수 경로(/v1/reviews)에서만 검수자, 그 밖에서는 저자로 다룬다
@@ -220,9 +217,9 @@ class Api:
         return statics + [
             # /metrics: 인증 없음(roles 비움, 토큰이 있어도 무시). 접근 통제는 망이다(RUNTIME R10.11, R6.2)
             Route("GET", "/metrics", lambda r: Response(200, self.metrics_text(), content_type="text/plain; version=0.0.4; charset=utf-8"), roles=frozenset(), max_body=MAX_BODY),
-            R("GET", sc, lambda r, a: self._read(r), read, response="ListEnvelope"),   # R7: link App 이 내보내기 전에 계약으로 검증(HTTP.md I1 list_ids)
-            R("GET", sc + "/{qsid}/latest", lambda r, a: self._read(r), read, response="ArtifactRef"),   # R7(HTTP.md I1 latest, 계약 3.4.18)
-            R("GET", sc + "/{qsid}/versions", lambda r, a: self._read(r), read, response="ListEnvelope"),   # R7(HTTP.md I1 list_versions)
+            R("GET", sc, lambda r, a: self._read(r), read, response="ListEnvelope", query="HttpQueries#/$defs/Page"),   # R7: link App 이 내보내기 전에 계약으로 검증(HTTP.md I1 list_ids)
+            R("GET", sc + "/{qsid}/latest", lambda r, a: self._read(r), read, response="ArtifactRef", query="HttpQueries#/$defs/Latest"),   # R7(HTTP.md I1 latest, 계약 3.4.18)
+            R("GET", sc + "/{qsid}/versions", lambda r, a: self._read(r), read, response="ListEnvelope", query="HttpQueries#/$defs/Page"),   # R7(HTTP.md I1 list_versions)
             R("GET", sc + "/{qsid}/versions/{ver}", lambda r, a: self._read(r), read),
             R("GET", sc + "/{qsid}/versions/{ver}/reviews", lambda r, a: self._read(r), read),
             R("GET", sc + "/{qsid}/versions/{ver}/change", lambda r, a: self._read(r), read, response="ChangeClassificationItem"),   # R7(계약 3.4.18)
@@ -271,9 +268,7 @@ class Api:
         self.svc.require_reader(actor)                 # 저자 또는 검수자. 읽기 토큰은 여기 오기 전에 403
         if self.signals is None:
             return {"status": "DISABLED", "reason": "I7(ops-feedback)가 설정되지 않았다(QA_FAILURES_URL)"}
-        mx = int(q.get("max_cases", 2000))
-        if not 1 <= mx <= 20000:                       # 형식(숫자)은 스키마가, 범위는 여기서(스키마 설명: 1~20000)
-            raise BoundaryError("INVALID_RECORD", "max_cases는 1~20000이어야 한다")
+        mx = int(q.get("max_cases", 2000))     # 범위(1~20000)는 쿼리 스키마(계약 SignalsQuery.max_cases 패턴)가 입구에서 거부한다(D117)
         try:
             return self.svc.build_signals(self.signals, question_set_id=q.get("question_set_id"),
                                           review_status=q.get("review_status"), max_cases=mx,
@@ -295,13 +290,8 @@ class Api:
         return self.svc.decisions(self.gate, req.query)
 
     def _page(self, q) -> tuple[Optional[str], int]:
-        try:
-            limit = int(q.get("limit", 100))
-        except ValueError:
-            raise BoundaryError("INVALID_RECORD", "limit은 정수여야 한다")
-        if not 1 <= limit <= 500:
-            raise BoundaryError("INVALID_RECORD", "limit은 1~500이어야 한다")
-        return q.get("cursor"), limit
+        # 형식·범위(limit 1~500)는 쿼리 스키마(계약 HttpQueries.Page)가 입구에서 거부한다(D117). 여기는 기본값만 정한다
+        return q.get("cursor"), int(q.get("limit", 100))
 
     def _read(self, req):
         """I1 QuestionReader의 HTTP 읽기 면(boundary-contracts/HTTP.md). 응답은 스키마 검증을 거친다."""
@@ -315,9 +305,7 @@ class Api:
             return {"items": items, "next_cursor": nxt}
         ver = p.get("ver")
         if ver is None and path.endswith("/latest"):
-            flag = q.get("reviewed_only", "false")
-            if flag not in ("true", "false"):
-                raise BoundaryError("INVALID_RECORD", "reviewed_only는 true 또는 false")
+            flag = q.get("reviewed_only", "false")      # true/false 열거는 쿼리 스키마(계약 HttpQueries.Latest)가 입구에서 거부한다(D117)
             return r.latest(qsid, reviewed_only=flag == "true")
         if ver is None:
             cur, lim = self._page(q)

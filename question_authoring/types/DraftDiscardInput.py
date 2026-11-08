@@ -5,8 +5,6 @@ from __future__ import annotations
 
 from typing import Any, TypedDict
 
-from . import DiscardReason
-
 
 class DraftDiscardInput(TypedDict):
     """
@@ -14,6 +12,6 @@ class DraftDiscardInput(TypedDict):
     """
 
     draft: dict[str, Any]
-    reason: DiscardReason
+    reason: str
     actor_id: str
     now: str

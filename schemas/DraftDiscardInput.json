@@ -15,7 +15,7 @@
    "$ref": "AuthoringResponses.schema.json#/$defs/Draft"
   },
   "reason": {
-   "$ref": "DiscardReason.json"
+   "$ref": "AuthoringRequests.schema.json#/$defs/DiscardRequest/properties/reason"
   },
   "actor_id": {
    "$ref": "_common.schema.json#/$defs/Id"

@@ -142,3 +142,12 @@ def test_i7_failure_maps_to_boundary_error(svc, i7):
     dead = Api(svc, {"auth-tok": Actor("dr-kim", "question-author")}, signals=HttpFailureStore("http://127.0.0.1:9", "x", timeout=HANG_GUARD_SECONDS))
     st, body = call(dead, "/v1/signals")
     assert st == 503 and body["retryable"] is True
+
+
+def test_signals_max_cases_range_is_the_contract_queries_not_a_code_check(svc, i7):
+    # 범위(1~20000)는 계약 SignalsQuery.max_cases 패턴이 입구에서 거부한다(D117): 코드 안 거부 조건은 없다
+    on = Api(svc, {"auth-tok": Actor("dr-kim", "question-author")}, signals=HttpFailureStore(i7, "i7-tok"))
+    for bad in ("0", "20001", "-1", "1.5", "abc", "99999999999999999999"):
+        assert call(on, "/v1/signals?max_cases=" + bad)[0] == 400, bad
+    for ok in ("1", "20000"):
+        assert call(on, "/v1/signals?max_cases=" + ok)[0] == 200, ok

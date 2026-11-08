@@ -138,3 +138,51 @@ def test_decisions_requires_the_question_set_id_and_never_submits(svc):
     assert a.handle("GET", "/v1/set-decisions", H)[0] == 400
     assert a.handle("POST", "/v1/set-decisions?question_set_id=qs-v", H, b"{}")[0] in (404, 405)
     assert not hasattr(g, "submit_candidate") and g.calls == []
+
+
+# ---- 계약 5.0.0(결함 대장 #10, D117): 입구 상한은 계약 쿼리 스키마가 맡는다 ----
+def test_decisions_version_over_128_is_a_400_at_the_entrance_and_never_reaches_the_gate(svc):
+    # 4.x 에서는 이 값이 release-gate 까지 가서 거절되고 503 으로 보였다. 지금은 입구에서 400 이다(503 이 아니다)
+    g = FakeGate([])
+    a = api_of(svc, g)
+    st, out = a.handle("GET", "/v1/set-decisions?question_set_id=qs-v&version=" + "1" * 129, H)
+    assert st == 400 and out["code"] == "INVALID_RECORD" and g.calls == []
+    assert a.handle("GET", "/v1/set-decisions?question_set_id=qs-v&version=" + "1" * 128, H)[0] == 200   # 경계값은 통과
+    assert len(g.calls) == 1
+
+
+def test_decisions_gate_empty_string_next_cursor_is_sent_as_null(svc):
+    # 계약 5.0.0: Decisions 는 HttpPages.Decisions 별칭이라 next_cursor 빈 문자열을 거부한다. 출구는 null 로 낸다(503 이 되지 않는다)
+    class EmptyCursor(FakeGate):
+        def find_decisions(self, **kw):
+            return [GATE_DECISION], ""
+    st, out = api_of(svc, EmptyCursor()).handle("GET", "/v1/set-decisions?question_set_id=qs-v", H)
+    assert st == 200 and out["next_cursor"] is None
+
+
+def test_the_contract_decisions_schema_rejects_an_empty_next_cursor():
+    v = validator("AuthoringResponses").evolve(schema={"$ref": "#/$defs/Decisions"})
+    assert not list(v.iter_errors({"items": [], "next_cursor": None}))
+    assert list(v.iter_errors({"items": [], "next_cursor": ""}))
+
+
+def test_overlong_set_versions_cursor_and_unknown_limit_are_400(svc):
+    a = api_of(svc)
+    assert a.handle("GET", "/v1/set-versions?cursor=" + "x" * 513, H)[0] == 400
+    assert a.handle("GET", "/v1/set-decisions?question_set_id=qs-v&limit=501", H)[0] == 400
+
+
+def test_a_stored_4x_record_is_not_silently_mixed_into_5x_answers(svc):
+    # 계약 5.0.0 '새 환경 전제': 4.x 로 저장된 검수 기록은 읽을 때 UNSUPPORTED_VERSION 으로 실패한다(승인 판정에 쓰이지도, 응답에 실리지도 않는다)
+    publish(svc, "qs-old")
+    reader = svc.store.reader()
+    ref = reader.ref_of("qs-old", "1")
+    assert reader.get_reviews(ref)                      # 지금 MAJOR 의 기록은 읽힌다
+    real = svc.store._b._review_rows
+    svc.store._b._review_rows = lambda q, n: [{**r, "pipeline_schema_version": "4.0"} for r in real(q, n)]
+    with pytest.raises(BoundaryError) as e:
+        reader.get_reviews(ref)
+    assert e.value.code == "UNSUPPORTED_VERSION"
+    with pytest.raises(BoundaryError) as e:
+        reader.latest("qs-old", reviewed_only=True)
+    assert e.value.code == "UNSUPPORTED_VERSION"

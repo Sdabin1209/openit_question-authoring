@@ -9,12 +9,21 @@ from __future__ import annotations
 import copy
 from typing import Optional
 
-from boundary_contracts import canonical
+from boundary_contracts import PIPELINE_SCHEMA_VERSION, canonical
 from boundary_contracts.errors import BoundaryError
 
 # 쪽 하나의 최대 크기. HTTP 읽기 면은 limit을 500까지만 받는다(link_authoring_server._page). 이 값(1000)은 저장소를 직접 부르는 호출(이웃 시험의 메모리 구현 등)이
 # 한 번에 메모리를 크게 쥐지 않게 하는 방어 상한이다. 측정한 값이 아니라 HTTP 상한의 두 배로 잡은 판단값이다(근거 기록 없음, D89 한계)
 MAX_LIMIT = 1000
+
+
+def _same_major(rec):
+    """저장된 검수·변경 기록의 pipeline_schema_version MAJOR 가 지금 계약과 다르면 조용히 섞지 않고 UNSUPPORTED_VERSION 으로 실패한다.
+    왜: 계약 5.0.0 은 새 환경을 전제하고 4.x 저장 데이터를 옮기지 않는다(CHANGELOG 5.0.0 '이전'). 옛 기록을 승인 판정(latest reviewed_only)이나 응답에 그대로 쓰면
+    4.x 의 규칙으로 만든 값이 5.x 응답에 섞인다."""
+    if rec is not None and str(rec.get("pipeline_schema_version", "")).split(".")[0] != PIPELINE_SCHEMA_VERSION.split(".")[0]:
+        raise BoundaryError("UNSUPPORTED_VERSION", "저장된 기록이 다른 계약 MAJOR 로 만들어졌다. 4.x 데이터는 이전하지 않는다(새 환경 전제, 계약 5.0.0)")
+    return rec
 
 
 def bank_hash(bank: dict) -> str:
@@ -73,8 +82,8 @@ class QuestionStore:
     def _version_rows(self, qsid): return self._b._version_rows(qsid)
     def _ids(self): return self._b._ids()
     def _bank_json(self, qsid, n): return self._b._bank_json(qsid, n)
-    def _review_rows(self, qsid, n): return self._b._review_rows(qsid, n)
-    def _change_row(self, qsid, n): return self._b._change_row(qsid, n)
+    def _review_rows(self, qsid, n): return [_same_major(r) for r in self._b._review_rows(qsid, n)]
+    def _change_row(self, qsid, n): return _same_major(self._b._change_row(qsid, n))
     def _delete_draft_if_unchanged(self, d): return self._b._delete_draft_if_unchanged(d)
     def _version_source_hashes(self): return self._b._version_source_hashes()
     def _blob_meta(self): return self._b._blob_meta()

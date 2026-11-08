@@ -12,6 +12,7 @@ import jsonschema
 
 import survey_schema
 from boundary_contracts.errors import BoundaryError
+from boundary_contracts.schemas_api import ContractValidator
 from boundary_contracts import format_checker as _bc_format_checker  # 형식(format) 검증기가 없으면 조용히 넘기지 않고 실패한다(계약 3.5.0)
 
 INPUT_SCHEMA = "BankValidateInput"
@@ -28,13 +29,14 @@ def _validator():
             qb = survey_schema.load_schema("QuestionBank", SUPPORTED_RUNTIME_CONTRACT_VERSION)
         except KeyError as e:
             raise BoundaryError("UNSUPPORTED_VERSION", f"문진 스키마 정수 버전 {SUPPORTED_RUNTIME_CONTRACT_VERSION}이 설치되어 있지 않다") from e
-        _V = jsonschema.Draft202012Validator(qb, format_checker=_bc_format_checker(qb))
+        # 왜 감싼다: 계약 5.0.0 의 비유한 수 검사를 받는다(5.0.1 의 schema_validator 로 바꿀 자리)
+        _V = ContractValidator(jsonschema.Draft202012Validator(qb, format_checker=_bc_format_checker(qb)))
     return _V
 
 
 def question_bank_errors(bank: Any) -> list[str]:
     v = _validator()
-    return [f"/{'/'.join(map(str, e.absolute_path))}: {e.message}"
+    return [f"/{'/'.join(map(str, e.absolute_path))}: {e.validator} 규칙 위반"   # 왜 e.message 가 아니다: 값이 오류 응답에 실리지 않게 위치와 규칙 이름만(INTERFACES I7)
             for e in sorted(v.iter_errors(bank), key=lambda e: list(map(str, e.absolute_path)))]
 
 

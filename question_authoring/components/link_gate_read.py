@@ -32,4 +32,4 @@ class GateReader:
             if e.code in ("INTEGRITY_ERROR", "UNSUPPORTED_VERSION", "INVALID_RECORD"):      # 상류의 깨진 응답·요청 거절은 성공으로 취급하지 않는다(FAULT_POLICY 10)
                 raise BoundaryError("UNAVAILABLE", "release-gate 의 응답이 올바르지 않다") from None
             raise
-        return {"items": items, "next_cursor": nxt}
+        return {"items": items, "next_cursor": nxt or None}   # 계약 5.0.0: Decisions 는 HttpPages.Decisions 별칭이라 next_cursor 빈 문자열을 거부한다(null 로 낸다)

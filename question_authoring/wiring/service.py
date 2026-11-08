@@ -196,7 +196,7 @@ class AuthoringService:
     def discard_draft(self, actor: Actor, draft_id: str, reason: str) -> dict:
         self._authorize(actor)
         with self._dlock(draft_id):
-            schemas.check("DiscardReason", reason)
+            schemas.check("AuthoringRequests#DiscardRequest", {"reason": reason})   # 사유 규칙(공백만 거부·2000자)은 계약 정의(D117)
             d = self._draft(draft_id)
             self._authorize(actor, owner=d["created_by"])
             d = self._discard({"draft": d, "reason": reason, "actor_id": actor.id, "now": self.now()})

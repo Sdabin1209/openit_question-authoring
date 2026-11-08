@@ -9,6 +9,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from boundary_contracts import PIPELINE_SCHEMA_VERSION
+
 WHO = {"kim": ("u-kim", "dr-kim", "author"), "park": ("u-park", "dr-park", "clinical-reviewer")}
 
 
@@ -42,7 +44,7 @@ def gate(port, decision_file):
 
 
 def platform(port, qa_port, mutate):
-    err = json.dumps({"code": "NOT_FOUND", "message": "x", "retryable": False, "pipeline_schema_version": "4.0"}).encode()
+    err = json.dumps({"code": "NOT_FOUND", "message": "x", "retryable": False, "pipeline_schema_version": PIPELINE_SCHEMA_VERSION}).encode()
 
     class H(Quiet):
         def who(self):
@@ -58,7 +60,7 @@ def platform(port, qa_port, mutate):
                     return self.send(200, json.dumps({"user": who[0], "preferredUsername": who[1], "groups": ["/" + who[2]]}).encode())
                 if who is None:
                     return self.send(401, json.dumps({"code": "PERMISSION_DENIED", "message": "로그인이 필요하다", "retryable": False,
-                                                      "pipeline_schema_version": "4.0"}).encode())
+                                                      "pipeline_schema_version": PIPELINE_SCHEMA_VERSION}).encode())
                 if mutate and self.path.startswith("/v1/set-decisions"):
                     return self.send(404, err)
                 n = int(self.headers.get("Content-Length") or 0)

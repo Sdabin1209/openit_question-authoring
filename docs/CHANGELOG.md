@@ -1,5 +1,14 @@
 # 변경 이력
 
+## 계약 5.0.0 반영 (2026-11-08, 브랜치 contract-5; link·문진 스키마 태그는 헤드 알림 뒤)
+
+- 잠금: boundary-contracts v5.0.0(`requirements.lock`, `scripts/build_wheels.sh`). 생성 타입 `scripts/gen_types.py` 로 재생성.
+- Id 패턴 사본 제거(D117): `extract_textform` 의 `_ID_RE` → `boundary_contracts.is_id`, gateway 사용자 `_USER_RE` → `is_id`(계약 `HumanUserId` = Id; 이메일형 `@` 은 계약 Id 에 없어 더는 받지 않는다).
+- 코드 안 거부 조건을 계약 쿼리 스키마로: `/v1/signals` `max_cases`(SignalsQuery), `/v1/question-sets*` `limit`·`cursor`(HttpQueries.Page), `reviewed_only`(HttpQueries.Latest). 이 영역 스키마: `DiscardReason` 삭제 → 계약 `DiscardRequest.reason` 참조, `FailureReadRequest.question_set_id`·`StorePageQuery.cursor` 는 계약 Id, `StoreVersionPageQuery.cursor` 18자리 상한.
+- `set-decisions` version 128자 초과는 입구 400(계약 DecisionsQuery). `Decisions` 가 `HttpPages.Decisions` 별칭이 되어 `next_cursor` 빈 문자열은 null 로 낸다.
+- 영역이 직접 만든 jsonschema 검증기(`wiring/schemas.py`, `bank_validate.py`)를 `ContractValidator` 로 감쌌다(비유한 수 검사; 5.0.1 의 `schema_validator` 로 바꿀 자리). `bank_validate` 오류에 jsonschema `e.message` 를 싣지 않는다(위치·규칙 이름만, INTERFACES I7).
+- 저장된 검수·변경 기록의 `pipeline_schema_version` MAJOR 가 다르면 읽을 때 UNSUPPORTED_VERSION(새 환경 전제, schemas/README.md 18행).
+
 ## 미배포 (2026-11-04) 코드 단계: 계약 v3.4.17, link v0.4.22
 
 - 브라우저 시험: 저자 화면의 검수 제출 전에 확정 버전 선택지가 채워지길 기다리고 응답(403)을 기다린다(필수 select 가 비어 있으면 브라우저가 제출을 막아 부하 때 한 번 실패했다).

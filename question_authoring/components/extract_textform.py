@@ -9,6 +9,7 @@ import re
 from typing import Optional
 
 import base64
+from boundary_contracts import is_id
 from dataclasses import dataclass, field
 
 INPUT_SCHEMA = "MaterialExtractRequest"
@@ -53,7 +54,6 @@ TIME_BUDGET_SECONDS = 6.0      # 추출 전체의 시간 예산(넘으면 Extrac
 # 칸 규격 줄(문진 스키마 SlotDef의 선택 속성 5개, survey-schema 1.2.0). '단위:' 줄(UnitDef, 사용자 말의 단위 환산)과 다르다 - 그래서 '값 단위'다. ADR 0018
 _FIELD_KEYS = {"자료형": "data_type", "값 단위": "unit", "최소": "minimum", "최대": "maximum", "초과 최소": "exclusive_minimum"}
 PREREQ_OPS = ("==", "!=", ">=", "<=", ">", "<")   # 문진 스키마 4.0.0 Prerequisite.op 열거(ADR 0027). 두 글자를 먼저 본다
-_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")   # 문진 스키마 QuestionBank.question_set_id 패턴
 DATA_TYPES = ("boolean", "integer", "number", "option")   # 문진 스키마 SlotDef.data_type 열거
 
 
@@ -240,7 +240,7 @@ class TextFormExtractor:
         """문항 앞의 머리 항목('문진표 ID: ', '문진표 제목: '). 읽었으면 True."""
         k, v = _kv_split(raw)
         if k == "문진표 ID":
-            if _ID_RE.match(v):
+            if is_id(v):   # 왜 계약 함수: Id 패턴 사본을 두지 않는다(D117, 계약 5.0.0)
                 self.bank["question_set_id"] = v
             else:
                 self._flag("/question_set_id", UNSURE, "문진표 ID를 영문·숫자로 시작하는 128자 이하(영문 숫자 . _ : -)로 읽지 못했다. 값을 비워 두었다", raw)

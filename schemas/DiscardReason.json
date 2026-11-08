@@ -1,7 +1,0 @@
-{
- "$id": "DiscardReason.json",
- "type": "string",
- "pattern": "\\S",
- "description": "버리는 사유. 공백뿐이면 거부한다",
- "title": "DiscardReason"
-}

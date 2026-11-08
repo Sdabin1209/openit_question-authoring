@@ -16,7 +16,7 @@
   "cursor": {
    "oneOf": [
     {
-     "type": "string"
+     "$ref": "_common.schema.json#/$defs/Id"
     },
     {
      "type": "null"
