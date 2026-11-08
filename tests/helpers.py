@@ -151,7 +151,8 @@ def image(key):
 
 # 시험이 자식 프로세스에 넘기는 환경의 허용 목록(RUNTIME R9.1: 상속받은 환경을 통째로 넘기지 않는다). head check-container-inputs 의 최소 집합과 같다.
 # 그 호출에 더 필요한 이름은 min_env(NAME=값) 으로 이름을 명시해 더한다(예: GIT_CONFIG_GLOBAL, TEST_DATABASE_URL, 스크립트가 읽는 이름).
-ENV_ALLOWED = ("PATH", "HOME", "LANG", "TMPDIR", "DOCKER_CONFIG", "DOCKER_HOST")
+# 왜 DOCKER_CONTEXT·TLS·CERT_PATH·SSH_AUTH_SOCK: Docker CLI 가 컨텍스트·원격 엔진 연결을 해석하는 공식 이름이라 버리면 연결이 끊긴다(출처: codex C2 검토, 2026-11-09).
+ENV_ALLOWED = ("PATH", "HOME", "LANG", "TMPDIR", "DOCKER_CONFIG", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH", "SSH_AUTH_SOCK")
 
 
 def min_env(*inherit, **extra):

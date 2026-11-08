@@ -170,7 +170,7 @@ def test_default_interpreter_is_the_repo_venv_and_failures_stop_early(tmp_path, 
     """PYTHON을 주지 않으면 리포의 .venv를 쓰고, 없으면 분명한 메시지로 멈춘다. 요청 해석 실패가 다음 줄의 엉뚱한 오류로 번지지 않는다."""
     f = tmp_path / "req.json"
     f.write_text(json.dumps(dict(req, surprise=1)))
-    env = {k: v for k, v in os.environ.items() if k != "PYTHON"}
+    env = min_env()   # 왜 허용 목록: PYTHON 을 주지 않는 최소 환경(R9.1). 제외 목록은 상속을 통째로 넘긴다(출처: codex C2 검토, 2026-11-09)
     p = subprocess.run(["bash", str(SCRIPT), str(f)], env=env, capture_output=True, text=True, timeout=HANG_GUARD_SECONDS)
     assert p.returncode == 2 and "unbound" not in p.stderr and "tar:" not in p.stderr
     venv = ROOT / ".venv" / "bin" / "python"
@@ -221,3 +221,14 @@ def test_docker_gets_the_installed_versions(tmp_path, req):
         del os.environ["FAKE_LOG"]
     rec = log.read_text()
     assert "BOUNDARY_TAG=v3.1.2" in rec and "SURVEY_SCHEMA_TAG=3 " in rec
+
+
+def test_min_env_passes_docker_connection_names(monkeypatch):
+    """Docker 연결 이름(가짜 값)이 최소 환경에 전달되고, 허용 목록 밖 이름은 버려진다. 값은 출력하지 않는다."""
+    names = ("DOCKER_CONTEXT", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH", "SSH_AUTH_SOCK", "DOCKER_HOST", "DOCKER_CONFIG")
+    for n in names:
+        monkeypatch.setenv(n, "fake-" + n)
+    monkeypatch.setenv("NOT_ALLOWED_NAME", "x")
+    env = min_env()
+    assert all(env.get(n) == "fake-" + n for n in names)
+    assert "NOT_ALLOWED_NAME" not in env
