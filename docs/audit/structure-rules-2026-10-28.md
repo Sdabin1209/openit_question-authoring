@@ -13,7 +13,7 @@
 P1(독립성을 깨고 실제 결합을 만드는 것)은 찾지 못했다. 가장 큰 구조 문제는 "컴포넌트 경계가 모듈 이름에만 있고 코드에는 없다"는 것이다(QA-01~05). 계약 대조(F)에서 실제 어긋남 하나를 재현했다(QA-13, 퍼센트 인코딩된 ID).
 
 읽은 것: 이 리포의 CLAUDE.md, README.md, docs/brief.md, design.md, boundary.md, STATUS.md, runbook.md, CR-0006, ADR 목차, `question_authoring/` 전 파일(service, http_api, signals, classify, preview, validation, __main__, extractors/base·__init__, store/base·__init, sqlite·memory·postgres는 grep과 일부만), Dockerfile, scripts/build_wheels.sh, requirements.lock. 계약: `../boundary-contracts`의 HTTP.md, INTERFACES.md(I1, I7, I8), CONVENTIONS.md 9·10절, schemas(ReviewRecord, ChangeClassification, FailureCase), `boundary_contracts/sdk.py`, `clients/questions.py`, `clients/_http.py`(일부), `../survey-service/schema/schemas/TurnTrace.json`(question_id 부분).
-돌린 것: `.venv/bin/python -m pytest -q tests/test_http_client_conformance.py tests/test_http_read.py tests/test_signals.py tests/test_reader_conformance.py` -> 71 통과, 23 건너뜀(PostgreSQL 없음). 재현 스크립트 2개(임시 파일, 메모리 저장소). 전체 시험, 스모크(Docker), PostgreSQL 시험은 돌리지 않았다.
+돌린 것: `.venv/bin/python -m pytest -q tests/test_http_client_conformance.py tests/test_http_read.py tests/test_signals.py tests/test_reader_conformance.py` -> 통과·건너뜀(개수는 실행 출력이 정본)(PostgreSQL 없음). 재현 스크립트 2개(임시 파일, 메모리 저장소). 전체 시험, 스모크(Docker), PostgreSQL 시험은 돌리지 않았다.
 
 ## A. 컴포넌트 목록
 
@@ -166,7 +166,7 @@ P1(독립성을 깨고 실제 결합을 만드는 것)은 찾지 못했다. 가�
 - 비밀: `read_secret`(`NAME_FILE` 우선)로 읽는다(`__main__.py:58, 108, 113, 126, 135`). 단 `QA_USER_ROLES`는 사용자 ID=역할 표라 환경 변수로 받는다(비밀 값이 아닌 구성으로 판단, 사용자 ID가 비밀인지는 정책 몫).
 - Dockerfile: 비root(`USER 10001`), 라벨 키 6개 모두 있음(D50), `/healthz` HEALTHCHECK. 이웃 Dockerfile 인자 없음.
 - I1 한 줄씩 대조(HTTP.md I1 표 6행): 경로 6개 일치(`http_api.py:114, 118-128, 129-145`), 목록 `{items, next_cursor}`·limit 기본 100/최대 500(`:101-108`), `latest?reviewed_only=true|false`만 받고 그 밖의 값은 400(`:122-124`), 없으면 404(`store/base.py:166`), `get_change`는 `{"item": ...|null}`(`:145`), 해시 재계산·`INTEGRITY_ERROR` 422(`store/base.py:140-148`, STATUS 표 `:19-20`), 읽기 토큰이 저작 경로를 호출하면 403(`:83`, `_actor`), 토큰 없거나 틀리면 403(CONVENTIONS 9절 (2)), `ref.version == str(bank.version)`(`service.py:408-414`), `affected_slots` = `<question_id>.<slot_id>`(`classify.py:179-181`), `list_versions` 오래된 것부터(`base.py:189`), `get_reviews` 시각순(`base.py:196-198`), `reviewed_only`는 가장 최근 검수 기준(`base.py:153-159`, INTERFACES I1과 일치). 어긋남은 QA-13, QA-14뿐.
-- 적합성 시험: `tests/test_http_client_conformance.py`, `test_http_read.py`, `test_reader_conformance.py`, `test_signals.py`를 돌려 71 통과, 23 건너뜀(PostgreSQL). 계약 패키지 `conformance/` 디렉터리의 서버 모음은 이 영역에서 따로 돌리지 않았다.
+- 적합성 시험: `tests/test_http_client_conformance.py`, `test_http_read.py`, `test_reader_conformance.py`, `test_signals.py`를 돌려 통과·건너뜀(개수는 실행 출력이 정본)(PostgreSQL). 계약 패키지 `conformance/` 디렉터리의 서버 모음은 이 영역에서 따로 돌리지 않았다.
 - I7 소비 대조: 사용 필드 `question_set.id/version`, `review_status`, `failure_type`, `deidentified_trace_ref`는 모두 `FailureCase` 스키마에 있다. `list_cases(review_status, latest_only, cursor, limit)`와 `get_trace(ref)`는 `sdk.FailureStore` 서명과 같다. 클라이언트는 계약의 `HttpFailureStore`를 쓴다(자체 HTTP 호출 없음). 타임아웃 값(5초, 마감 20초)은 영역이 정한 것(ADR 0007·0009)이며 계약에는 값이 없다.
 - 변경 분류: `ChangeClassification`을 쓰기 전에 계약 스키마로 검증(`service.py:422`), `change_kinds` 4종·`follow_ups` 3종은 열거형과 일치. 첫 버전은 None.
 - 컴포넌트가 영역 밖 데이터를 SDK 밖으로 읽는 곳: 없음(저장소는 자기 DB만).
