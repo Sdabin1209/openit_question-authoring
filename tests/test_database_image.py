@@ -2,6 +2,7 @@
 모든 접속은 사용자 정의 docker 네트워크 안에서 컨테이너 이름으로(호스트 포트 없음), verify-full 로 한다. 정리는 이 시험이 만든 이름만. docker 가 없으면 SKIP."""
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -31,19 +32,53 @@ INPUTS = json.loads((ROOT / "db" / "inputs.json").read_text(encoding="utf-8"))
 DECLARED_UID, DECLARED_GID = (INPUTS["roles"]["default"]["process"][k] for k in ("uid", "gid"))
 
 
-def dockerfile_user(text):
-    """Dockerfile 의 마지막 USER 줄 값(없으면 None = root)."""
-    users = [ln.split(None, 1)[1].strip() for ln in text.splitlines() if ln.startswith("USER ")]
-    return users[-1] if users else None
+def _build_db_from_copy(tmp_path, mutate_dockerfile=None, mutate_inputs=None):
+    """db/ 와 requirements.lock 만 가진 사본 소스로 scripts/build-image.sh(variant db)를 부른다. 선언 대조(inputs_check)를 실제 빌드 위에서 보려는 것이다."""
+    if DOCKER is None or subprocess.run([DOCKER, "info"], capture_output=True).returncode != 0:
+        pytest.skip("docker 데몬 없음")
+    src = tmp_path / "src"
+    shutil.copytree(ROOT / "db", src / "db")
+    shutil.copy(ROOT / "requirements.lock", src / "requirements.lock")
+    if mutate_dockerfile:
+        f = src / "db" / "Dockerfile"
+        f.write_text(mutate_dockerfile(f.read_text(encoding="utf-8")), encoding="utf-8")
+    if mutate_inputs:
+        f = src / "db" / "inputs.json"
+        d = json.loads(f.read_text(encoding="utf-8"))
+        mutate_inputs(d)
+        f.write_text(json.dumps(d), encoding="utf-8")
+    bc = re.search(r"^boundary-contracts @ .*@(v[0-9][0-9.]*)$", (ROOT / "requirements.lock").read_text(encoding="utf-8"), re.M).group(1)
+    for n in ("bc", "ss"):
+        (tmp_path / n).mkdir()   # db 변형은 라이브러리 소스를 쓰지 않는다(요청 검증만 통과하면 된다)
+    tag = f"question-authoring-db:test-user-{os.getpid()}-{uuid.uuid4().hex[:6]}"
+    req = {"source_dir": str(src), "revision": "abcdef1", "versions": {"boundary": bc, "survey_schema": "v4.0.0"}, "variant": "db", "image_tag": tag,
+           "dependency_sources": {"boundary": str(tmp_path / "bc"), "survey_schema": str(tmp_path / "ss")}}
+    (tmp_path / "req.json").write_text(json.dumps(req))
+    env = dict(os.environ, PYTHON=str(ROOT / ".venv" / "bin" / "python"))
+    r = subprocess.run(["bash", str(ROOT / "scripts" / "build-image.sh"), str(tmp_path / "req.json")], capture_output=True, text=True, env=env, timeout=HANG_GUARD_SECONDS)
+    exists = subprocess.run([DOCKER, "image", "inspect", tag], capture_output=True).returncode == 0
+    subprocess.run([DOCKER, "rmi", "-f", tag], capture_output=True)
+    return r, exists
 
 
-def test_dockerfile_runs_as_the_declared_non_root_user_and_removing_user_is_caught():
-    text = (ROOT / "db" / "Dockerfile").read_text(encoding="utf-8")
-    assert DECLARED_UID != 0 and DECLARED_GID != 0
-    assert dockerfile_user(text) == "postgres"
-    # 변이: USER 줄을 빼면 root 로 돌게 되고 선언(비 root)과 어긋난다 -> 이 대조가 잡는다
-    mutated = "\n".join(ln for ln in text.splitlines() if not ln.startswith("USER "))
-    assert dockerfile_user(mutated) is None
+def test_build_accepts_the_real_dockerfile_and_declaration(tmp_path):
+    r, _ = _build_db_from_copy(tmp_path)
+    assert r.returncode == 0, r.stderr[-800:]
+
+
+def test_mutation_removing_user_is_rejected_by_the_inputs_check(tmp_path):
+    # 변이: USER 줄을 뺀다 -> 이미지는 root(0:0)로 돌고, 선언(999:999)과 어긋나 빌드가 실패하고 이미지가 지워져야 한다
+    r, exists = _build_db_from_copy(tmp_path, mutate_dockerfile=lambda t: "\n".join(ln for ln in t.splitlines() if not ln.startswith("USER ")))
+    assert r.returncode != 0 and "주입 선언" in r.stderr, r.stderr[-800:]
+    assert not exists
+
+
+def test_mutation_declaring_root_for_a_non_root_image_is_rejected(tmp_path):
+    def to_root(d):
+        d["roles"]["default"]["process"] = {"uid": 0, "gid": 0}
+    r, exists = _build_db_from_copy(tmp_path, mutate_inputs=to_root)
+    assert r.returncode != 0 and "주입 선언" in r.stderr, r.stderr[-800:]
+    assert not exists
 
 
 def test_image_process_user_equals_the_inputs_declaration(db_image):

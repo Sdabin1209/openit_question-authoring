@@ -28,7 +28,7 @@
 | `tests/` | 시험(저장소 적합성, HTTP, 추출기, 비밀 값, 구조 `test_structure.py` 등) |
 | `scripts/gen_types.py`, `scripts/smoke.sh`, `scripts/build_wheels.sh` | 타입 생성, 이미지 스모크 시험, 계약 wheel 빌드 |
 | `Dockerfile`, `requirements.lock`, `requirements-gen.lock` | 이미지와 잠긴 의존(계약·통신 라이브러리 태그), 타입 생성기 잠금 |
-| `db/` | 영역 DB 이미지 `question-authoring-db`(선언·pg_hba·초기화 스크립트, ADR 0029) |
+| `db/` | 영역 DB 이미지 `question-authoring-db`(선언·pg_hba·초기화 스크립트, ADR 0029·0032) |
 | `question_authoring/ui/` | 저작 화면 정적 파일(`/ui/`, ADR 0031) |
 | `examples/question_form.txt` | 텍스트 양식 입력 예 |
 | `forms/` | 운영 문진표 양식 둘과 출처·올리는 절차([forms/README.md](forms/README.md)) |
