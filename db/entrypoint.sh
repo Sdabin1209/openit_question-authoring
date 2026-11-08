@@ -1,5 +1,5 @@
 #!/bin/sh
-# question-authoring-db 진입점(root 로 시작해 공식 postgres 이미지 진입점으로 넘긴다).
+# question-authoring-db 진입점(이미지 USER postgres = uid 999 로 실행되고 공식 postgres 이미지 진입점으로 넘긴다. root 로 시작하지 않는다: 공통 규칙 '비 root 실행', D134).
 # 하는 일: 서버 TLS 필수(DB_TLS_DIR 의 tls.crt·tls.key 가 없으면 시작하지 않는다), 접속 규칙·암호 방식·연결 상한을 서버 인자로 고정한다.
 set -eu
 # 인증서 복사: PostgreSQL 은 개인 키 파일이 서버 사용자 소유이고 0600 이 아니면 거부한다. 마운트된 비밀 파일의 권한은 우리가 정하지 못한다.
@@ -7,28 +7,26 @@ install_tls() {
   TLS="${DB_TLS_DIR:-/certs}"
   [ -s "$TLS/tls.crt" ] && [ -s "$TLS/tls.key" ] || return 1
   # /run 아래에 둔다: deploy 는 읽기 전용 루트에 /tmp·/run(tmpfs)과 데이터 볼륨만 쓸 수 있게 준다(다른 영역 DB 이미지와 같다)
-  install -d -o postgres -g postgres -m 0700 /run/question-authoring-db-tls
-  install -o postgres -g postgres -m 0644 "$TLS/tls.crt" /run/question-authoring-db-tls/tls.crt.new
-  install -o postgres -g postgres -m 0600 "$TLS/tls.key" /run/question-authoring-db-tls/tls.key.new
+  # 왜 소유자 인자가 없다: 이미 postgres 로 실행 중이라 만든 파일이 곧 postgres 소유다(PostgreSQL 은 키가 서버 사용자 소유 0600 이 아니면 거부)
+  install -d -m 0700 /run/question-authoring-db-tls
+  install -m 0644 "$TLS/tls.crt" /run/question-authoring-db-tls/tls.crt.new
+  install -m 0600 "$TLS/tls.key" /run/question-authoring-db-tls/tls.key.new
   mv /run/question-authoring-db-tls/tls.crt.new /run/question-authoring-db-tls/tls.crt       # 같은 폴더에서 rename: 서버가 반쯤 쓴 파일을 읽지 않는다
   mv /run/question-authoring-db-tls/tls.key.new /run/question-authoring-db-tls/tls.key
 }
 fingerprint() { cat "${DB_TLS_DIR:-/certs}/tls.crt" "${DB_TLS_DIR:-/certs}/tls.key" 2>/dev/null | sha256sum | cut -d' ' -f1; }
 
-if [ "${1:-}" = "postgres" ] && [ "$(id -u)" = "0" ]; then
-# gosu 는 보조 그룹을 재설정한다. 배치 비밀(0640)을 완화하지 않고 postgres 전용 tmpfs 사본을 준비한다.
+if [ "${1:-}" = "postgres" ]; then
+# 비밀은 배치가 선언의 uid:gid(postgres)로 읽게 준 파일을 그대로 읽는다(사본을 만들지 않는다). 없거나 비면 시작하지 않는다.
 secret_source=${DB_ACCOUNT_SECRETS_DIR:-/run/secrets/db}
-secret_target=/run/question-authoring-db-secrets
-install -d -o postgres -g postgres -m 0700 "$secret_target"
 for account in $(jq -r '.accounts[].name' /etc/openit/database.json); do
   file="$secret_source/$account"
   [ -r "$file" ] && [ -s "$file" ] || { echo "question-authoring-db: 계정 $account 의 암호 파일을 읽을 수 없거나 비어 있다" >&2; exit 1; }
   first_line=$(head -n1 "$file") || { echo "question-authoring-db: 계정 $account 의 암호 파일 읽기 실패" >&2; exit 1; }
   [ -n "$first_line" ] || { echo "question-authoring-db: 계정 $account 의 암호 첫 줄이 비어 있다" >&2; exit 1; }
   unset first_line
-  install -o postgres -g postgres -m 0600 "$file" "$secret_target/$account"
 done
-export DB_ACCOUNT_SECRETS_DIR="$secret_target"
+export DB_ACCOUNT_SECRETS_DIR="$secret_source"
   install_tls || { echo "question-authoring-db: ${DB_TLS_DIR:-/certs}/tls.crt·tls.key 가 없다. 서버 TLS 는 필수다(D126)" >&2; exit 1; }
   # 갱신된 인증서를 스스로 다시 읽는다(step-ca 가 인증서를 갱신해 같은 파일을 바꾼다): 60초마다 지문을 보고 바뀌면 다시 복사한 뒤 서버에 SIGHUP(ssl_cert_file·ssl_key_file 은 reload 로 적용된다, PostgreSQL 문서).
   # 60초는 갱신이 만료보다 훨씬 앞서 일어난다는 전제의 시작값이다(측정하지 않음, ADR 0029). 복사나 신호가 실패해도 다음 주기에 다시 한다.
@@ -38,7 +36,7 @@ export DB_ACCOUNT_SECRETS_DIR="$secret_target"
       now="$(fingerprint)"
       if [ -n "$now" ] && [ "$now" != "$last" ] && install_tls; then
         pid="$(head -n1 /var/lib/postgresql/data/postmaster.pid 2>/dev/null || true)"
-        if [ -n "$pid" ] && gosu postgres kill -HUP "$pid" 2>/dev/null; then last="$now"; echo "question-authoring-db: 갱신된 서버 인증서를 다시 읽었다" >&2; fi
+        if [ -n "$pid" ] && kill -HUP "$pid" 2>/dev/null; then last="$now"; echo "question-authoring-db: 갱신된 서버 인증서를 다시 읽었다" >&2; fi
       fi
     done
   ) &

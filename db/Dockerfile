@@ -20,6 +20,8 @@ COPY db/entrypoint.sh /usr/local/bin/qa-db-entrypoint.sh
 # 왜 HEALTHCHECK: 선언한 계정과 TLS 접속을 이미지가 스스로 확인한다(pg_isready 는 TLS 와 계정을 보지 않는다). Docker 표준 HEALTHCHECK.
 # interval 15s 는 앱 이미지와 같다. start-period 60s 는 첫 기동의 초기화(계정·권한 생성) 시간을 덮는 시작값이고 측정하지 않았다(ADR 0029). timeout 5s 는 점검 안의 timeout 4s 보다 크다.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=3 CMD ["qa-db-healthcheck.sh"]
+# 왜 USER postgres: 공통 규칙 "root 가 아닌 사용자로 실행". 공식 이미지의 postgres(uid:gid 999:999)를 쓰고 db/inputs.json(io.openit.inputs)의 process·written_by 가 같은 값이어야 한다(build-image.sh 가 대조). 데이터 폴더는 공식 이미지가 postgres 소유로 만들어 둔다. initdb 훅은 공식 진입점이 이 사용자로 돌린다
+USER postgres
 ENTRYPOINT ["qa-db-entrypoint.sh"]
 CMD ["postgres"]
 EXPOSE 5432

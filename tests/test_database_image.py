@@ -27,6 +27,30 @@ def sh(*a, check=True, timeout=HANG_GUARD_SECONDS, **k):
     return subprocess.run(a, capture_output=True, text=True, check=check, timeout=timeout, **k)
 
 
+INPUTS = json.loads((ROOT / "db" / "inputs.json").read_text(encoding="utf-8"))
+DECLARED_UID, DECLARED_GID = (INPUTS["roles"]["default"]["process"][k] for k in ("uid", "gid"))
+
+
+def dockerfile_user(text):
+    """Dockerfile 의 마지막 USER 줄 값(없으면 None = root)."""
+    users = [ln.split(None, 1)[1].strip() for ln in text.splitlines() if ln.startswith("USER ")]
+    return users[-1] if users else None
+
+
+def test_dockerfile_runs_as_the_declared_non_root_user_and_removing_user_is_caught():
+    text = (ROOT / "db" / "Dockerfile").read_text(encoding="utf-8")
+    assert DECLARED_UID != 0 and DECLARED_GID != 0
+    assert dockerfile_user(text) == "postgres"
+    # 변이: USER 줄을 빼면 root 로 돌게 되고 선언(비 root)과 어긋난다 -> 이 대조가 잡는다
+    mutated = "\n".join(ln for ln in text.splitlines() if not ln.startswith("USER "))
+    assert dockerfile_user(mutated) is None
+
+
+def test_image_process_user_equals_the_inputs_declaration(db_image):
+    r = sh(DOCKER, "run", "--rm", "--network", "none", "--entrypoint", "sh", db_image[0], "-c", "echo $(id -u):$(id -g)")
+    assert r.stdout.strip() == f"{DECLARED_UID}:{DECLARED_GID}"
+
+
 @pytest.fixture(scope="module")
 def db_image():
     if DOCKER is None or subprocess.run([DOCKER, "info"], capture_output=True).returncode != 0:
@@ -83,8 +107,9 @@ class Stack:
             args += ["-v", f"{mount_init}:/docker-entrypoint-initdb.d/10-accounts.sh:ro"]
         sh(DOCKER, "network", "create", self.net)
         # deploy 와 같은 실행 조건: 읽기 전용 루트, 쓸 수 있는 곳은 /tmp·/run(tmpfs)과 데이터 볼륨뿐(deploy compose.yaml 의 영역 DB 서비스)
+        # 선언(db/inputs.json)대로 capability 없음, 쓰기 가능한 곳은 선언한 uid:gid 소유로 준다
         ro = ["--group-add", str(os.getgid()), "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
-              *[v for cap in ("CHOWN", "DAC_OVERRIDE", "FOWNER", "SETUID", "SETGID") for v in ("--cap-add", cap)], "--read-only", "--tmpfs", "/tmp", "--tmpfs", "/run", "-v", "/var/lib/postgresql/data"]
+              "--read-only", "--tmpfs", "/tmp", "--tmpfs", f"/run:uid={DECLARED_UID},gid={DECLARED_GID}", "-v", "/var/lib/postgresql/data"]
         sh(DOCKER, "run", "-d", "--name", self.name, "--network", self.net, *ro, *args, tag, *(["postgres", *extra_cmd] if extra_cmd else []))
 
     def wait_ready(self):
